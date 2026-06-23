@@ -54,6 +54,27 @@ npm run dev:api              # http://localhost:4000/api/v1
 npm run dev:web              # http://localhost:3000  (admin@aeo.test / Password123!)
 ```
 
+### Option A+ — No Docker, WITH the sending engine (portable Redis)
+
+The engine needs Redis. On Windows you can run a portable Redis (no install, no
+admin) and a local SMTP sink to watch real sends:
+
+```bash
+# 1. Portable Redis (download once, then run redis-server.exe on :6379)
+#    e.g. https://github.com/tporadowski/redis/releases  (v5+ works with BullMQ)
+
+# 2. Local SMTP sink — accepts mail on :2525 and logs it (own terminal)
+npm run dev:smtp
+
+# 3. Run the API with the engine enabled, pointing the dispatcher fast for demos
+QUEUE_ENABLED=true DISPATCH_SCAN_MS=8000 npm run dev:api
+```
+
+Then create a mailbox with host `127.0.0.1`, port `2525`, TLS off, approve a
+campaign, schedule it, and the dispatcher will send through the sink. Verified
+loop: dispatch → render personalization → SMTP send → open-pixel tracking →
+analytics (`opens`, `openRate`) update.
+
 ### Option B — Docker (full stack incl. sending engine)
 
 ```bash

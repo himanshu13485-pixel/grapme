@@ -13,6 +13,7 @@
     "prisma:deploy": "prisma migrate deploy",
     "prisma:seed": "ts-node prisma/seed.ts",
     "db:embedded": "ts-node --transpile-only scripts/dev-db.ts",
+    "dev:smtp": "ts-node --transpile-only scripts/dev-smtp.ts",
     "lint": "eslint \"src/**/*.ts\""
   },
   "prisma": {
@@ -38,7 +39,8 @@
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.1"
+    "rxjs": "^7.8.1",
+    "smtp-server": "^3.19.1"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.4.5",
