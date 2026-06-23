@@ -67,11 +67,31 @@ Health check: `GET http://localhost:4000/api/v1/health`
 | GET  | `/users` |  | List tenant users (admin) |
 | POST | `/users` |  | Create user (super-admin) |
 
+## Outreach endpoints (live)
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET/POST | `/email-accounts` | List / add mailbox (encrypted, → SMTP approval) |
+| POST | `/email-accounts/:id/test` | Connection sanity check |
+| GET/POST | `/contacts` | List / manually add contacts |
+| POST | `/contacts/import` | Stage bulk import (deduped, → IMPORT approval) |
+| GET/POST | `/contact-lists` | Manage contact lists |
+| GET/POST/PATCH | `/templates` | Template builder CRUD + variable extraction |
+| POST | `/templates/:id/spam-check` | Deliverability lint |
+| GET/POST | `/campaigns` | List / create campaign (draft) |
+| POST | `/campaigns/:id/submit` | Submit for approval (→ CAMPAIGN approval) |
+| POST | `/campaigns/:id/steps` | Add follow-up step |
+| POST | `/campaigns/:id/schedule` | Schedule approved campaign (→ SCHEDULE approval) |
+| POST | `/campaigns/:id/pause` `/resume` | Lifecycle control |
+| GET | `/campaigns/:id/analytics` | Performance aggregation |
+| GET | `/approvals` | Pending queue (admin/sub-admin) |
+| POST | `/approvals/:id/approve` `/reject` | Decide — drives the entity live |
+
 ## Implementation status
 
 - [x] **Phase 0** — Monorepo, full Prisma schema, auth + RBAC foundation, users module
-- [ ] **Phase 1** — Mailboxes (encrypted), contacts + CSV import, templates, campaigns CRUD
-- [ ] **Phase 2** — Approval workflow + BullMQ sending engine + tracking
+- [x] **Phase 1** — Approval engine, mailboxes (encrypted), contacts + staged import, templates, campaigns + follow-up steps + scheduling
+- [ ] **Phase 2** — BullMQ sending engine + open/click tracking + IMAP reply detection
 - [ ] **Phase 3** — Follow-ups, IMAP reply detection, inbox views
 - [ ] **Phase 4** — Sub-admins, credits, audit logs, admin dashboard
 - [ ] **Phase 5** — Deliverability checks, compliance tooling, web UI polish

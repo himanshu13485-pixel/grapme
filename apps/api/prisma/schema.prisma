@@ -351,9 +351,11 @@ model ImportJob {
   tenantId   String
   userId     String
   filename   String
+  listId     String?      // optional target list applied on approval
   totalRows  Int          @default(0)
   validRows  Int          @default(0)
   dupRows    Int          @default(0)
+  payload    Json         @default("[]") // staged rows; inserted on approval
   status     ImportStatus @default(PENDING)
   approvalId String?
   createdAt  DateTime     @default(now())

@@ -1,0 +1,90 @@
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  HttpCode,
+} from '@nestjs/common';
+import { CampaignsService } from './campaigns.service';
+import {
+  CreateCampaignDto,
+  UpdateCampaignDto,
+  AddStepDto,
+  ScheduleCampaignDto,
+} from './dto/campaigns.dto';
+import {
+  CurrentUser,
+  AuthUser,
+} from '../common/decorators/current-user.decorator';
+
+@Controller('campaigns')
+export class CampaignsController {
+  constructor(private readonly campaigns: CampaignsService) {}
+
+  @Get()
+  list(@CurrentUser() user: AuthUser) {
+    return this.campaigns.list(user);
+  }
+
+  @Post()
+  create(@CurrentUser() user: AuthUser, @Body() dto: CreateCampaignDto) {
+    return this.campaigns.create(user, dto);
+  }
+
+  @Get(':id')
+  getOne(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.campaigns.getOne(user, id);
+  }
+
+  @Patch(':id')
+  update(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: UpdateCampaignDto,
+  ) {
+    return this.campaigns.update(user, id, dto);
+  }
+
+  @Post(':id/steps')
+  addStep(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: AddStepDto,
+  ) {
+    return this.campaigns.addStep(user, id, dto);
+  }
+
+  @HttpCode(200)
+  @Post(':id/submit')
+  submit(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.campaigns.submit(user, id);
+  }
+
+  @Post(':id/schedule')
+  schedule(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: ScheduleCampaignDto,
+  ) {
+    return this.campaigns.schedule(user, id, dto);
+  }
+
+  @HttpCode(200)
+  @Post(':id/pause')
+  pause(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.campaigns.pause(user, id);
+  }
+
+  @HttpCode(200)
+  @Post(':id/resume')
+  resume(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.campaigns.resume(user, id);
+  }
+
+  @Get(':id/analytics')
+  analytics(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.campaigns.analytics(user, id);
+  }
+}
