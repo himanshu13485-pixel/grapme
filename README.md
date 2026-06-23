@@ -117,6 +117,17 @@ Health check: `GET http://localhost:4000/api/v1/health`
 **Sub-admin scoping:** a `SUB_ADMIN`'s `/users`, `/approvals`, and `/dashboard/summary`
 are filtered to only the users assigned to them via `SubAdminAssignment`.
 
+## Deliverability & compliance endpoints (Phase 5)
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/deliverability/email-auth?domain=` | Live SPF / DKIM / DMARC DNS check + score |
+| POST | `/deliverability/validate-email` | Syntax + MX-record validation |
+| GET/POST | `/suppression` | List / add to the tenant suppression list |
+| DELETE | `/suppression/:id` | Remove a suppression entry |
+| GET | `/compliance/contacts/:id/export` | GDPR data-portability export |
+| POST | `/compliance/contacts/:id/erase` | Right-to-erasure: scrub PII + suppress |
+
 ## Sending engine (Phase 2)
 
 Background workers (BullMQ + Redis) — start automatically with the API:
@@ -145,4 +156,4 @@ Public tracking endpoints (unauthenticated):
 - [x] **Phase 2** — BullMQ sending engine (dispatcher + send worker), nodemailer SMTP, warm-up spacing/jitter + daily caps, open/click/unsubscribe tracking, IMAP reply detection
 - [x] **Phase 3** — Next.js web app: auth (login/register), dashboard, campaigns + builder/detail, approval center, contacts, templates, mailboxes
 - [x] **Phase 4** — Sub-admins + assignment scoping, credits (grant/deduct), audit-log UI, role-aware dashboard aggregates, inbox/sent/scheduled/failed views
-- [ ] **Phase 5** — Deliverability checks, compliance tooling, polish & load testing
+- [x] **Phase 5** — Deliverability (SPF/DKIM/DMARC + MX email validation via DNS), GDPR/CAN-SPAM suppression management + data export & right-to-erasure
