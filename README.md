@@ -49,6 +49,9 @@ npm run db:seed
 
 # 6. Run the API
 npm run dev:api      # http://localhost:4000/api/v1
+
+# 7. Run the web app (separate terminal)
+npm run dev:web      # http://localhost:3000  (login: admin@aeo.test / Password123!)
 ```
 
 Health check: `GET http://localhost:4000/api/v1/health`
@@ -113,6 +116,6 @@ Public tracking endpoints (unauthenticated):
 - [x] **Phase 0** — Monorepo, full Prisma schema, auth + RBAC foundation, users module
 - [x] **Phase 1** — Approval engine, mailboxes (encrypted), contacts + staged import, templates, campaigns + follow-up steps + scheduling
 - [x] **Phase 2** — BullMQ sending engine (dispatcher + send worker), nodemailer SMTP, warm-up spacing/jitter + daily caps, open/click/unsubscribe tracking, IMAP reply detection
-- [ ] **Phase 3** — Follow-ups, IMAP reply detection, inbox views
-- [ ] **Phase 4** — Sub-admins, credits, audit logs, admin dashboard
-- [ ] **Phase 5** — Deliverability checks, compliance tooling, web UI polish
+- [x] **Phase 3** — Next.js web app: auth (login/register), dashboard, campaigns + builder/detail, approval center, contacts, templates, mailboxes
+- [ ] **Phase 4** — Sub-admins, credits, audit-log UI, admin dashboard aggregates, inbox/sent views
+- [ ] **Phase 5** — Deliverability checks, compliance tooling, polish & load testing

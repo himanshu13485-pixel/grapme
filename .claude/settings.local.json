@@ -4,7 +4,10 @@
       "PowerShell(npm run db:generate 2>&1)",
       "Bash(git add *)",
       "Bash(git -c user.name=AEO -c user.email=dev@aeo.test commit -q -m 'Phase 0: monorepo scaffold, Prisma schema, NestJS auth + RBAC foundation *)",
-      "Bash(git -c user.name=AEO -c user.email=dev@aeo.test commit -q -m 'Phase 1: approval engine, mailboxes, contacts/import, templates, campaigns *)"
+      "Bash(git -c user.name=AEO -c user.email=dev@aeo.test commit -q -m 'Phase 1: approval engine, mailboxes, contacts/import, templates, campaigns *)",
+      "PowerShell(npm run start --workspace apps/web 2>&1 | Out-File -FilePath \"$env:TEMP\\\\aeo_web.log\" -Encoding utf8)",
+      "PowerShell($ok=$false; for \\($i=0; $i -lt 12; $i++\\) { try { $r = Invoke-WebRequest -Uri \"http://localhost:3000/login\" -UseBasicParsing -TimeoutSec 4; if \\($r.StatusCode -eq 200\\) { $ok=$true; break } } catch {}; Start-Sleep -Seconds 2 }; if \\($ok\\) { \"HTTP $\\($r.StatusCode\\); contains title: $\\($r.Content -match 'Automated Email Outreach'\\)\" } else { \"server not responding yet\" })",
+      "PowerShell(Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }; \"stopped web server\")"
     ]
   }
 }
