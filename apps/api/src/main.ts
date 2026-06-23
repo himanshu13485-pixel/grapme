@@ -1,3 +1,5 @@
+// Load .env before any module evaluates process.env (e.g. QUEUE_ENABLED).
+import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';

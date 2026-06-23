@@ -18,6 +18,9 @@ out/
 # Prisma
 apps/api/prisma/*.db
 
+# Embedded Postgres data dir (no-Docker dev)
+apps/api/.pgdata/
+
 # Logs
 *.log
 npm-debug.log*

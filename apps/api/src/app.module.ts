@@ -16,13 +16,17 @@ import { SendingModule } from './sending/sending.module';
 import { TrackingModule } from './tracking/tracking.module';
 import { HealthController } from './health.controller';
 
+// The sending engine needs Redis. Set QUEUE_ENABLED=false to run the rest of
+// the platform (auth, campaigns, approvals, …) with only Postgres.
+const queueEnabled = process.env.QUEUE_ENABLED !== 'false';
+const engineModules = queueEnabled ? [QueueModule, SendingModule] : [];
+
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
     PrismaModule,
     CommonModule,
-    QueueModule,
     AuthModule,
     UsersModule,
     ApprovalsModule,
@@ -30,8 +34,8 @@ import { HealthController } from './health.controller';
     ContactsModule,
     TemplatesModule,
     CampaignsModule,
-    SendingModule,
     TrackingModule,
+    ...engineModules,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

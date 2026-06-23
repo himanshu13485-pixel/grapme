@@ -29,29 +29,39 @@ aeo/
 
 ## Getting started
 
+### Option A — No Docker (embedded Postgres, no Redis)
+
+Runs the full app (auth, campaigns, approvals, contacts, …) with **zero external
+infrastructure**. The background sending engine (which needs Redis) is disabled.
+
 ```bash
 # 1. Install
 npm install
 
-# 2. Configure env
-cp .env.example .env
-#   - set CREDENTIAL_ENCRYPTION_KEY:  openssl rand -base64 32
-#   - set JWT secrets
+# 2. API env — copy and set QUEUE_ENABLED=false + a 32-byte key
+cp .env.example apps/api/.env
+#   in apps/api/.env: QUEUE_ENABLED=false
+#   CREDENTIAL_ENCRYPTION_KEY:  node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 
-# 3. Start Postgres + Redis
-npm run infra:up
+# 3. Start embedded Postgres (downloads a real PG binary on first run) — keep running
+npm run db:embedded          # serves localhost:5432 (aeo/aeo_password/aeo)
 
-# 4. Create the database schema
-npm run db:migrate
+# 4. Migrate + seed (separate terminal)
+npm run db:migrate && npm run db:seed
 
-# 5. Seed demo accounts (admin@aeo.test / Password123!)
-npm run db:seed
+# 5. Run API + web (each in its own terminal)
+npm run dev:api              # http://localhost:4000/api/v1
+npm run dev:web              # http://localhost:3000  (admin@aeo.test / Password123!)
+```
 
-# 6. Run the API
-npm run dev:api      # http://localhost:4000/api/v1
+### Option B — Docker (full stack incl. sending engine)
 
-# 7. Run the web app (separate terminal)
-npm run dev:web      # http://localhost:3000  (login: admin@aeo.test / Password123!)
+```bash
+cp .env.example .env         # set CREDENTIAL_ENCRYPTION_KEY + JWT secrets; QUEUE_ENABLED=true
+npm run infra:up             # Postgres + Redis
+npm run db:migrate && npm run db:seed
+npm run dev:api              # API + dispatcher/send/reply workers
+npm run dev:web
 ```
 
 Health check: `GET http://localhost:4000/api/v1/health`
