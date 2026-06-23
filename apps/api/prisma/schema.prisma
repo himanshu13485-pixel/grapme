@@ -1,0 +1,586 @@
+// Automated Email Outreach — Prisma schema
+// Multi-tenant: every business table carries tenantId for row-level isolation.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────── Enums ───────────────────────────────
+
+enum Role {
+  SUPER_ADMIN
+  SUB_ADMIN
+  USER
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  INVITED
+}
+
+enum MailProtocol {
+  SMTP
+  IMAP
+  POP
+}
+
+enum MailboxStatus {
+  PENDING
+  ACTIVE
+  DISABLED
+}
+
+enum ContactStatus {
+  ACTIVE
+  UNSUBSCRIBED
+  BOUNCED
+}
+
+enum ImportStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  PROCESSING
+  DONE
+  FAILED
+}
+
+enum CampaignStatus {
+  DRAFT
+  PENDING
+  APPROVED
+  SCHEDULED
+  RUNNING
+  PAUSED
+  COMPLETED
+  REJECTED
+}
+
+enum StepCondition {
+  ALWAYS
+  NO_REPLY
+  OPENED
+  NOT_OPENED
+}
+
+enum ScheduleStatus {
+  PENDING
+  APPROVED
+  QUEUED
+  SENT
+}
+
+enum MessageDirection {
+  OUTBOUND
+  INBOUND
+}
+
+enum MessageStatus {
+  DRAFT
+  QUEUED
+  SENT
+  DELIVERED
+  FAILED
+  BOUNCED
+}
+
+enum EventType {
+  SENT
+  DELIVERED
+  OPEN
+  CLICK
+  REPLY
+  BOUNCE
+  UNSUBSCRIBE
+  COMPLAINT
+}
+
+enum ApprovalEntity {
+  CAMPAIGN
+  SCHEDULE
+  SEQUENCE
+  IMPORT
+  SMTP
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum SuppressionReason {
+  UNSUBSCRIBE
+  BOUNCE
+  MANUAL
+  COMPLAINT
+}
+
+// ───────────────────────── Tenancy & Identity ─────────────────────────
+
+model Tenant {
+  id        String   @id @default(uuid())
+  name      String
+  plan      String   @default("free")
+  status    String   @default("active")
+  settings  Json     @default("{}")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users           User[]
+  emailAccounts   EmailAccount[]
+  contactLists    ContactList[]
+  contacts        Contact[]
+  suppressionList Suppression[]
+  importJobs      ImportJob[]
+  templates       EmailTemplate[]
+  campaigns       Campaign[]
+  messages        EmailMessage[]
+  approvals       Approval[]
+  activityLogs    ActivityLog[]
+  creditAccounts  CreditAccount[]
+}
+
+model User {
+  id             String     @id @default(uuid())
+  tenantId       String
+  name           String
+  email          String     @unique
+  passwordHash   String
+  role           Role       @default(USER)
+  status         UserStatus @default(ACTIVE)
+  timezone       String     @default("UTC")
+  twoFactorSecret String?
+  avatarUrl      String?
+  lastLoginAt    DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  permissions       UserPermission[]
+  emailAccounts     EmailAccount[]
+  contactLists      ContactList[]
+  contacts          Contact[]
+  importJobs        ImportJob[]
+  templates         EmailTemplate[]
+  campaigns         Campaign[]
+  creditAccount     CreditAccount?
+  notifications     Notification[]
+  refreshTokens     RefreshToken[]
+  passwordResets    PasswordReset[]
+  submittedApprovals Approval[] @relation("ApprovalSubmitter")
+  reviewedApprovals  Approval[] @relation("ApprovalReviewer")
+  activityLogs       ActivityLog[]
+
+  // Sub-admin assignments
+  assignmentsAsSubAdmin SubAdminAssignment[] @relation("SubAdmin")
+  assignmentsAsUser     SubAdminAssignment[] @relation("AssignedUser")
+
+  @@index([tenantId])
+  @@index([role])
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String
+  tokenHash String
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model PasswordReset {
+  id        String   @id @default(uuid())
+  userId    String
+  tokenHash String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Permission {
+  id          String           @id @default(uuid())
+  key         String           @unique
+  description String
+  users       UserPermission[]
+}
+
+model UserPermission {
+  id           String     @id @default(uuid())
+  userId       String
+  permissionId String
+  granted      Boolean    @default(true)
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, permissionId])
+}
+
+model SubAdminAssignment {
+  id               String   @id @default(uuid())
+  subAdminId       String
+  assignedUserId   String?
+  assignedCampaignId String?
+  createdAt        DateTime @default(now())
+
+  subAdmin     User      @relation("SubAdmin", fields: [subAdminId], references: [id], onDelete: Cascade)
+  assignedUser User?     @relation("AssignedUser", fields: [assignedUserId], references: [id], onDelete: Cascade)
+  campaign     Campaign? @relation(fields: [assignedCampaignId], references: [id], onDelete: Cascade)
+
+  @@index([subAdminId])
+}
+
+// ───────────────────────── Mailboxes ─────────────────────────
+
+model EmailAccount {
+  id                   String        @id @default(uuid())
+  tenantId             String
+  userId               String
+  label                String
+  protocol             MailProtocol  @default(SMTP)
+  smtpHost             String?
+  smtpPort             Int?
+  smtpSecure           Boolean       @default(true)
+  imapHost             String?
+  imapPort             Int?
+  emailAddress         String
+  credentialsEncrypted String        // AES-256-GCM blob, never returned to client
+  status               MailboxStatus @default(PENDING)
+  dailyLimit           Int           @default(200)
+  warmupEnabled        Boolean       @default(true)
+  sendSpeedSeconds     Int           @default(90)
+  reputationScore      Int           @default(100)
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+
+  tenant    Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campaigns Campaign[]
+  messages  EmailMessage[]
+
+  @@index([tenantId])
+  @@index([userId])
+}
+
+// ───────────────────────── Contacts ─────────────────────────
+
+model ContactList {
+  id          String   @id @default(uuid())
+  tenantId    String
+  userId      String
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant   Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user     User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  members  ContactListMember[]
+  campaigns Campaign[]
+
+  @@index([tenantId])
+}
+
+model Contact {
+  id           String        @id @default(uuid())
+  tenantId     String
+  userId       String
+  email        String
+  firstName    String?
+  lastName     String?
+  company      String?
+  country      String?
+  customFields Json          @default("{}")
+  status       ContactStatus @default(ACTIVE)
+  dedupeHash   String
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  tenant   Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user     User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lists    ContactListMember[]
+  messages EmailMessage[]
+
+  @@unique([tenantId, dedupeHash])
+  @@index([tenantId])
+  @@index([email])
+}
+
+model ContactListMember {
+  id        String @id @default(uuid())
+  listId    String
+  contactId String
+
+  list    ContactList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  contact Contact     @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([listId, contactId])
+}
+
+model Suppression {
+  id        String            @id @default(uuid())
+  tenantId  String
+  email     String
+  reason    SuppressionReason
+  createdAt DateTime          @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+}
+
+model ImportJob {
+  id         String       @id @default(uuid())
+  tenantId   String
+  userId     String
+  filename   String
+  totalRows  Int          @default(0)
+  validRows  Int          @default(0)
+  dupRows    Int          @default(0)
+  status     ImportStatus @default(PENDING)
+  approvalId String?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+// ───────────────────────── Templates & Campaigns ─────────────────────────
+
+model EmailTemplate {
+  id        String   @id @default(uuid())
+  tenantId  String
+  userId    String
+  name      String
+  subject   String
+  bodyHtml  String
+  bodyText  String?
+  variables Json     @default("[]")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campaigns Campaign[]
+  steps  CampaignStep[]
+
+  @@index([tenantId])
+}
+
+model Campaign {
+  id              String         @id @default(uuid())
+  tenantId        String
+  userId          String
+  name            String
+  clientLabel     String?
+  emailAccountId  String?
+  listId          String?
+  templateId      String?
+  status          CampaignStatus @default(DRAFT)
+  timezone        String         @default("UTC")
+  dailyLimit      Int            @default(200)
+  sendSpeedSeconds Int           @default(90)
+  startAt         DateTime?
+  approvalId      String?
+  creditsEstimate Int            @default(0)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emailAccount EmailAccount?  @relation(fields: [emailAccountId], references: [id])
+  list         ContactList?   @relation(fields: [listId], references: [id])
+  template     EmailTemplate? @relation(fields: [templateId], references: [id])
+
+  steps       CampaignStep[]
+  schedules   Schedule[]
+  messages    EmailMessage[]
+  events      EmailEvent[]
+  assignments SubAdminAssignment[]
+
+  @@index([tenantId])
+  @@index([userId])
+  @@index([status])
+}
+
+model CampaignStep {
+  id         String        @id @default(uuid())
+  campaignId String
+  stepOrder  Int
+  templateId String?
+  waitDays   Int           @default(0)
+  condition  StepCondition @default(ALWAYS)
+
+  campaign Campaign       @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  template EmailTemplate? @relation(fields: [templateId], references: [id])
+  messages EmailMessage[]
+
+  @@unique([campaignId, stepOrder])
+}
+
+model Schedule {
+  id          String         @id @default(uuid())
+  campaignId  String
+  scheduledAt DateTime
+  timezone    String         @default("UTC")
+  status      ScheduleStatus @default(PENDING)
+  approvalId  String?
+  createdAt   DateTime       @default(now())
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId])
+}
+
+// ───────────────────────── Sending & Events ─────────────────────────
+
+model EmailMessage {
+  id             String           @id @default(uuid())
+  tenantId       String
+  campaignId     String?
+  stepId         String?
+  contactId      String?
+  emailAccountId String?
+  direction      MessageDirection @default(OUTBOUND)
+  messageId      String?          // RFC Message-ID
+  inReplyTo      String?
+  subject        String?
+  body           String?
+  status         MessageStatus    @default(QUEUED)
+  sentAt         DateTime?
+  error          String?
+  createdAt      DateTime         @default(now())
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  campaign     Campaign?     @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  step         CampaignStep? @relation(fields: [stepId], references: [id])
+  contact      Contact?      @relation(fields: [contactId], references: [id])
+  emailAccount EmailAccount? @relation(fields: [emailAccountId], references: [id])
+  events       EmailEvent[]
+
+  @@index([tenantId])
+  @@index([campaignId])
+  @@index([status])
+}
+
+model EmailEvent {
+  id         String    @id @default(uuid())
+  messageId  String
+  campaignId String?
+  eventType  EventType
+  meta       Json      @default("{}")
+  occurredAt DateTime  @default(now())
+
+  message  EmailMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  campaign Campaign?    @relation(fields: [campaignId], references: [id])
+
+  @@index([campaignId])
+  @@index([eventType])
+}
+
+// ───────────────────────── Governance ─────────────────────────
+
+model Approval {
+  id             String         @id @default(uuid())
+  tenantId       String
+  entityType     ApprovalEntity
+  entityId       String
+  submittedById  String
+  status         ApprovalStatus @default(PENDING)
+  reviewerId     String?
+  decisionReason String?
+  decidedAt      DateTime?
+  createdAt      DateTime       @default(now())
+
+  tenant      Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  submittedBy User   @relation("ApprovalSubmitter", fields: [submittedById], references: [id])
+  reviewer    User?  @relation("ApprovalReviewer", fields: [reviewerId], references: [id])
+
+  @@index([tenantId])
+  @@index([status])
+  @@index([entityType, entityId])
+}
+
+model ActivityLog {
+  id         String   @id @default(uuid())
+  tenantId   String
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String?
+  before     Json?
+  after      Json?
+  ipAddress  String?
+  occurredAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  actor  User?  @relation(fields: [actorId], references: [id])
+
+  @@index([tenantId])
+  @@index([entityType, entityId])
+}
+
+// ───────────────────────── Credits & Notifications ─────────────────────────
+
+model CreditAccount {
+  id            String   @id @default(uuid())
+  tenantId      String
+  userId        String   @unique
+  balance       Int      @default(0)
+  pricePerEmail Float    @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant       Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions CreditTransaction[]
+
+  @@index([tenantId])
+}
+
+model CreditTransaction {
+  id              String   @id @default(uuid())
+  creditAccountId String
+  delta           Int
+  reason          String
+  referenceId     String?
+  createdAt       DateTime @default(now())
+
+  creditAccount CreditAccount @relation(fields: [creditAccountId], references: [id], onDelete: Cascade)
+
+  @@index([creditAccountId])
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  type      String
+  title     String
+  body      String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}

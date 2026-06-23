@@ -1,0 +1,22 @@
+{
+  "name": "automated-email-outreach",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Admin-controlled, multi-client email outreach SaaS platform",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run start:dev --workspace apps/api",
+    "dev:web": "npm run dev --workspace apps/web",
+    "build": "npm run build --workspaces --if-present",
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down",
+    "db:migrate": "npm run prisma:migrate --workspace apps/api",
+    "db:generate": "npm run prisma:generate --workspace apps/api",
+    "db:seed": "npm run prisma:seed --workspace apps/api"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
