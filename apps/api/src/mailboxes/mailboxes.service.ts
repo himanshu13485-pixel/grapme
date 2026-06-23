@@ -3,6 +3,7 @@ import { ApprovalEntity, MailboxStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { ActivityService } from '../common/services/activity.service';
+import { MailerService } from '../sending/mailer.service';
 import {
   encryptCredential,
   decryptCredential,
@@ -35,6 +36,7 @@ export class MailboxesService {
     private prisma: PrismaService,
     private approvals: ApprovalsService,
     private activity: ActivityService,
+    private mailer: MailerService,
   ) {}
 
   list(user: AuthUser) {
@@ -90,16 +92,20 @@ export class MailboxesService {
    */
   async testConnection(user: AuthUser, id: string) {
     const account = await this.getOwned(user, id);
-    const ok =
-      account.protocol === 'SMTP'
-        ? Boolean(account.smtpHost && account.smtpPort)
-        : Boolean(account.imapHost && account.imapPort);
+    if (!account.smtpHost || !account.smtpPort) {
+      return {
+        mailboxId: id,
+        reachable: false,
+        detail: 'Missing SMTP host/port.',
+      };
+    }
+    const ok = await this.mailer.verify(account);
     return {
       mailboxId: id,
       reachable: ok,
       detail: ok
-        ? 'Configuration looks valid (live handshake runs at send time).'
-        : 'Missing host/port for the selected protocol.',
+        ? 'SMTP handshake succeeded.'
+        : 'SMTP handshake failed — check host, port, and app-password.',
     };
   }
 

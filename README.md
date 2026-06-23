@@ -87,11 +87,32 @@ Health check: `GET http://localhost:4000/api/v1/health`
 | GET | `/approvals` | Pending queue (admin/sub-admin) |
 | POST | `/approvals/:id/approve` `/reject` | Decide — drives the entity live |
 
+## Sending engine (Phase 2)
+
+Background workers (BullMQ + Redis) — start automatically with the API:
+
+- **Dispatcher** (`dispatch` queue, repeats every 60s) — finds campaigns whose
+  schedule is `APPROVED` and due, fans out an initial send + each follow-up step
+  per eligible contact (active, not suppressed), capped at the daily limit,
+  spaced by `sendSpeedSeconds` + jitter (warm-up friendly).
+- **Send worker** (`send` queue, concurrency 5) — renders the template against
+  contact fields, injects open pixel + click-tracked links + unsubscribe footer,
+  sends via the mailbox's decrypted SMTP (nodemailer), records `SENT`/`FAILED`
+  with retry/backoff; skips follow-ups once a reply is detected.
+- **Reply poller** (`replies` queue, repeats every 5 min) — IMAP-polls active
+  mailboxes and records `REPLY` events (auto-stops sequences).
+
+Public tracking endpoints (unauthenticated):
+
+| `GET /t/open/:messageId.png` | 1×1 pixel → `OPEN` event |
+| `GET /t/click/:messageId?u=…` | record `CLICK` → 302 redirect |
+| `GET /unsubscribe/:messageId` | suppress + `UNSUBSCRIBE` event |
+
 ## Implementation status
 
 - [x] **Phase 0** — Monorepo, full Prisma schema, auth + RBAC foundation, users module
 - [x] **Phase 1** — Approval engine, mailboxes (encrypted), contacts + staged import, templates, campaigns + follow-up steps + scheduling
-- [ ] **Phase 2** — BullMQ sending engine + open/click tracking + IMAP reply detection
+- [x] **Phase 2** — BullMQ sending engine (dispatcher + send worker), nodemailer SMTP, warm-up spacing/jitter + daily caps, open/click/unsubscribe tracking, IMAP reply detection
 - [ ] **Phase 3** — Follow-ups, IMAP reply detection, inbox views
 - [ ] **Phase 4** — Sub-admins, credits, audit logs, admin dashboard
 - [ ] **Phase 5** — Deliverability checks, compliance tooling, web UI polish
