@@ -14,6 +14,10 @@ import { TemplatesModule } from './templates/templates.module';
 import { CampaignsModule } from './campaigns/campaigns.module';
 import { SendingModule } from './sending/sending.module';
 import { TrackingModule } from './tracking/tracking.module';
+import { ReportsModule } from './reports/reports.module';
+import { SubAdminsModule } from './sub-admins/sub-admins.module';
+import { CreditsModule } from './credits/credits.module';
+import { MessagesModule } from './messages/messages.module';
 import { HealthController } from './health.controller';
 
 // The sending engine needs Redis. Set QUEUE_ENABLED=false to run the rest of
@@ -35,6 +39,10 @@ const engineModules = queueEnabled ? [QueueModule, SendingModule] : [];
     TemplatesModule,
     CampaignsModule,
     TrackingModule,
+    ReportsModule,
+    SubAdminsModule,
+    CreditsModule,
+    MessagesModule,
     ...engineModules,
   ],
   controllers: [HealthController],

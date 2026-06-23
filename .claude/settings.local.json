@@ -12,7 +12,14 @@
       "Bash(cat \"/c/Users/God Gift/AppData/Local/Temp/aeo_pg.log\" 2>/dev/null | head -50; echo \"=== exit marker ===\")",
       "Bash(node -e \"console.log\\(require.resolve\\('embedded-postgres'\\)\\)\")",
       "PowerShell($env:DATABASE_URL=\"postgresql://aeo:aeo_password@localhost:5432/aeo?schema=public\"; cd \"C:\\\\Users\\\\God Gift\\\\aeo\\\\apps\\\\api\"; npx prisma migrate dev --name init 2>&1 | Select-Object -Last 20)",
-      "Bash(curl -s -m 4 http://localhost:4000/api/v1/health)"
+      "Bash(curl -s -m 4 http://localhost:4000/api/v1/health)",
+      "Bash(curl -s -m4 -o /dev/null -w \"web HTTP %{http_code}\\\\n\" http://localhost:3000/login)",
+      "Bash(curl -s -m4 -o /dev/null -w \"api HTTP %{http_code}\\\\n\" http://localhost:4000/api/v1/health)",
+      "Bash(curl -s -m15 -o /dev/null -w \"web HTTP %{http_code}\\\\n\" http://localhost:3000/login)",
+      "Bash(curl -s -m4 -o /dev/null -w \"api  HTTP %{http_code}\\\\n\" http://localhost:4000/api/v1/health)",
+      "Bash(curl -s -m4 -o /dev/null -w \"web  HTTP %{http_code}\\\\n\" http://localhost:3000/login)",
+      "Bash(curl -s -m4 -o /dev/null -w \"pg port: %{http_code}\\\\n\" http://localhost:5432)",
+      "Bash(curl -s -m4 http://localhost:4000/api/v1/health)"
     ]
   }
 }

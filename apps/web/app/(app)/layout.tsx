@@ -10,8 +10,12 @@ const NAV = [
   { href: '/campaigns', label: 'Campaigns', icon: '✈' },
   { href: '/contacts', label: 'Contacts', icon: '☰' },
   { href: '/templates', label: 'Templates', icon: '❏' },
+  { href: '/mailbox', label: 'Inbox & Sent', icon: '📥' },
   { href: '/mailboxes', label: 'Mailboxes', icon: '✉' },
+  { href: '/credits', label: 'Credits', icon: '◈' },
   { href: '/approvals', label: 'Approvals', icon: '✓', admin: true },
+  { href: '/sub-admins', label: 'Sub Admins', icon: '⚇', admin: true },
+  { href: '/activity-logs', label: 'Activity Logs', icon: '◷', admin: true },
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {

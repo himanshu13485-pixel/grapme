@@ -14,28 +14,35 @@ interface Campaign {
   _count?: { messages: number; steps: number };
 }
 
+interface Summary {
+  totalCampaigns: number;
+  activeCampaigns: number;
+  pendingApprovals: number;
+  sent: number;
+  opens: number;
+  replies: number;
+  openRate: number;
+  replyRate: number;
+  bounceRate: number;
+}
+
 export default function DashboardPage() {
   const { user } = useAuth();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [pending, setPending] = useState(0);
+  const [summary, setSummary] = useState<Summary | null>(null);
 
   useEffect(() => {
     api.get<Campaign[]>('/campaigns').then(setCampaigns).catch(() => {});
-    if (user && user.role !== 'USER') {
-      api
-        .get<unknown[]>('/approvals?status=PENDING')
-        .then((rows) => setPending(rows.length))
-        .catch(() => {});
-    }
+    api.get<Summary>('/dashboard/summary').then(setSummary).catch(() => {});
   }, [user]);
 
-  const count = (s: string) => campaigns.filter((c) => c.status === s).length;
+  const pending = summary?.pendingApprovals ?? 0;
 
   const cards = [
-    { label: 'Total campaigns', value: campaigns.length },
-    { label: 'Running', value: count('RUNNING') },
-    { label: 'Scheduled', value: count('SCHEDULED') },
-    { label: 'Pending approval', value: count('PENDING') },
+    { label: 'Total campaigns', value: summary?.totalCampaigns ?? 0 },
+    { label: 'Active', value: summary?.activeCampaigns ?? 0 },
+    { label: 'Emails sent', value: summary?.sent ?? 0 },
+    { label: 'Reply rate', value: `${summary?.replyRate ?? 0}%` },
   ];
 
   return (

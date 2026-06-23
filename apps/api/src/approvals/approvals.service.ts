@@ -5,6 +5,7 @@ import {
   CampaignStatus,
   ImportStatus,
   MailboxStatus,
+  Role,
   ScheduleStatus,
 } from '@prisma/client';
 import { createHash } from 'crypto';
@@ -46,12 +47,22 @@ export class ApprovalsService {
     return approval;
   }
 
-  list(tenantId: string, query: ListApprovalsQuery) {
+  async list(reviewer: AuthUser, query: ListApprovalsQuery) {
+    // A sub-admin only reviews items submitted by their assigned users.
+    let submitterFilter = {};
+    if (reviewer.role === Role.SUB_ADMIN) {
+      const rows = await this.prisma.subAdminAssignment.findMany({
+        where: { subAdminId: reviewer.userId, assignedUserId: { not: null } },
+        select: { assignedUserId: true },
+      });
+      submitterFilter = { submittedById: { in: rows.map((r) => r.assignedUserId!) } };
+    }
     return this.prisma.approval.findMany({
       where: {
-        tenantId,
+        tenantId: reviewer.tenantId,
         status: query.status,
         entityType: query.entityType,
+        ...submitterFilter,
       },
       orderBy: { createdAt: 'desc' },
       include: {

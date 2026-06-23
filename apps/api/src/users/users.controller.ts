@@ -35,8 +35,8 @@ export class UsersController {
 
   @Roles(Role.SUPER_ADMIN, Role.SUB_ADMIN)
   @Get()
-  list(@CurrentUser('tenantId') tenantId: string) {
-    return this.users.list(tenantId);
+  list(@CurrentUser() user: AuthUser) {
+    return this.users.list(user);
   }
 
   @Roles(Role.SUPER_ADMIN)

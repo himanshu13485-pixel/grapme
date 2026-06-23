@@ -22,11 +22,8 @@ export class ApprovalsController {
   constructor(private readonly approvals: ApprovalsService) {}
 
   @Get()
-  list(
-    @CurrentUser('tenantId') tenantId: string,
-    @Query() query: ListApprovalsQuery,
-  ) {
-    return this.approvals.list(tenantId, query);
+  list(@CurrentUser() user: AuthUser, @Query() query: ListApprovalsQuery) {
+    return this.approvals.list(user, query);
   }
 
   @HttpCode(200)

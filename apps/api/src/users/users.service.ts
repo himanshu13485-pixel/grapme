@@ -7,6 +7,7 @@ import { Role } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateUserDto, UpdateProfileDto } from './dto/users.dto';
+import { AuthUser } from '../common/decorators/current-user.decorator';
 
 const PUBLIC_FIELDS = {
   id: true,
@@ -24,10 +25,21 @@ const PUBLIC_FIELDS = {
 export class UsersService {
   constructor(private prisma: PrismaService) {}
 
-  /** Tenant-scoped list — never leaks across tenants. */
-  list(tenantId: string) {
+  /**
+   * Tenant-scoped list. A SUB_ADMIN sees only the users assigned to them;
+   * a SUPER_ADMIN sees the whole tenant.
+   */
+  async list(user: AuthUser) {
+    let idFilter: { id?: { in: string[] } } = {};
+    if (user.role === Role.SUB_ADMIN) {
+      const rows = await this.prisma.subAdminAssignment.findMany({
+        where: { subAdminId: user.userId, assignedUserId: { not: null } },
+        select: { assignedUserId: true },
+      });
+      idFilter = { id: { in: rows.map((r) => r.assignedUserId!) } };
+    }
     return this.prisma.user.findMany({
-      where: { tenantId },
+      where: { tenantId: user.tenantId, ...idFilter },
       select: PUBLIC_FIELDS,
       orderBy: { createdAt: 'desc' },
     });

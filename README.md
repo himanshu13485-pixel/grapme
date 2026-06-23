@@ -97,8 +97,25 @@ Health check: `GET http://localhost:4000/api/v1/health`
 | POST | `/campaigns/:id/schedule` | Schedule approved campaign (→ SCHEDULE approval) |
 | POST | `/campaigns/:id/pause` `/resume` | Lifecycle control |
 | GET | `/campaigns/:id/analytics` | Performance aggregation |
-| GET | `/approvals` | Pending queue (admin/sub-admin) |
+| GET | `/approvals` | Pending queue (admin/sub-admin, scoped) |
 | POST | `/approvals/:id/approve` `/reject` | Decide — drives the entity live |
+
+## Admin & multi-tenant endpoints (Phase 4)
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/dashboard/summary` | Role-aware aggregates (super=tenant, sub=assigned, user=own) |
+| GET | `/activity-logs` | Append-only audit trail (admin) |
+| GET | `/sub-admins` | List sub-admins + assignment counts |
+| GET/POST | `/sub-admins/:id/assignments` | View / assign users or campaigns to a sub-admin |
+| DELETE | `/sub-admins/assignments/:id` | Remove an assignment |
+| GET | `/credits/me` | Caller's own balance |
+| GET | `/credits/:userId` | A user's balance (admin) |
+| POST | `/credits/:userId/adjust` | Grant/deduct credits (super-admin) |
+| GET | `/mailbox/{inbox,sent,scheduled,failed,drafts}` | Message views by direction/status |
+
+**Sub-admin scoping:** a `SUB_ADMIN`'s `/users`, `/approvals`, and `/dashboard/summary`
+are filtered to only the users assigned to them via `SubAdminAssignment`.
 
 ## Sending engine (Phase 2)
 
@@ -127,5 +144,5 @@ Public tracking endpoints (unauthenticated):
 - [x] **Phase 1** — Approval engine, mailboxes (encrypted), contacts + staged import, templates, campaigns + follow-up steps + scheduling
 - [x] **Phase 2** — BullMQ sending engine (dispatcher + send worker), nodemailer SMTP, warm-up spacing/jitter + daily caps, open/click/unsubscribe tracking, IMAP reply detection
 - [x] **Phase 3** — Next.js web app: auth (login/register), dashboard, campaigns + builder/detail, approval center, contacts, templates, mailboxes
-- [ ] **Phase 4** — Sub-admins, credits, audit-log UI, admin dashboard aggregates, inbox/sent views
+- [x] **Phase 4** — Sub-admins + assignment scoping, credits (grant/deduct), audit-log UI, role-aware dashboard aggregates, inbox/sent/scheduled/failed views
 - [ ] **Phase 5** — Deliverability checks, compliance tooling, polish & load testing
