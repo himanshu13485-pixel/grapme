@@ -7,7 +7,7 @@ import {
   useState,
   ReactNode,
 } from 'react';
-import { api, setToken } from './api';
+import { api, setToken, setRefreshToken, clearTokens } from './api';
 
 export interface AuthUser {
   id: string;
@@ -56,6 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       password,
     });
     setToken(res.accessToken);
+    setRefreshToken(res.refreshToken);
     setUser(res.user);
   }
 
@@ -72,11 +73,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       tenantName,
     });
     setToken(res.accessToken);
+    setRefreshToken(res.refreshToken);
     setUser(res.user);
   }
 
   function logout() {
-    setToken(null);
+    clearTokens();
     setUser(null);
   }
 

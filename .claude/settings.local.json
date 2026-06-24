@@ -21,7 +21,9 @@
       "Bash(curl -s -m4 -o /dev/null -w \"pg port: %{http_code}\\\\n\" http://localhost:5432)",
       "Bash(curl -s -m4 http://localhost:4000/api/v1/health)",
       "Bash(node -e \"const dns=require\\('dns'\\).promises; \\(async\\(\\)=>{ try { const mx=await dns.resolveMx\\('gmail.com'\\); console.log\\('gmail MX count:', mx.length, mx[0]\\); } catch\\(e\\){ console.log\\('MX error:', e.code\\); } try { const txt=await dns.resolveTxt\\('google.com'\\); console.log\\('google TXT records:', txt.length\\); } catch\\(e\\){ console.log\\('TXT error:', e.code\\); } }\\)\\(\\)\")",
-      "PowerShell($dir = \"$env:USERPROFILE\\\\aeo\\\\.redis\"; & \"$dir\\\\redis-server.exe\" --port 6379 --save \"\" --appendonly no 2>&1 | Out-File \"$env:TEMP\\\\aeo_redis.log\" -Encoding utf8)"
+      "PowerShell($dir = \"$env:USERPROFILE\\\\aeo\\\\.redis\"; & \"$dir\\\\redis-server.exe\" --port 6379 --save \"\" --appendonly no 2>&1 | Out-File \"$env:TEMP\\\\aeo_redis.log\" -Encoding utf8)",
+      "Bash(curl -s -m15 -o /dev/null -w \"web /login HTTP %{http_code}\\\\n\" http://localhost:3000/login)",
+      "Bash(curl -s -m15 -o /dev/null -w \"web /mailboxes HTTP %{http_code}\\\\n\" http://localhost:3000/mailboxes)"
     ]
   }
 }
