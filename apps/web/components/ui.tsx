@@ -52,3 +52,75 @@ export function EmptyState({ message }: { message: string }) {
     </div>
   );
 }
+
+export function Modal({
+  open,
+  onClose,
+  title,
+  children,
+  wide,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  children: ReactNode;
+  wide?: boolean;
+}) {
+  if (!open) return null;
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className={`card my-8 w-full ${wide ? 'max-w-3xl' : 'max-w-lg'} p-6`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-lg font-semibold">{title}</h2>
+          <button
+            onClick={onClose}
+            className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+            aria-label="Close"
+          >
+            ✕
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+export function Tabs({
+  tabs,
+  active,
+  onChange,
+}: {
+  tabs: { key: string; label: string; count?: number }[];
+  active: string;
+  onChange: (key: string) => void;
+}) {
+  return (
+    <div className="mb-5 flex gap-1 border-b border-slate-200">
+      {tabs.map((t) => (
+        <button
+          key={t.key}
+          onClick={() => onChange(t.key)}
+          className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium transition ${
+            active === t.key
+              ? 'border-brand-600 text-brand-700'
+              : 'border-transparent text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          {t.label}
+          {typeof t.count === 'number' && (
+            <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
+              {t.count}
+            </span>
+          )}
+        </button>
+      ))}
+    </div>
+  );
+}
