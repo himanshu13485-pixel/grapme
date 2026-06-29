@@ -284,6 +284,16 @@ export class ContactsService {
     return list;
   }
 
+  /** Delete a list (its membership rows cascade; contacts are untouched). */
+  async removeList(user: AuthUser, id: string) {
+    const list = await this.prisma.contactList.findFirst({
+      where: { id, tenantId: user.tenantId },
+    });
+    if (!list) throw new NotFoundException('List not found');
+    await this.prisma.contactList.delete({ where: { id } });
+    return { ok: true };
+  }
+
   /** Add existing contacts to a list (idempotent). */
   async addMembers(user: AuthUser, listId: string, contactIds: string[]) {
     const list = await this.prisma.contactList.findFirst({

@@ -12,6 +12,7 @@ import {
 
 export class CreateClientDto {
   @IsString() name: string;
+  @IsOptional() @IsString() invoiceNo?: string;
   @IsOptional() @IsString() plan?: string;
   @IsOptional() @IsInt() @Min(1) monthlyQuota?: number;
   @IsOptional() @IsInt() @Min(1) dailyBatchSize?: number;
@@ -26,6 +27,7 @@ export class CreateClientDto {
 
 export class UpdateClientDto {
   @IsOptional() @IsString() name?: string;
+  @IsOptional() @IsString() invoiceNo?: string;
   @IsOptional() @IsString() status?: string;
   @IsOptional() @IsString() plan?: string;
   @IsOptional() @IsInt() @Min(1) monthlyQuota?: number;

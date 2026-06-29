@@ -637,6 +637,7 @@ model Client {
   id                String   @id @default(uuid())
   tenantId          String
   name              String
+  invoiceNo         String?  // company invoice / account reference
   status            String   @default("active")
   plan              String   @default("GROWTH")
   termStartedAt     DateTime @default(now())

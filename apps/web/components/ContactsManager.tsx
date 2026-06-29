@@ -68,6 +68,16 @@ export function ContactsManager({ clientId }: { clientId?: string }) {
   }
   useEffect(loadAll, [clientId]);
 
+  async function deleteContact(c: Contact) {
+    if (!confirm(`Delete ${c.email} permanently?`)) return;
+    try {
+      await api.del(`/contacts/${c.id}`);
+      loadAll();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to delete contact');
+    }
+  }
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return contacts.filter((c) => {
@@ -190,12 +200,18 @@ export function ContactsManager({ clientId }: { clientId?: string }) {
                       <td className="px-5 py-3">
                         <StatusBadge status={c.status} />
                       </td>
-                      <td className="px-5 py-3 text-right">
+                      <td className="px-5 py-3 text-right whitespace-nowrap">
                         <button
                           className="btn-ghost text-xs"
                           onClick={() => setEditing(c)}
                         >
                           Edit
+                        </button>
+                        <button
+                          className="btn-ghost text-xs text-rose-600"
+                          onClick={() => deleteContact(c)}
+                        >
+                          Delete
                         </button>
                       </td>
                     </tr>
@@ -381,6 +397,10 @@ export function ContactsManager({ clientId }: { clientId?: string }) {
             list={viewingList}
             allContacts={contacts}
             onChanged={loadAll}
+            onDeleted={() => {
+              setViewingList(null);
+              loadAll();
+            }}
           />
         )}
       </Modal>
@@ -775,10 +795,12 @@ function ListDetail({
   list,
   allContacts,
   onChanged,
+  onDeleted,
 }: {
   list: List;
   allContacts: Contact[];
   onChanged: () => void;
+  onDeleted: () => void;
 }) {
   const [members, setMembers] = useState<Contact[]>([]);
   const [selected, setSelected] = useState<string[]>([]); // members to remove
@@ -840,8 +862,38 @@ function ListDetail({
     }
   }
 
+  async function deleteList() {
+    if (
+      !confirm(
+        `Delete the list "${list.name}"? Contacts stay, but the list and its membership are removed.`,
+      )
+    )
+      return;
+    setBusy(true);
+    try {
+      await api.del(`/contact-lists/${list.id}`);
+      onDeleted();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to delete list');
+      setBusy(false);
+    }
+  }
+
   return (
-    <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+    <div className="space-y-4">
+      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+        <div className="text-sm text-slate-500">
+          {list.description || 'Manage this list’s members below.'}
+        </div>
+        <button
+          className="btn-ghost text-xs text-rose-600"
+          onClick={deleteList}
+          disabled={busy}
+        >
+          Delete list
+        </button>
+      </div>
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
       {/* Members */}
       <div>
         <div className="mb-2 flex items-center justify-between">
@@ -934,6 +986,7 @@ function ListDetail({
             ))}
           </div>
         )}
+      </div>
       </div>
     </div>
   );

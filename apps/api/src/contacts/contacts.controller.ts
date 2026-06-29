@@ -74,6 +74,11 @@ export class ContactsController {
     return this.contacts.getList(user, id);
   }
 
+  @Delete('contact-lists/:id')
+  removeList(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.contacts.removeList(user, id);
+  }
+
   @Post('contact-lists/:id/members')
   addMembers(
     @CurrentUser() user: AuthUser,

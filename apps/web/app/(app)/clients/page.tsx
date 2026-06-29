@@ -8,18 +8,27 @@ import { PageHeader, EmptyState, Modal, StatusBadge } from '@/components/ui';
 interface Client {
   id: string;
   name: string;
+  invoiceNo?: string;
   plan: string;
   status: string;
   monthlyQuota: number;
   dailyBatchSize: number;
+  batchWindowDays: number;
+  stageIntervalDays: number;
   followUpCount: number;
+  weekdaysOnly: boolean;
+  sendWindowStart: number;
+  sendWindowEnd: number;
+  stageIntervalJitterDays: number;
   _count?: { mailboxes: number; cohorts: number; enrollments: number };
 }
 
 export default function ClientsPage() {
   const [clients, setClients] = useState<Client[]>([]);
   const [show, setShow] = useState(false);
+  const [viewing, setViewing] = useState<Client | null>(null);
   const [q, setQ] = useState('');
+  const [invoiceQ, setInvoiceQ] = useState('');
 
   function load() {
     api.get<Client[]>('/clients').then(setClients).catch(() => {});
@@ -28,11 +37,15 @@ export default function ClientsPage() {
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
-    if (!s) return clients;
-    return clients.filter((c) =>
-      [c.name, c.plan].filter(Boolean).some((v) => v.toLowerCase().includes(s)),
-    );
-  }, [clients, q]);
+    const inv = invoiceQ.trim().toLowerCase();
+    return clients.filter((c) => {
+      if (inv && !(c.invoiceNo ?? '').toLowerCase().includes(inv)) return false;
+      if (!s) return true;
+      return [c.name, c.plan, c.invoiceNo]
+        .filter(Boolean)
+        .some((v) => v!.toLowerCase().includes(s));
+    });
+  }, [clients, q, invoiceQ]);
 
   return (
     <div>
@@ -50,12 +63,18 @@ export default function ClientsPage() {
         <EmptyState message="No clients yet. Create one to set up its mailbox group and outreach." />
       ) : (
         <>
-        <div className="mb-4 flex items-center gap-3">
+        <div className="mb-4 flex flex-wrap items-center gap-3">
           <input
             className="input max-w-xs"
-            placeholder="Search clients by name…"
+            placeholder="Search by company / plan…"
             value={q}
             onChange={(e) => setQ(e.target.value)}
+          />
+          <input
+            className="input w-48"
+            placeholder="Filter by invoice no.…"
+            value={invoiceQ}
+            onChange={(e) => setInvoiceQ(e.target.value)}
           />
           <span className="ml-auto text-sm text-slate-400">
             {filtered.length} of {clients.length}
@@ -71,14 +90,27 @@ export default function ClientsPage() {
                 <div className="font-medium text-slate-800">{c.name}</div>
                 <StatusBadge status={c.status === 'active' ? 'ACTIVE' : c.status} />
               </div>
-              <div className="mt-1 text-xs text-slate-400">{c.plan}</div>
+              <div className="mt-1 text-xs text-slate-400">
+                {c.plan}
+                {c.invoiceNo && <span> · Invoice {c.invoiceNo}</span>}
+              </div>
               <div className="mt-4 grid grid-cols-3 gap-2 text-center">
                 <Stat label="Mailboxes" value={c._count?.mailboxes ?? 0} />
                 <Stat label="Cohorts" value={c._count?.cohorts ?? 0} />
                 <Stat label="Contacts" value={c._count?.enrollments ?? 0} />
               </div>
-              <div className="mt-3 text-xs text-slate-400">
-                {c.dailyBatchSize}/day · {c.followUpCount} follow-ups · {c.monthlyQuota}/mo
+              <div className="mt-3 flex items-center justify-between text-xs text-slate-400">
+                <span>{c.dailyBatchSize}/day · {c.followUpCount} follow-ups · {c.monthlyQuota}/mo</span>
+                <button
+                  type="button"
+                  className="text-brand-600 hover:underline"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setViewing(c);
+                  }}
+                >
+                  View
+                </button>
               </div>
             </Link>
           ))}
@@ -95,6 +127,45 @@ export default function ClientsPage() {
           }}
         />
       </Modal>
+
+      <Modal
+        open={!!viewing}
+        onClose={() => setViewing(null)}
+        title={viewing ? `Client · ${viewing.name}` : 'Client'}
+      >
+        {viewing && <ClientDetailView client={viewing} />}
+      </Modal>
+    </div>
+  );
+}
+
+function ClientDetailView({ client }: { client: Client }) {
+  const rows: { label: string; value: string }[] = [
+    { label: 'Company name', value: client.name },
+    { label: 'Invoice no.', value: client.invoiceNo || '—' },
+    { label: 'Plan', value: client.plan },
+    { label: 'Status', value: client.status },
+    { label: 'Contacts / month', value: String(client.monthlyQuota) },
+    { label: 'Sends / day', value: String(client.dailyBatchSize) },
+    { label: 'Batch window (days)', value: String(client.batchWindowDays) },
+    { label: 'Gap between stages (days)', value: String(client.stageIntervalDays) },
+    { label: 'Follow-ups (after initial)', value: String(client.followUpCount) },
+    { label: 'Send window', value: `${hourLabel(client.sendWindowStart)} – ${hourLabel(client.sendWindowEnd)}` },
+    { label: 'Interval jitter (± days)', value: String(client.stageIntervalJitterDays) },
+    { label: 'Weekdays only', value: client.weekdaysOnly ? 'Yes' : 'No' },
+  ];
+  return (
+    <div className="overflow-hidden rounded-lg border border-slate-200">
+      <table className="w-full text-sm">
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.label} className="border-b border-slate-100 last:border-0">
+              <td className="bg-slate-50 px-4 py-2.5 font-medium text-slate-500">{r.label}</td>
+              <td className="px-4 py-2.5 text-slate-800">{r.value}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -111,6 +182,7 @@ function Stat({ label, value }: { label: string; value: number }) {
 function NewClientForm({ onDone }: { onDone: () => void }) {
   const [form, setForm] = useState({
     name: '',
+    invoiceNo: '',
     plan: 'GROWTH',
     monthlyQuota: 100,
     dailyBatchSize: 10,
@@ -132,6 +204,7 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
     try {
       await api.post('/clients', {
         ...form,
+        invoiceNo: form.invoiceNo || undefined,
         monthlyQuota: Number(form.monthlyQuota),
         dailyBatchSize: Number(form.dailyBatchSize),
         batchWindowDays: Number(form.batchWindowDays),
@@ -153,12 +226,21 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
     <form onSubmit={submit} className="space-y-4">
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="label">Client name *</label>
+          <label className="label">Company name *</label>
           <input
             className="input"
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
             required
+          />
+        </div>
+        <div>
+          <label className="label">Invoice no.</label>
+          <input
+            className="input"
+            value={form.invoiceNo}
+            onChange={(e) => setForm({ ...form, invoiceNo: e.target.value })}
+            placeholder="e.g. INV-2026-014"
           />
         </div>
         <div>
