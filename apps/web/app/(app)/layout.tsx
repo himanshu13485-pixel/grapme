@@ -8,6 +8,7 @@ import { useAuth } from '@/lib/auth';
 const NAV = [
   { href: '/dashboard', label: 'Dashboard', icon: '▦' },
   { href: '/clients', label: 'Clients Workspace', icon: '🏢', admin: true },
+  { href: '/cohort-schedule', label: 'Cohort Schedule', icon: '📅', admin: true },
   { href: '/campaigns', label: 'Campaigns', icon: '✈' },
   { href: '/contacts', label: 'Contacts', icon: '☰' },
   { href: '/templates', label: 'Templates', icon: '❏' },

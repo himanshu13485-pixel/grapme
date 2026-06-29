@@ -79,6 +79,12 @@ export class ProgramsController {
     return this.programs.setSequence(user, id, dto);
   }
 
+  // Tenant-wide daily line-up across all clients' running cohorts
+  @Get('programs/agenda')
+  agenda(@CurrentUser() user: AuthUser) {
+    return this.programs.agenda(user);
+  }
+
   // Per-cohort sequence (its own plan; falls back to the client default)
   @Get('cohorts/:cohortId/sequence')
   getCohortSequence(

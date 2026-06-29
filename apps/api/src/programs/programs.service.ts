@@ -454,6 +454,95 @@ export class ProgramsService {
     });
   }
 
+  /** Tenant-wide agenda: every upcoming send across all running cohorts of all
+   *  clients, in date order (for the global "daily line-up" view). */
+  async agenda(user: AuthUser) {
+    const clients = await this.prisma.client.findMany({
+      where: { tenantId: user.tenantId },
+      select: {
+        id: true,
+        name: true,
+        batchWindowDays: true,
+        followUpCount: true,
+        stageIntervalDays: true,
+      },
+    });
+    const clientMap = new Map(clients.map((c) => [c.id, c]));
+
+    const cohorts = await this.prisma.cohort.findMany({
+      where: { tenantId: user.tenantId, status: 'RUNNING' },
+      select: {
+        id: true,
+        clientId: true,
+        label: true,
+        monthIndex: true,
+        startDate: true,
+      },
+    });
+
+    const allSteps = await this.prisma.sequenceStep.findMany({
+      where: { client: { tenantId: user.tenantId } },
+      select: { clientId: true, cohortId: true, stageOrder: true, waitDays: true },
+      orderBy: { stageOrder: 'asc' },
+    });
+    const defaultByClient = new Map<string, typeof allSteps>();
+    const byCohort = new Map<string, typeof allSteps>();
+    for (const s of allSteps) {
+      const map = s.cohortId ? byCohort : defaultByClient;
+      const key = s.cohortId ?? s.clientId;
+      const arr = map.get(key) ?? [];
+      arr.push(s);
+      map.set(key, arr);
+    }
+
+    const today = new Date();
+    const rows: Array<{
+      clientName: string;
+      cohortLabel: string;
+      monthIndex: number;
+      stage: string;
+      estStart: Date;
+      estEnd: Date;
+      state: 'current' | 'upcoming';
+    }> = [];
+
+    for (const co of cohorts) {
+      const client = clientMap.get(co.clientId);
+      if (!client) continue;
+      const steps = byCohort.get(co.id)?.length
+        ? byCohort.get(co.id)!
+        : (defaultByClient.get(co.clientId) ?? []);
+      const maxStage = steps.reduce(
+        (m, s) => Math.max(m, s.stageOrder),
+        client.followUpCount,
+      );
+      let cursor = new Date(co.startDate);
+      for (let stage = 0; stage <= maxStage; stage++) {
+        const wait =
+          steps.find((s) => s.stageOrder === stage)?.waitDays ??
+          (stage === 0 ? 0 : client.stageIntervalDays);
+        if (stage > 0) cursor = addBusinessDays(cursor, wait);
+        const estStart = new Date(cursor);
+        const estEnd = addBusinessDays(
+          estStart,
+          Math.max(0, client.batchWindowDays - 1),
+        );
+        if (today > estEnd) continue; // already done
+        rows.push({
+          clientName: client.name,
+          cohortLabel: co.label,
+          monthIndex: co.monthIndex,
+          stage: stage === 0 ? 'Initial' : `Follow-up ${stage}`,
+          estStart,
+          estEnd,
+          state: today >= estStart ? 'current' : 'upcoming',
+        });
+      }
+    }
+    rows.sort((a, b) => a.estStart.getTime() - b.estStart.getTime());
+    return rows;
+  }
+
   // ── Cohort lifecycle: pause / resume / stop ───────────────
   async pauseCohort(user: AuthUser, cohortId: string) {
     await this.assertCohort(user, cohortId);
