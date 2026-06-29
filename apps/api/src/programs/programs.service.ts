@@ -802,9 +802,43 @@ export class ProgramsService {
         }
 
         const cohortSteps = stepsFor(enr.cohortId);
+        const maxStage = cohortSteps.reduce(
+          (m, s) => Math.max(m, s.stageOrder),
+          0,
+        );
+        // Advance an enrollment past a stage WITHOUT sending (used when the
+        // stage has no template, or after a successful send): move to the next
+        // stage scheduled by that stage's own waitDays, else complete.
+        const advanceStage = (current: number) => {
+          const nextStage = current + 1;
+          if (nextStage > maxStage) {
+            return this.prisma.enrollment.update({
+              where: { id: enr.id },
+              data: { status: EnrollmentStatus.COMPLETED, lastSentAt: now },
+            });
+          }
+          const jitter = client.stageIntervalJitterDays;
+          const baseWait =
+            cohortSteps.find((s) => s.stageOrder === nextStage)?.waitDays ??
+            client.stageIntervalDays;
+          const gap = Math.max(1, baseWait + randomInt(-jitter, jitter));
+          const nextTouchAt = withSendTime(
+            addBusinessDays(now, gap),
+            client.sendWindowStart,
+            client.sendWindowEnd,
+          );
+          return this.prisma.enrollment.update({
+            where: { id: enr.id },
+            data: { stage: nextStage, nextTouchAt },
+          });
+        };
+
         const templateId =
           cohortSteps.find((s) => s.stageOrder === enr.stage)?.templateId ?? null;
         if (!templateId) {
+          // Empty touch (e.g. a skipped month): pass through to the next stage
+          // instead of stalling here forever so later filled stages still fire.
+          await advanceStage(enr.stage);
           skipped++;
           continue;
         }
@@ -838,35 +872,12 @@ export class ProgramsService {
           sent++;
           sentToday.set(mailbox.id, (sentToday.get(mailbox.id) ?? 0) + 1);
           lastSentMs.set(mailbox.id, nowMs);
-          // Cap by THIS cohort's own sequence length (not the client default).
-          const maxStage = cohortSteps.reduce(
-            (m, s) => Math.max(m, s.stageOrder),
-            0,
-          );
-          const nextStage = enr.stage + 1;
-          if (nextStage > maxStage) {
-            await this.prisma.enrollment.update({
-              where: { id: enr.id },
-              data: { status: EnrollmentStatus.COMPLETED, lastSentAt: now },
-            });
-          } else {
-            // Gap until the next stage = that stage's own waitDays (falls back
-            // to the client's default), jittered ± a few days to look human.
-            const jitter = client.stageIntervalJitterDays;
-            const baseWait =
-              cohortSteps.find((s) => s.stageOrder === nextStage)?.waitDays ??
-              client.stageIntervalDays;
-            const gap = Math.max(1, baseWait + randomInt(-jitter, jitter));
-            const nextTouchAt = withSendTime(
-              addBusinessDays(now, gap),
-              client.sendWindowStart,
-              client.sendWindowEnd,
-            );
-            await this.prisma.enrollment.update({
-              where: { id: enr.id },
-              data: { stage: nextStage, lastSentAt: now, nextTouchAt },
-            });
-          }
+          // Record the send, then advance (capped by THIS cohort's own length).
+          await this.prisma.enrollment.update({
+            where: { id: enr.id },
+            data: { lastSentAt: now },
+          });
+          await advanceStage(enr.stage);
         } else {
           skipped++;
         }
