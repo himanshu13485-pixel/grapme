@@ -37,16 +37,26 @@ interface StageRow {
   state: 'done' | 'current' | 'upcoming';
 }
 
-/** Projected per-stage timeline for a cohort (Initial + each follow-up). */
+/** Projected per-stage timeline for a cohort (Initial + each follow-up), using
+ *  each stage's own waitDays cumulatively. */
 function buildSchedule(
-  cfg: { stageIntervalDays: number; batchWindowDays: number; followUpCount: number },
+  cfg: {
+    stageIntervalDays: number;
+    batchWindowDays: number;
+    followUpCount: number;
+    sequenceSteps: SeqStep[];
+  },
   startDateStr: string,
 ): StageRow[] {
-  const start = new Date(startDateStr);
+  const waitFor = (stage: number) =>
+    cfg.sequenceSteps.find((x) => x.stageOrder === stage)?.waitDays ??
+    cfg.stageIntervalDays;
   const today = new Date();
   const rows: StageRow[] = [];
+  let cursor = new Date(startDateStr); // stage-0 start
   for (let s = 0; s <= cfg.followUpCount; s++) {
-    const estStart = addBusinessDays(start, s * cfg.stageIntervalDays);
+    if (s > 0) cursor = addBusinessDays(cursor, waitFor(s));
+    const estStart = new Date(cursor);
     const estEnd = addBusinessDays(estStart, Math.max(0, cfg.batchWindowDays - 1));
     const state =
       today > estEnd ? 'done' : today >= estStart ? 'current' : 'upcoming';
@@ -66,6 +76,7 @@ interface SeqStep {
   id: string;
   stageOrder: number;
   templateId?: string;
+  waitDays?: number;
 }
 interface Client {
   id: string;
@@ -430,24 +441,36 @@ function SequenceEditor({
   templates: Template[];
   onChanged: () => void;
 }) {
-  // rows[stageOrder] = templateId ('' = none). Index 0 is the initial email.
-  const initialRows = useMemo(() => {
+  // Each stage carries its template + waitDays (business days after the previous
+  // stage). Index 0 is the initial email (sends immediately, no wait).
+  type Row = { templateId: string; waitDays: number };
+  const initialRows = useMemo<Row[]>(() => {
     const len = Math.max(client.followUpCount + 1, 1);
-    const arr: string[] = Array(len).fill('');
+    const arr: Row[] = Array.from({ length: len }, () => ({
+      templateId: '',
+      waitDays: client.stageIntervalDays,
+    }));
     client.sequenceSteps.forEach((s) => {
-      if (s.stageOrder < len) arr[s.stageOrder] = s.templateId ?? '';
+      if (s.stageOrder < len)
+        arr[s.stageOrder] = {
+          templateId: s.templateId ?? '',
+          waitDays: s.waitDays ?? client.stageIntervalDays,
+        };
     });
     return arr;
-  }, [client.followUpCount, client.sequenceSteps]);
+  }, [client.followUpCount, client.sequenceSteps, client.stageIntervalDays]);
 
-  const [rows, setRows] = useState<string[]>(initialRows);
+  const [rows, setRows] = useState<Row[]>(initialRows);
   const [busy, setBusy] = useState(false);
 
-  function setRow(i: number, v: string) {
-    setRows((prev) => prev.map((r, idx) => (idx === i ? v : r)));
+  function setTemplate(i: number, v: string) {
+    setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, templateId: v } : r)));
+  }
+  function setWait(i: number, v: number) {
+    setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, waitDays: v } : r)));
   }
   function addFollowUp() {
-    setRows((prev) => [...prev, '']);
+    setRows((prev) => [...prev, { templateId: '', waitDays: client.stageIntervalDays }]);
   }
   function removeStage(i: number) {
     if (i === 0) return; // initial is required
@@ -457,9 +480,10 @@ function SequenceEditor({
   async function save() {
     setBusy(true);
     try {
-      const steps = rows.map((templateId, stageOrder) => ({
+      const steps = rows.map((r, stageOrder) => ({
         stageOrder,
-        templateId: templateId || undefined,
+        templateId: r.templateId || undefined,
+        waitDays: r.waitDays,
       }));
       await api.put(`/clients/${client.id}/sequence`, { steps });
       onChanged();
@@ -471,26 +495,41 @@ function SequenceEditor({
   return (
     <div className="space-y-4">
       <p className="text-sm text-slate-500">
-        Pick the email template for each stage. Stage 0 is the initial email; stages advance
-        every {client.stageIntervalDays} days until a reply or the last follow-up. Saving sets
-        this client&apos;s follow-up count to match.
+        Pick the template for each stage and how many business days after the previous
+        stage it sends. Stage 0 is the initial email. Add as many follow-ups as you like —
+        e.g. Initial, FU-1 (+10d, same month), then FU-2…FU-12 (+21d each, monthly).
       </p>
       <div className="card divide-y divide-slate-100">
-        {rows.map((tid, i) => (
-          <div key={i} className="flex items-center gap-4 p-4">
-            <div className="w-28 text-sm font-medium text-slate-700">
+        {rows.map((row, i) => (
+          <div key={i} className="flex items-center gap-3 p-4">
+            <div className="w-24 text-sm font-medium text-slate-700">
               {i === 0 ? 'Initial' : `Follow-up ${i}`}
             </div>
             <select
               className="input flex-1"
-              value={tid}
-              onChange={(e) => setRow(i, e.target.value)}
+              value={row.templateId}
+              onChange={(e) => setTemplate(i, e.target.value)}
             >
               <option value="">— no template —</option>
               {templates.map((t) => (
                 <option key={t.id} value={t.id}>{t.name}</option>
               ))}
             </select>
+            {i === 0 ? (
+              <span className="w-36 text-xs text-slate-400">sends immediately</span>
+            ) : (
+              <div className="flex w-36 items-center gap-1">
+                <span className="text-xs text-slate-400">+</span>
+                <input
+                  type="number"
+                  className="input w-16"
+                  value={row.waitDays}
+                  onChange={(e) => setWait(i, Number(e.target.value))}
+                  title="Business days after the previous stage"
+                />
+                <span className="text-xs text-slate-400">days</span>
+              </div>
+            )}
             {i === 0 ? (
               <span className="w-16 text-xs text-slate-300">required</span>
             ) : (

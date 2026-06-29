@@ -19,6 +19,11 @@ start "AEO SMTP sink"      cmd /k "npm run dev:smtp"
 echo     ...waiting ~10s for the database to be ready...
 timeout /t 10 /nobreak >nul
 
+echo     ...applying any pending database migrations...
+pushd apps\api
+call npx prisma migrate deploy
+popd
+
 rem QUEUE_ENABLED=true turns on the sending engine (needs Redis, started above).
 start "AEO API"            cmd /k "set QUEUE_ENABLED=true&& set DISPATCH_SCAN_MS=10000&& npm run dev:api"
 

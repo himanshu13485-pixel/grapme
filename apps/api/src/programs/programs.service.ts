@@ -146,6 +146,7 @@ export class ProgramsService {
           clientId,
           stageOrder: step.stageOrder,
           templateId: step.templateId,
+          waitDays: step.waitDays ?? 10,
         },
       });
     }
@@ -497,6 +498,7 @@ export class ProgramsService {
       const templateByStage = new Map(
         steps.map((s) => [s.stageOrder, s.templateId]),
       );
+      const waitByStage = new Map(steps.map((s) => [s.stageOrder, s.waitDays]));
 
       // Per-mailbox throttle: today's send count (daily cap) + last send time
       // (for a human-like randomized gap between consecutive sends).
@@ -590,11 +592,12 @@ export class ProgramsService {
           } else {
             // Human-like: jitter the gap by ±stageIntervalJitterDays and pick a
             // random clock time within the client's send window.
+            // Gap until the next stage = that stage's own waitDays (falls back
+            // to the client's default), jittered ± a few days to look human.
             const jitter = client.stageIntervalJitterDays;
-            const gap = Math.max(
-              1,
-              client.stageIntervalDays + randomInt(-jitter, jitter),
-            );
+            const baseWait =
+              waitByStage.get(nextStage) ?? client.stageIntervalDays;
+            const gap = Math.max(1, baseWait + randomInt(-jitter, jitter));
             const nextTouchAt = withSendTime(
               addBusinessDays(now, gap),
               client.sendWindowStart,

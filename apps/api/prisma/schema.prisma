@@ -674,6 +674,7 @@ model SequenceStep {
   clientId   String
   stageOrder Int     // 0 = initial, 1 = FU-1, 2 = FU-2, …
   templateId String?
+  waitDays   Int     @default(10) // business days after the previous stage (ignored for stage 0)
 
   client   Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
   template EmailTemplate? @relation(fields: [templateId], references: [id])

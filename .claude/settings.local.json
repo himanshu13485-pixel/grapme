@@ -49,7 +49,8 @@
       "Bash(curl -s -o /dev/null -w \"health: %{http_code}\\\\n\" http://localhost:4000/api/v1/health)",
       "PowerShell($c = Get-NetTCPConnection -LocalPort 4000 -State Listen -ErrorAction SilentlyContinue; if \\($c\\) { taskkill /T /F /PID $c[0].OwningProcess > $null 2>&1; \"API stopped\" } else { \"none\" }; Start-Sleep -Seconds 2)",
       "Bash(cd \"C:/Users/God Gift/aeo/apps/api/src/deliverability\" && echo \"=== controller ===\" && cat *.controller.ts && echo \"=== service \\(email-auth part\\) ===\" && sed -n '1,120p' *.service.ts)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(grep -n \"interface SeqStep\\\\|function SequenceEditor\\\\|const initialRows\\\\|const \\\\[rows\\\\|addFollowUp\\\\|removeStage\\\\|api.put\\(\\\\`/clients\" page.tsx)"
     ]
   }
 }

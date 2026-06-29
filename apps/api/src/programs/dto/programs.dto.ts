@@ -49,6 +49,8 @@ export class AssignMailboxDto {
 export class SequenceStepDto {
   @IsInt() @Min(0) stageOrder: number;
   @IsOptional() @IsString() templateId?: string;
+  /** Business days after the previous stage (ignored for stage 0). */
+  @IsOptional() @IsInt() @Min(0) waitDays?: number;
 }
 
 export class SetSequenceDto {
