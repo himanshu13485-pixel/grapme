@@ -140,15 +140,28 @@ export class ProgramsService {
   async setSequence(user: AuthUser, clientId: string, dto: SetSequenceDto) {
     await this.assertClient(user, clientId);
     await this.prisma.sequenceStep.deleteMany({ where: { clientId } });
-    for (const step of dto.steps) {
+
+    // Stages are planned by month; derive the engine's day-gap from the month
+    // each stage sends in: same month as the previous stage → ~10-day in-month
+    // gap; each extra month → ~21 business days.
+    const sorted = [...dto.steps].sort((a, b) => a.stageOrder - b.stageOrder);
+    let prevMonth = 1;
+    for (let i = 0; i < sorted.length; i++) {
+      const step = sorted[i];
+      const month =
+        i === 0 ? 1 : Math.max(prevMonth, step.monthOffset ?? prevMonth);
+      const waitDays =
+        i === 0 ? 0 : month === prevMonth ? 10 : (month - prevMonth) * 21;
       await this.prisma.sequenceStep.create({
         data: {
           clientId,
           stageOrder: step.stageOrder,
           templateId: step.templateId,
-          waitDays: step.waitDays ?? 10,
+          monthOffset: month,
+          waitDays,
         },
       });
+      prevMonth = month;
     }
     // Keep followUpCount in sync with the sequence length (stage 0 = initial),
     // so the engine's "stop after last follow-up" cap matches the editor.

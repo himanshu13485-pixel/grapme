@@ -49,8 +49,9 @@ export class AssignMailboxDto {
 export class SequenceStepDto {
   @IsInt() @Min(0) stageOrder: number;
   @IsOptional() @IsString() templateId?: string;
-  /** Business days after the previous stage (ignored for stage 0). */
-  @IsOptional() @IsInt() @Min(0) waitDays?: number;
+  /** Which cohort-month this stage sends in (1-based). The server derives the
+   *  day-gap the engine uses from this. */
+  @IsOptional() @IsInt() @Min(1) monthOffset?: number;
 }
 
 export class SetSequenceDto {

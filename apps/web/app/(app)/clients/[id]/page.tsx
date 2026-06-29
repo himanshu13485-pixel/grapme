@@ -77,6 +77,7 @@ interface SeqStep {
   stageOrder: number;
   templateId?: string;
   waitDays?: number;
+  monthOffset?: number;
 }
 interface Client {
   id: string;
@@ -441,24 +442,25 @@ function SequenceEditor({
   templates: Template[];
   onChanged: () => void;
 }) {
-  // Each stage carries its template + waitDays (business days after the previous
-  // stage). Index 0 is the initial email (sends immediately, no wait).
-  type Row = { templateId: string; waitDays: number };
+  // Each stage = a template + the cohort-month it sends in. Index 0 is the
+  // Initial (Month 1, sends immediately). Plan purely in months.
+  type Row = { templateId: string; monthOffset: number };
   const initialRows = useMemo<Row[]>(() => {
     const len = Math.max(client.followUpCount + 1, 1);
-    const arr: Row[] = Array.from({ length: len }, () => ({
+    const arr: Row[] = Array.from({ length: len }, (_, i) => ({
       templateId: '',
-      waitDays: client.stageIntervalDays,
+      monthOffset: i === 0 ? 1 : Math.max(1, i),
     }));
     client.sequenceSteps.forEach((s) => {
       if (s.stageOrder < len)
         arr[s.stageOrder] = {
           templateId: s.templateId ?? '',
-          waitDays: s.waitDays ?? client.stageIntervalDays,
+          monthOffset:
+            s.monthOffset ?? (s.stageOrder === 0 ? 1 : Math.max(1, s.stageOrder)),
         };
     });
     return arr;
-  }, [client.followUpCount, client.sequenceSteps, client.stageIntervalDays]);
+  }, [client.followUpCount, client.sequenceSteps]);
 
   const [rows, setRows] = useState<Row[]>(initialRows);
   const [busy, setBusy] = useState(false);
@@ -466,16 +468,29 @@ function SequenceEditor({
   function setTemplate(i: number, v: string) {
     setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, templateId: v } : r)));
   }
-  function setWait(i: number, v: number) {
-    setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, waitDays: v } : r)));
+  function setMonth(i: number, v: number) {
+    setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, monthOffset: v } : r)));
   }
   function addFollowUp() {
-    setRows((prev) => [...prev, { templateId: '', waitDays: client.stageIntervalDays }]);
+    setRows((prev) => {
+      const lastMonth = prev[prev.length - 1]?.monthOffset ?? 1;
+      return [...prev, { templateId: '', monthOffset: lastMonth + 1 }];
+    });
   }
   function removeStage(i: number) {
     if (i === 0) return; // initial is required
     setRows((prev) => prev.filter((_, idx) => idx !== i));
   }
+
+  // Effective (non-decreasing) month per stage — mirrors the server's clamp.
+  const effMonths = useMemo(() => {
+    let prev = 1;
+    return rows.map((r, i) => {
+      const m = i === 0 ? 1 : Math.max(prev, r.monthOffset);
+      prev = m;
+      return m;
+    });
+  }, [rows]);
 
   async function save() {
     setBusy(true);
@@ -483,7 +498,7 @@ function SequenceEditor({
       const steps = rows.map((r, stageOrder) => ({
         stageOrder,
         templateId: r.templateId || undefined,
-        waitDays: r.waitDays,
+        monthOffset: stageOrder === 0 ? 1 : r.monthOffset,
       }));
       await api.put(`/clients/${client.id}/sequence`, { steps });
       onChanged();
@@ -492,12 +507,15 @@ function SequenceEditor({
     }
   }
 
+  const months = [...new Set(effMonths)].sort((a, b) => a - b);
+
   return (
     <div className="space-y-4">
       <p className="text-sm text-slate-500">
-        Pick the template for each stage and how many business days after the previous
-        stage it sends. Stage 0 is the initial email. Add as many follow-ups as you like —
-        e.g. Initial, FU-1 (+10d, same month), then FU-2…FU-12 (+21d each, monthly).
+        Pick the template for each touch and the <strong>cohort-month</strong> it sends in.
+        Month 1 is the cohort&apos;s first month (Initial sends immediately). Put extra touches
+        in later months for follow-ups. <strong>Every monthly cohort runs this same plan</strong> —
+        you set it once here.
       </p>
       <div className="card divide-y divide-slate-100">
         {rows.map((row, i) => (
@@ -516,18 +534,19 @@ function SequenceEditor({
               ))}
             </select>
             {i === 0 ? (
-              <span className="w-36 text-xs text-slate-400">sends immediately</span>
+              <span className="w-40 text-xs text-slate-400">Month 1 · sends immediately</span>
             ) : (
-              <div className="flex w-36 items-center gap-1">
-                <span className="text-xs text-slate-400">+</span>
-                <input
-                  type="number"
-                  className="input w-16"
-                  value={row.waitDays}
-                  onChange={(e) => setWait(i, Number(e.target.value))}
-                  title="Business days after the previous stage"
-                />
-                <span className="text-xs text-slate-400">days</span>
+              <div className="flex w-40 items-center gap-1">
+                <span className="text-xs text-slate-400">Send in</span>
+                <select
+                  className="input w-28"
+                  value={row.monthOffset}
+                  onChange={(e) => setMonth(i, Number(e.target.value))}
+                >
+                  {Array.from({ length: 12 }, (_, m) => (
+                    <option key={m + 1} value={m + 1}>Month {m + 1}</option>
+                  ))}
+                </select>
               </div>
             )}
             {i === 0 ? (
@@ -541,6 +560,20 @@ function SequenceEditor({
                 Remove
               </button>
             )}
+          </div>
+        ))}
+      </div>
+
+      {/* Per-cohort plan, grouped by month */}
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs">
+        <div className="mb-1 font-medium text-slate-600">Per-cohort plan by month</div>
+        {months.map((m) => (
+          <div key={m} className="text-slate-500">
+            <span className="font-medium text-slate-700">Month {m}:</span>{' '}
+            {rows
+              .map((_, i) => (effMonths[i] === m ? (i === 0 ? 'Initial' : `Follow-up ${i}`) : null))
+              .filter(Boolean)
+              .join(', ')}
           </div>
         ))}
       </div>

@@ -672,9 +672,10 @@ model Client {
 model SequenceStep {
   id         String  @id @default(uuid())
   clientId   String
-  stageOrder Int     // 0 = initial, 1 = FU-1, 2 = FU-2, …
-  templateId String?
-  waitDays   Int     @default(10) // business days after the previous stage (ignored for stage 0)
+  stageOrder  Int    // 0 = initial, 1 = FU-1, 2 = FU-2, …
+  templateId  String?
+  monthOffset Int    @default(1)  // which month of the cohort this stage sends in (1-based)
+  waitDays    Int    @default(10) // derived business-day gap after the previous stage (engine uses this)
 
   client   Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
   template EmailTemplate? @relation(fields: [templateId], references: [id])
