@@ -178,7 +178,16 @@ export class ProgramsService {
     if (contactIds.length === 0) {
       throw new BadRequestException('No contacts provided for the cohort');
     }
-    return this.createAndEnroll(client, contactIds, dto.label, dto.monthIndex);
+    // Label the cohort with its source list name (so you can see which list is running).
+    let label = dto.label;
+    if (!label && dto.listId) {
+      const list = await this.prisma.contactList.findFirst({
+        where: { id: dto.listId, tenantId: user.tenantId },
+        select: { name: true },
+      });
+      label = list?.name;
+    }
+    return this.createAndEnroll(client, contactIds, label, dto.monthIndex);
   }
 
   /** Manual or auto: create the next cohort from the client's source list,
@@ -197,6 +206,10 @@ export class ProgramsService {
   }
 
   private async createFromSource(client: Client, listId: string) {
+    const list = await this.prisma.contactList.findFirst({
+      where: { id: listId },
+      select: { name: true },
+    });
     const members = await this.prisma.contactListMember.findMany({
       where: { listId },
       select: { contactId: true },
@@ -216,7 +229,7 @@ export class ProgramsService {
     if (fresh.length === 0) {
       throw new BadRequestException('No fresh contacts left in the source list');
     }
-    return this.createAndEnroll(client, fresh);
+    return this.createAndEnroll(client, fresh, list?.name);
   }
 
   /** Shared: create the Cohort row and enroll contacts with day-slot scheduling. */
@@ -485,6 +498,37 @@ export class ProgramsService {
         steps.map((s) => [s.stageOrder, s.templateId]),
       );
 
+      // Per-mailbox throttle: today's send count (daily cap) + last send time
+      // (for a human-like randomized gap between consecutive sends).
+      const startOfDay = new Date(now);
+      startOfDay.setHours(0, 0, 0, 0);
+      const sentToday = new Map<string, number>();
+      const lastSentMs = new Map<string, number>();
+      for (const mb of mailboxes) {
+        sentToday.set(
+          mb.id,
+          await this.prisma.emailMessage.count({
+            where: {
+              emailAccountId: mb.id,
+              direction: MessageDirection.OUTBOUND,
+              status: MessageStatus.SENT,
+              sentAt: { gte: startOfDay },
+            },
+          }),
+        );
+        const last = await this.prisma.emailMessage.findFirst({
+          where: {
+            emailAccountId: mb.id,
+            direction: MessageDirection.OUTBOUND,
+            status: MessageStatus.SENT,
+          },
+          orderBy: { sentAt: 'desc' },
+          select: { sentAt: true },
+        });
+        lastSentMs.set(mb.id, last?.sentAt ? last.sentAt.getTime() : 0);
+      }
+      const nowMs = now.getTime();
+
       let rot = 0;
       for (const enr of enrollments) {
         // Stop if the contact has replied (any recorded REPLY for them).
@@ -508,17 +552,35 @@ export class ProgramsService {
           continue;
         }
 
-        // Pick the next eligible mailbox (round-robin, skip those at cap).
-        const mailbox = await this.pickMailbox(mailboxes, rot);
-        if (!mailbox) {
+        // Find a mailbox that is under its daily cap AND has waited a randomized
+        // gap (~sendSpeedSeconds ±40%) since its last send — so mail trickles out
+        // at human-like, non-uniform intervals instead of all at once.
+        let chosenIdx = -1;
+        for (let k = 0; k < mailboxes.length; k++) {
+          const idx = (rot + k) % mailboxes.length;
+          const mb = mailboxes[idx];
+          if ((sentToday.get(mb.id) ?? 0) >= mb.dailyLimit) continue;
+          const base = mb.sendSpeedSeconds || 90;
+          const gapMs =
+            randomInt(Math.floor(base * 0.6), Math.ceil(base * 1.4)) * 1000;
+          if (nowMs - (lastSentMs.get(mb.id) ?? 0) < gapMs) continue;
+          chosenIdx = idx;
+          break;
+        }
+        if (chosenIdx === -1) {
+          // Every mailbox is at cap or still within its send gap — leave the
+          // rest for the next engine tick so sending stays spaced out.
           skipped++;
           continue;
         }
-        rot = mailbox.nextRot;
+        rot = chosenIdx + 1;
+        const mailbox = mailboxes[chosenIdx];
 
-        const ok = await this.sendOne(enr, mailbox.account, templateId);
+        const ok = await this.sendOne(enr, mailbox, templateId);
         if (ok) {
           sent++;
+          sentToday.set(mailbox.id, (sentToday.get(mailbox.id) ?? 0) + 1);
+          lastSentMs.set(mailbox.id, nowMs);
           const nextStage = enr.stage + 1;
           if (nextStage > client.followUpCount) {
             await this.prisma.enrollment.update({
@@ -561,32 +623,6 @@ export class ProgramsService {
       where: { clientId, status: MailboxStatus.ACTIVE },
       orderBy: { rotationOrder: 'asc' },
     });
-  }
-
-  /** Round-robin pick that skips mailboxes which already hit their daily cap. */
-  private async pickMailbox(
-    mailboxes: EmailAccount[],
-    startRot: number,
-  ): Promise<{ account: EmailAccount; nextRot: number } | null> {
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-
-    for (let k = 0; k < mailboxes.length; k++) {
-      const idx = (startRot + k) % mailboxes.length;
-      const account = mailboxes[idx];
-      const sentToday = await this.prisma.emailMessage.count({
-        where: {
-          emailAccountId: account.id,
-          direction: MessageDirection.OUTBOUND,
-          status: MessageStatus.SENT,
-          sentAt: { gte: startOfDay },
-        },
-      });
-      if (sentToday < account.dailyLimit) {
-        return { account, nextRot: idx + 1 };
-      }
-    }
-    return null; // every mailbox is at its daily cap
   }
 
   /** Renders + sends one enrollment email through the chosen mailbox. */

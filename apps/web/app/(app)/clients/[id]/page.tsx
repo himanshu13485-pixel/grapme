@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState, FormEvent } from 'react';
+import { useEffect, useMemo, useState, FormEvent, Fragment } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
@@ -9,6 +9,51 @@ import { ContactsManager } from '@/components/ContactsManager';
 import { TemplatesManager } from '@/components/TemplatesManager';
 import { CampaignsManager } from '@/components/CampaignsManager';
 import { MailboxesManager } from '@/components/MailboxesManager';
+
+function hourLabel(h: number): string {
+  const ampm = h < 12 ? 'AM' : 'PM';
+  const hr = h % 12 === 0 ? 12 : h % 12;
+  return `${hr} ${ampm}`;
+}
+
+function addBusinessDays(base: Date, n: number): Date {
+  const d = new Date(base);
+  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
+  let added = 0;
+  while (added < n) {
+    d.setDate(d.getDate() + 1);
+    if (d.getDay() !== 0 && d.getDay() !== 6) added++;
+  }
+  return d;
+}
+
+const fmtDay = (d: Date) =>
+  d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+interface StageRow {
+  label: string;
+  estStart: Date;
+  estEnd: Date;
+  state: 'done' | 'current' | 'upcoming';
+}
+
+/** Projected per-stage timeline for a cohort (Initial + each follow-up). */
+function buildSchedule(
+  cfg: { stageIntervalDays: number; batchWindowDays: number; followUpCount: number },
+  startDateStr: string,
+): StageRow[] {
+  const start = new Date(startDateStr);
+  const today = new Date();
+  const rows: StageRow[] = [];
+  for (let s = 0; s <= cfg.followUpCount; s++) {
+    const estStart = addBusinessDays(start, s * cfg.stageIntervalDays);
+    const estEnd = addBusinessDays(estStart, Math.max(0, cfg.batchWindowDays - 1));
+    const state =
+      today > estEnd ? 'done' : today >= estStart ? 'current' : 'upcoming';
+    rows.push({ label: s === 0 ? 'Initial' : `Follow-up ${s}`, estStart, estEnd, state });
+  }
+  return rows;
+}
 
 interface Mailbox {
   id: string;
@@ -33,6 +78,9 @@ interface Client {
   stageIntervalDays: number;
   followUpCount: number;
   weekdaysOnly: boolean;
+  sendWindowStart: number;
+  sendWindowEnd: number;
+  stageIntervalJitterDays: number;
   autoCohortEnabled: boolean;
   autoCohortListId?: string;
   autoCohortDay: number;
@@ -121,6 +169,27 @@ export default function ClientCockpit() {
           </button>
         }
       />
+
+      {(() => {
+        const next = cohorts
+          .filter((c) => c.status === 'RUNNING' && c.nextSendAt)
+          .map((c) => c.nextSendAt as string)
+          .sort()[0];
+        return (
+          <div className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 text-sm">
+            <span className="text-slate-500">📅 Next scheduled send: </span>
+            <strong className="text-slate-700">
+              {next
+                ? new Date(next).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                : 'nothing scheduled'}
+            </strong>
+            <span className="ml-3 text-slate-400">
+              Send window {hourLabel(client.sendWindowStart)}–{hourLabel(client.sendWindowEnd)} ·{' '}
+              {client.weekdaysOnly ? 'weekdays only' : 'all days'}
+            </span>
+          </div>
+        );
+      })()}
 
       {notice && (
         <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
@@ -475,6 +544,7 @@ function Cohorts({
   const [autoEnabled, setAutoEnabled] = useState(client.autoCohortEnabled);
   const [autoListId, setAutoListId] = useState(client.autoCohortListId ?? '');
   const [autoDay, setAutoDay] = useState(client.autoCohortDay);
+  const [openCohort, setOpenCohort] = useState<string | null>(null);
 
   async function upload() {
     if (!listId) return;
@@ -639,6 +709,7 @@ function Cohorts({
             <thead className="bg-slate-50 text-left text-xs uppercase text-slate-400">
               <tr>
                 <th className="px-4 py-3">Month</th>
+                <th className="px-4 py-3">Source list</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Contacts</th>
                 <th className="px-4 py-3">Sent</th>
@@ -653,8 +724,19 @@ function Cohorts({
             </thead>
             <tbody>
               {cohorts.map((c) => (
-                <tr key={c.id} className="border-t border-slate-100">
-                  <td className="px-4 py-3 font-medium">#{c.monthIndex}</td>
+                <Fragment key={c.id}>
+                <tr className="border-t border-slate-100">
+                  <td className="px-4 py-3 font-medium">
+                    <button
+                      type="button"
+                      className="text-brand-600 hover:underline"
+                      onClick={() => setOpenCohort(openCohort === c.id ? null : c.id)}
+                      title="Show follow-up schedule"
+                    >
+                      {openCohort === c.id ? '▾' : '▸'} #{c.monthIndex}
+                    </button>
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">{c.label}</td>
                   <td className="px-4 py-3"><StatusBadge status={c.status} /></td>
                   <td className="px-4 py-3 text-slate-500">{c.total}</td>
                   <td className="px-4 py-3 text-slate-600">{c.sent}</td>
@@ -684,6 +766,48 @@ function Cohorts({
                     <button className="btn-ghost text-xs text-rose-600" onClick={() => deleteCohort(c.id)}>Delete</button>
                   </td>
                 </tr>
+                {openCohort === c.id && (
+                  <tr className="bg-slate-50">
+                    <td colSpan={12} className="px-6 py-4">
+                      <div className="mb-2 text-xs font-medium text-slate-500">
+                        Projected follow-up schedule (estimated — actual times jitter ±{client.stageIntervalJitterDays} days)
+                      </div>
+                      <table className="w-full max-w-2xl text-xs">
+                        <thead className="text-left uppercase text-slate-400">
+                          <tr>
+                            <th className="py-1 pr-6">Stage</th>
+                            <th className="py-1 pr-6">Est. start</th>
+                            <th className="py-1 pr-6">Est. end</th>
+                            <th className="py-1">State</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {buildSchedule(client, c.startDate).map((s) => (
+                            <tr key={s.label} className="border-t border-slate-100">
+                              <td className="py-1 pr-6 font-medium text-slate-700">{s.label}</td>
+                              <td className="py-1 pr-6 text-slate-600">{fmtDay(s.estStart)}</td>
+                              <td className="py-1 pr-6 text-slate-600">{fmtDay(s.estEnd)}</td>
+                              <td className="py-1">
+                                <span
+                                  className={
+                                    s.state === 'done'
+                                      ? 'text-slate-400'
+                                      : s.state === 'current'
+                                        ? 'font-medium text-emerald-600'
+                                        : 'text-amber-600'
+                                  }
+                                >
+                                  {s.state === 'done' ? 'done' : s.state === 'current' ? 'in progress' : 'upcoming'}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
           </table>
