@@ -852,6 +852,67 @@ function Cohorts({
           </table>
         </div>
       )}
+
+      {/* Dedicated forward agenda: every upcoming send across running cohorts. */}
+      {(() => {
+        const items = cohorts
+          .filter((c) => c.status === 'RUNNING')
+          .flatMap((c) =>
+            buildSchedule(client, c.startDate)
+              .filter((s) => s.state !== 'done')
+              .map((s) => ({
+                key: c.id + s.label,
+                date: s.estStart,
+                end: s.estEnd,
+                cohort: c,
+                stage: s.label,
+                state: s.state,
+              })),
+          )
+          .sort((a, b) => a.date.getTime() - b.date.getTime());
+        if (items.length === 0) return null;
+        return (
+          <div className="mt-8">
+            <h3 className="mb-2 text-sm font-semibold text-slate-700">
+              📅 Upcoming scheduled sends — all running cohorts
+            </h3>
+            <p className="mb-3 text-xs text-slate-400">
+              Forward agenda of every initial/follow-up wave still to go out, in date order
+              (estimated; ±{client.stageIntervalJitterDays} days jitter).
+            </p>
+            <div className="card overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-left text-xs uppercase text-slate-400">
+                  <tr>
+                    <th className="px-4 py-3">Est. date</th>
+                    <th className="px-4 py-3">Cohort</th>
+                    <th className="px-4 py-3">Source list</th>
+                    <th className="px-4 py-3">Stage</th>
+                    <th className="px-4 py-3">Window ends</th>
+                    <th className="px-4 py-3">When</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((it) => (
+                    <tr key={it.key} className="border-t border-slate-100">
+                      <td className="px-4 py-3 font-medium text-slate-700">{fmtDay(it.date)}</td>
+                      <td className="px-4 py-3 text-slate-500">#{it.cohort.monthIndex}</td>
+                      <td className="px-4 py-3 text-slate-500">{it.cohort.label}</td>
+                      <td className="px-4 py-3 text-slate-600">{it.stage}</td>
+                      <td className="px-4 py-3 text-slate-400">{fmtDay(it.end)}</td>
+                      <td className="px-4 py-3">
+                        <span className={it.state === 'current' ? 'font-medium text-emerald-600' : 'text-amber-600'}>
+                          {it.state === 'current' ? 'in progress' : 'upcoming'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
