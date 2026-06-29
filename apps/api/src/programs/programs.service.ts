@@ -23,6 +23,7 @@ import {
   AssignMailboxDto,
   CreateClientDto,
   CreateCohortDto,
+  SequenceStepDto,
   SetSequenceDto,
   UpdateClientDto,
 } from './dto/programs.dto';
@@ -91,7 +92,7 @@ export class ProgramsService {
           select: { id: true, label: true, emailAddress: true, status: true, rotationOrder: true },
           orderBy: { rotationOrder: 'asc' },
         },
-        sequenceSteps: { orderBy: { stageOrder: 'asc' } },
+        sequenceSteps: { where: { cohortId: null }, orderBy: { stageOrder: 'asc' } },
         _count: {
           select: {
             cohorts: true,
@@ -137,14 +138,19 @@ export class ProgramsService {
   }
 
   // ── Sequence ──────────────────────────────────────────────
-  async setSequence(user: AuthUser, clientId: string, dto: SetSequenceDto) {
-    await this.assertClient(user, clientId);
-    await this.prisma.sequenceStep.deleteMany({ where: { clientId } });
-
-    // Stages are planned by month; derive the engine's day-gap from the month
-    // each stage sends in: same month as the previous stage → ~10-day in-month
-    // gap; each extra month → ~21 business days.
-    const sorted = [...dto.steps].sort((a, b) => a.stageOrder - b.stageOrder);
+  /** Replaces the steps for a scope (client default = cohortId null, or one
+   *  cohort) deriving the engine's day-gap from each stage's planned month. */
+  private async persistSteps(
+    scope: { clientId: string; cohortId: string | null },
+    steps: SequenceStepDto[],
+  ) {
+    await this.prisma.sequenceStep.deleteMany({
+      where: scope.cohortId
+        ? { cohortId: scope.cohortId }
+        : { clientId: scope.clientId, cohortId: null },
+    });
+    // Same month as previous → ~10-day in-month gap; each extra month → ~21 days.
+    const sorted = [...steps].sort((a, b) => a.stageOrder - b.stageOrder);
     let prevMonth = 1;
     for (let i = 0; i < sorted.length; i++) {
       const step = sorted[i];
@@ -154,7 +160,8 @@ export class ProgramsService {
         i === 0 ? 0 : month === prevMonth ? 10 : (month - prevMonth) * 21;
       await this.prisma.sequenceStep.create({
         data: {
-          clientId,
+          clientId: scope.clientId,
+          cohortId: scope.cohortId,
           stageOrder: step.stageOrder,
           templateId: step.templateId,
           monthOffset: month,
@@ -163,15 +170,42 @@ export class ProgramsService {
       });
       prevMonth = month;
     }
-    // Keep followUpCount in sync with the sequence length (stage 0 = initial),
-    // so the engine's "stop after last follow-up" cap matches the editor.
+  }
+
+  /** Edit the client's DEFAULT sequence (template new cohorts start from). */
+  async setSequence(user: AuthUser, clientId: string, dto: SetSequenceDto) {
+    await this.assertClient(user, clientId);
+    await this.persistSteps({ clientId, cohortId: null }, dto.steps);
     const maxStage = dto.steps.reduce((m, s) => Math.max(m, s.stageOrder), 0);
     await this.prisma.client.update({
       where: { id: clientId },
       data: { followUpCount: maxStage },
     });
     return this.prisma.sequenceStep.findMany({
-      where: { clientId },
+      where: { clientId, cohortId: null },
+      orderBy: { stageOrder: 'asc' },
+    });
+  }
+
+  /** A single cohort's own sequence (falls back to the client default if unset). */
+  async getCohortSequence(user: AuthUser, cohortId: string) {
+    const cohort = await this.assertCohort(user, cohortId);
+    const own = await this.prisma.sequenceStep.findMany({
+      where: { cohortId },
+      orderBy: { stageOrder: 'asc' },
+    });
+    if (own.length) return own;
+    return this.prisma.sequenceStep.findMany({
+      where: { clientId: cohort.clientId, cohortId: null },
+      orderBy: { stageOrder: 'asc' },
+    });
+  }
+
+  async setCohortSequence(user: AuthUser, cohortId: string, dto: SetSequenceDto) {
+    const cohort = await this.assertCohort(user, cohortId);
+    await this.persistSteps({ clientId: cohort.clientId, cohortId }, dto.steps);
+    return this.prisma.sequenceStep.findMany({
+      where: { cohortId },
       orderBy: { stageOrder: 'asc' },
     });
   }
@@ -218,7 +252,8 @@ export class ProgramsService {
       });
       label = list?.name;
     }
-    return this.createAndEnroll(client, fresh, label, dto.monthIndex);
+    const startDate = dto.startDate ? new Date(dto.startDate) : undefined;
+    return this.createAndEnroll(client, fresh, label, dto.monthIndex, startDate);
   }
 
   /** Manual or auto: create the next cohort from the client's source list,
@@ -263,16 +298,27 @@ export class ProgramsService {
     return this.createAndEnroll(client, fresh, list?.name);
   }
 
-  /** Shared: create the Cohort row and enroll contacts with day-slot scheduling. */
+  /** Shared: create the Cohort row and enroll contacts with day-slot scheduling.
+   *  startDate lets you upload a cohort in advance — sending begins on that date
+   *  instead of immediately. Each cohort also gets its own copy of the default
+   *  sequence so it can be customised without affecting other months. */
   private async createAndEnroll(
     client: Client,
     contactIds: string[],
     label?: string,
     monthIndexArg?: number,
+    startDateArg?: Date,
   ) {
     const monthIndex =
       monthIndexArg ??
       (await this.prisma.cohort.count({ where: { clientId: client.id } })) + 1;
+
+    // Don't start in the past; snap a past/empty start to now.
+    const now = new Date();
+    const start =
+      startDateArg && startDateArg.getTime() > now.getTime()
+        ? startDateArg
+        : now;
 
     const cohort = await this.prisma.cohort.create({
       data: {
@@ -280,11 +326,28 @@ export class ProgramsService {
         clientId: client.id,
         label: label ?? `Month ${monthIndex}`,
         monthIndex,
-        startDate: new Date(),
+        startDate: start,
       },
     });
 
-    const start = new Date();
+    // Seed this cohort's own sequence from the client default (so it's editable).
+    const defaultSteps = await this.prisma.sequenceStep.findMany({
+      where: { clientId: client.id, cohortId: null },
+      orderBy: { stageOrder: 'asc' },
+    });
+    for (const s of defaultSteps) {
+      await this.prisma.sequenceStep.create({
+        data: {
+          clientId: client.id,
+          cohortId: cohort.id,
+          stageOrder: s.stageOrder,
+          templateId: s.templateId,
+          monthOffset: s.monthOffset,
+          waitDays: s.waitDays,
+        },
+      });
+    }
+
     let i = 0;
     for (const contactId of contactIds) {
       const daySlot = Math.floor(i / client.dailyBatchSize) + 1;
@@ -521,14 +584,27 @@ export class ProgramsService {
         continue;
       }
 
-      const steps = await this.prisma.sequenceStep.findMany({
-        where: { clientId },
+      // Resolve the sequence per cohort: a cohort's OWN steps, else the client
+      // default (cohortId null). Each cohort can run a different sequence.
+      const cohortIds = [...new Set(enrollments.map((e) => e.cohortId))];
+      const allSteps = await this.prisma.sequenceStep.findMany({
+        where: {
+          OR: [{ cohortId: { in: cohortIds } }, { clientId, cohortId: null }],
+        },
         orderBy: { stageOrder: 'asc' },
       });
-      const templateByStage = new Map(
-        steps.map((s) => [s.stageOrder, s.templateId]),
-      );
-      const waitByStage = new Map(steps.map((s) => [s.stageOrder, s.waitDays]));
+      const defaultSteps = allSteps.filter((s) => s.cohortId === null);
+      const stepsByCohort = new Map<string, typeof allSteps>();
+      for (const s of allSteps) {
+        if (!s.cohortId) continue;
+        const arr = stepsByCohort.get(s.cohortId) ?? [];
+        arr.push(s);
+        stepsByCohort.set(s.cohortId, arr);
+      }
+      const stepsFor = (cohortId: string) => {
+        const own = stepsByCohort.get(cohortId);
+        return own && own.length ? own : defaultSteps;
+      };
 
       // Per-mailbox throttle: today's send count (daily cap) + last send time
       // (for a human-like randomized gap between consecutive sends).
@@ -578,7 +654,9 @@ export class ProgramsService {
           continue;
         }
 
-        const templateId = templateByStage.get(enr.stage);
+        const cohortSteps = stepsFor(enr.cohortId);
+        const templateId =
+          cohortSteps.find((s) => s.stageOrder === enr.stage)?.templateId ?? null;
         if (!templateId) {
           skipped++;
           continue;
@@ -613,20 +691,24 @@ export class ProgramsService {
           sent++;
           sentToday.set(mailbox.id, (sentToday.get(mailbox.id) ?? 0) + 1);
           lastSentMs.set(mailbox.id, nowMs);
+          // Cap by THIS cohort's own sequence length (not the client default).
+          const maxStage = cohortSteps.reduce(
+            (m, s) => Math.max(m, s.stageOrder),
+            0,
+          );
           const nextStage = enr.stage + 1;
-          if (nextStage > client.followUpCount) {
+          if (nextStage > maxStage) {
             await this.prisma.enrollment.update({
               where: { id: enr.id },
               data: { status: EnrollmentStatus.COMPLETED, lastSentAt: now },
             });
           } else {
-            // Human-like: jitter the gap by ±stageIntervalJitterDays and pick a
-            // random clock time within the client's send window.
             // Gap until the next stage = that stage's own waitDays (falls back
             // to the client's default), jittered ± a few days to look human.
             const jitter = client.stageIntervalJitterDays;
             const baseWait =
-              waitByStage.get(nextStage) ?? client.stageIntervalDays;
+              cohortSteps.find((s) => s.stageOrder === nextStage)?.waitDays ??
+              client.stageIntervalDays;
             const gap = Math.max(1, baseWait + randomInt(-jitter, jitter));
             const nextTouchAt = withSendTime(
               addBusinessDays(now, gap),

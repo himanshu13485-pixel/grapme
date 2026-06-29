@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, FormEvent, Fragment } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
-import { PageHeader, EmptyState, StatusBadge, Tabs } from '@/components/ui';
+import { PageHeader, EmptyState, StatusBadge, Tabs, Modal } from '@/components/ui';
 import { ContactsManager } from '@/components/ContactsManager';
 import { TemplatesManager } from '@/components/TemplatesManager';
 import { CampaignsManager } from '@/components/CampaignsManager';
@@ -231,7 +231,7 @@ export default function ClientCockpit() {
         <SequenceEditor client={client} templates={templates} onChanged={() => { load(); flash('Sequence saved.'); }} />
       )}
       {tab === 'cohorts' && (
-        <Cohorts client={client} cohorts={cohorts} lists={lists} onChanged={() => { load(); flash('Cohort uploaded & enrolled.'); }} />
+        <Cohorts client={client} cohorts={cohorts} lists={lists} templates={templates} onChanged={() => { load(); flash('Cohort uploaded & enrolled.'); }} />
       )}
       {tab === 'contacts' && <ContactsManager clientId={client.id} />}
       {tab === 'templates' && <TemplatesManager clientId={client.id} />}
@@ -436,22 +436,29 @@ function MailboxGroup({
 function SequenceEditor({
   client,
   templates,
+  cohortId,
   onChanged,
 }: {
   client: Client;
   templates: Template[];
+  cohortId?: string; // when set, edits that cohort's OWN sequence
   onChanged: () => void;
 }) {
   // Each stage = a template + the cohort-month it sends in. Index 0 is the
   // Initial (Month 1, sends immediately). Plan purely in months.
   type Row = { templateId: string; monthOffset: number };
-  const initialRows = useMemo<Row[]>(() => {
-    const len = Math.max(client.followUpCount + 1, 1);
+
+  function rowsFromSteps(steps: SeqStep[]): Row[] {
+    const maxStage = steps.reduce(
+      (m, s) => Math.max(m, s.stageOrder),
+      Math.max(client.followUpCount, 0),
+    );
+    const len = Math.max(maxStage + 1, 1);
     const arr: Row[] = Array.from({ length: len }, (_, i) => ({
       templateId: '',
       monthOffset: i === 0 ? 1 : Math.max(1, i),
     }));
-    client.sequenceSteps.forEach((s) => {
+    steps.forEach((s) => {
       if (s.stageOrder < len)
         arr[s.stageOrder] = {
           templateId: s.templateId ?? '',
@@ -460,10 +467,25 @@ function SequenceEditor({
         };
     });
     return arr;
-  }, [client.followUpCount, client.sequenceSteps]);
+  }
 
-  const [rows, setRows] = useState<Row[]>(initialRows);
+  const [rows, setRows] = useState<Row[]>(() =>
+    cohortId ? [] : rowsFromSteps(client.sequenceSteps),
+  );
   const [busy, setBusy] = useState(false);
+
+  // In cohort mode, load that cohort's own sequence (falls back to default).
+  useEffect(() => {
+    if (!cohortId) {
+      setRows(rowsFromSteps(client.sequenceSteps));
+      return;
+    }
+    api
+      .get<SeqStep[]>(`/cohorts/${cohortId}/sequence`)
+      .then((steps) => setRows(rowsFromSteps(steps)))
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cohortId, client.sequenceSteps, client.followUpCount]);
 
   function setTemplate(i: number, v: string) {
     setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, templateId: v } : r)));
@@ -500,7 +522,10 @@ function SequenceEditor({
         templateId: r.templateId || undefined,
         monthOffset: stageOrder === 0 ? 1 : r.monthOffset,
       }));
-      await api.put(`/clients/${client.id}/sequence`, { steps });
+      const url = cohortId
+        ? `/cohorts/${cohortId}/sequence`
+        : `/clients/${client.id}/sequence`;
+      await api.put(url, { steps });
       onChanged();
     } finally {
       setBusy(false);
@@ -514,8 +539,12 @@ function SequenceEditor({
       <p className="text-sm text-slate-500">
         Pick the template for each touch and the <strong>cohort-month</strong> it sends in.
         Month 1 is the cohort&apos;s first month (Initial sends immediately). Put extra touches
-        in later months for follow-ups. <strong>Every monthly cohort runs this same plan</strong> —
-        you set it once here.
+        in later months for follow-ups.{' '}
+        {cohortId ? (
+          <strong>This is this cohort&apos;s own sequence.</strong>
+        ) : (
+          <strong>Default plan — new cohorts start from this.</strong>
+        )}
       </p>
       <div className="card divide-y divide-slate-100">
         {rows.map((row, i) => (
@@ -601,14 +630,17 @@ function Cohorts({
   client,
   cohorts,
   lists,
+  templates,
   onChanged,
 }: {
   client: Client;
   cohorts: CohortStat[];
   lists: ContactList[];
+  templates: Template[];
   onChanged: () => void;
 }) {
   const [listId, setListId] = useState('');
+  const [startDate, setStartDate] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
@@ -617,14 +649,19 @@ function Cohorts({
   const [autoListId, setAutoListId] = useState(client.autoCohortListId ?? '');
   const [autoDay, setAutoDay] = useState(client.autoCohortDay);
   const [openCohort, setOpenCohort] = useState<string | null>(null);
+  const [seqCohort, setSeqCohort] = useState<CohortStat | null>(null);
 
   async function upload() {
     if (!listId) return;
     setBusy(true);
     setErr('');
     try {
-      await api.post(`/clients/${client.id}/cohorts`, { listId });
+      await api.post(`/clients/${client.id}/cohorts`, {
+        listId,
+        startDate: startDate ? new Date(startDate).toISOString() : undefined,
+      });
       setListId('');
+      setStartDate('');
       onChanged();
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed');
@@ -711,6 +748,16 @@ function Cohorts({
               </option>
             ))}
           </select>
+        </div>
+        <div className="w-44">
+          <label className="label">Start date (optional)</label>
+          <input
+            type="date"
+            className="input"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            title="Leave blank to start now; set a future date to upload in advance"
+          />
         </div>
         <button className="btn-primary" onClick={upload} disabled={!listId || busy}>
           {busy ? 'Enrolling…' : 'Upload & enroll'}
@@ -835,6 +882,7 @@ function Cohorts({
                     {c.status !== 'STOPPED' && c.status !== 'COMPLETED' && (
                       <button className="btn-ghost text-xs text-rose-600" onClick={() => lifecycle(c.id, 'stop')}>Stop</button>
                     )}
+                    <button className="btn-ghost text-xs" onClick={() => setSeqCohort(c)}>Sequence</button>
                     <button className="btn-ghost text-xs text-rose-600" onClick={() => deleteCohort(c.id)}>Delete</button>
                   </td>
                 </tr>
@@ -946,6 +994,25 @@ function Cohorts({
           </div>
         );
       })()}
+
+      <Modal
+        open={!!seqCohort}
+        onClose={() => setSeqCohort(null)}
+        title={seqCohort ? `Sequence · #${seqCohort.monthIndex} ${seqCohort.label}` : 'Sequence'}
+        wide
+      >
+        {seqCohort && (
+          <SequenceEditor
+            client={client}
+            templates={templates}
+            cohortId={seqCohort.id}
+            onChanged={() => {
+              setSeqCohort(null);
+              onChanged();
+            }}
+          />
+        )}
+      </Modal>
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   IsArray,
   IsBoolean,
+  IsDateString,
   IsInt,
   IsOptional,
   IsString,
@@ -67,4 +68,6 @@ export class CreateCohortDto {
   /** Source contacts: a contact list, an explicit set of ids, or both. */
   @IsOptional() @IsString() listId?: string;
   @IsOptional() @IsArray() @IsString({ each: true }) contactIds?: string[];
+  /** Optional future start — upload a cohort in advance; sending begins then. */
+  @IsOptional() @IsDateString() startDate?: string;
 }

@@ -672,15 +672,18 @@ model Client {
 model SequenceStep {
   id         String  @id @default(uuid())
   clientId   String
+  cohortId   String? // null = client default template; set = that cohort's own sequence
   stageOrder  Int    // 0 = initial, 1 = FU-1, 2 = FU-2, …
   templateId  String?
   monthOffset Int    @default(1)  // which month of the cohort this stage sends in (1-based)
   waitDays    Int    @default(10) // derived business-day gap after the previous stage (engine uses this)
 
   client   Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  cohort   Cohort?        @relation(fields: [cohortId], references: [id], onDelete: Cascade)
   template EmailTemplate? @relation(fields: [templateId], references: [id])
 
-  @@unique([clientId, stageOrder])
+  @@index([clientId])
+  @@index([cohortId])
 }
 
 model Cohort {
@@ -694,9 +697,10 @@ model Cohort {
   endedAt    DateTime?
   createdAt  DateTime     @default(now())
 
-  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  client      Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
-  enrollments Enrollment[]
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  client        Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  enrollments   Enrollment[]
+  sequenceSteps SequenceStep[]
 
   @@index([clientId])
 }

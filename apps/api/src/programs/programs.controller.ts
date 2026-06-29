@@ -79,6 +79,24 @@ export class ProgramsController {
     return this.programs.setSequence(user, id, dto);
   }
 
+  // Per-cohort sequence (its own plan; falls back to the client default)
+  @Get('cohorts/:cohortId/sequence')
+  getCohortSequence(
+    @CurrentUser() user: AuthUser,
+    @Param('cohortId') cohortId: string,
+  ) {
+    return this.programs.getCohortSequence(user, cohortId);
+  }
+
+  @Put('cohorts/:cohortId/sequence')
+  setCohortSequence(
+    @CurrentUser() user: AuthUser,
+    @Param('cohortId') cohortId: string,
+    @Body() dto: SetSequenceDto,
+  ) {
+    return this.programs.setCohortSequence(user, cohortId, dto);
+  }
+
   // Cohorts
   @Post('clients/:id/cohorts')
   createCohort(
