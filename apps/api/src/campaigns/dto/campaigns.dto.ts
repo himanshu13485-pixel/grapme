@@ -11,6 +11,7 @@ import { StepCondition } from '@prisma/client';
 export class CreateCampaignDto {
   @IsString() name: string;
   @IsOptional() @IsString() clientLabel?: string;
+  @IsOptional() @IsString() clientId?: string;
   @IsOptional() @IsString() emailAccountId?: string;
   @IsOptional() @IsString() listId?: string;
   @IsOptional() @IsString() templateId?: string;

@@ -122,6 +122,20 @@ enum SuppressionReason {
   COMPLAINT
 }
 
+enum EnrollmentStatus {
+  ACTIVE
+  REPLIED
+  STOPPED
+  COMPLETED
+}
+
+enum CohortStatus {
+  RUNNING
+  PAUSED
+  STOPPED
+  COMPLETED
+}
+
 // ───────────────────────── Tenancy & Identity ─────────────────────────
 
 model Tenant {
@@ -145,6 +159,9 @@ model Tenant {
   approvals       Approval[]
   activityLogs    ActivityLog[]
   creditAccounts  CreditAccount[]
+  clients         Client[]
+  cohorts         Cohort[]
+  enrollments     Enrollment[]
 }
 
 model User {
@@ -260,22 +277,29 @@ model EmailAccount {
   imapHost             String?
   imapPort             Int?
   emailAddress         String
-  credentialsEncrypted String        // AES-256-GCM blob, never returned to client
+  smtpUsername         String?       // SMTP login when it differs from the From address (e.g. AWS SES AKIA… user)
+  credentialsEncrypted String        // AES-256-GCM blob (SMTP password), never returned to client
+  imapUsername         String?       // IMAP login when receiving lives on a different host than SMTP
+  imapCredentialsEncrypted String?   // AES-256-GCM blob (IMAP password); falls back to SMTP creds when null
   status               MailboxStatus @default(PENDING)
   dailyLimit           Int           @default(200)
   warmupEnabled        Boolean       @default(true)
   sendSpeedSeconds     Int           @default(90)
   reputationScore      Int           @default(100)
+  clientId             String?       // mailbox group: all mailboxes of a client form its sending pool
+  rotationOrder        Int           @default(0)
   createdAt            DateTime      @default(now())
   updatedAt            DateTime      @updatedAt
 
   tenant    Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  client    Client?        @relation(fields: [clientId], references: [id], onDelete: SetNull)
   campaigns Campaign[]
   messages  EmailMessage[]
 
   @@index([tenantId])
   @@index([userId])
+  @@index([clientId])
 }
 
 // ───────────────────────── Contacts ─────────────────────────
@@ -286,15 +310,18 @@ model ContactList {
   userId      String
   name        String
   description String?
+  clientId    String?  // owning client (null = shared/global)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   tenant   Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user     User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  client   Client?             @relation(fields: [clientId], references: [id], onDelete: SetNull)
   members  ContactListMember[]
   campaigns Campaign[]
 
   @@index([tenantId])
+  @@index([clientId])
 }
 
 model Contact {
@@ -306,6 +333,7 @@ model Contact {
   lastName     String?
   company      String?
   country      String?
+  clientId     String?       // owning client (null = shared/global)
   customFields Json          @default("{}")
   status       ContactStatus @default(ACTIVE)
   dedupeHash   String
@@ -314,12 +342,15 @@ model Contact {
 
   tenant   Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user     User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  client   Client?             @relation(fields: [clientId], references: [id], onDelete: SetNull)
   lists    ContactListMember[]
   messages EmailMessage[]
+  enrollments Enrollment[]
 
   @@unique([tenantId, dedupeHash])
   @@index([tenantId])
   @@index([email])
+  @@index([clientId])
 }
 
 model ContactListMember {
@@ -352,6 +383,7 @@ model ImportJob {
   userId     String
   filename   String
   listId     String?      // optional target list applied on approval
+  clientId   String?      // owning client, propagated to imported contacts
   totalRows  Int          @default(0)
   validRows  Int          @default(0)
   dupRows    Int          @default(0)
@@ -378,15 +410,19 @@ model EmailTemplate {
   bodyHtml  String
   bodyText  String?
   variables Json     @default("[]")
+  clientId  String?  // owning client (null = shared/global)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   tenant Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  client Client?        @relation(fields: [clientId], references: [id], onDelete: SetNull)
   campaigns Campaign[]
   steps  CampaignStep[]
+  sequenceSteps SequenceStep[]
 
   @@index([tenantId])
+  @@index([clientId])
 }
 
 model Campaign {
@@ -395,6 +431,7 @@ model Campaign {
   userId          String
   name            String
   clientLabel     String?
+  clientId        String?
   emailAccountId  String?
   listId          String?
   templateId      String?
@@ -410,6 +447,7 @@ model Campaign {
 
   tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  client       Client?        @relation(fields: [clientId], references: [id], onDelete: SetNull)
   emailAccount EmailAccount?  @relation(fields: [emailAccountId], references: [id])
   list         ContactList?   @relation(fields: [listId], references: [id])
   template     EmailTemplate? @relation(fields: [templateId], references: [id])
@@ -423,6 +461,7 @@ model Campaign {
   @@index([tenantId])
   @@index([userId])
   @@index([status])
+  @@index([clientId])
 }
 
 model CampaignStep {
@@ -466,6 +505,7 @@ model EmailMessage {
   direction      MessageDirection @default(OUTBOUND)
   messageId      String?          // RFC Message-ID
   inReplyTo      String?
+  fromAddress    String?          // sender address for INBOUND mail
   subject        String?
   body           String?
   status         MessageStatus    @default(QUEUED)
@@ -585,4 +625,100 @@ model Notification {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+// ───────────────────────── GRAPOUT cohort engine ─────────────────────────
+// A Client (end-customer / exporter) owns a mailbox group (EmailAccounts with
+// matching clientId) and a sequence. Each month a Cohort of contacts is enrolled
+// and dripped: dailyBatchSize/day over batchWindowDays, advancing through the
+// sequence steps every stageIntervalDays, rotating across the group's mailboxes.
+
+model Client {
+  id                String   @id @default(uuid())
+  tenantId          String
+  name              String
+  status            String   @default("active")
+  plan              String   @default("GROWTH")
+  termStartedAt     DateTime @default(now())
+  monthlyQuota      Int      @default(100) // fresh contacts per month
+  dailyBatchSize    Int      @default(10)  // fresh sends per day
+  batchWindowDays   Int      @default(10)  // days to spread a stage across
+  stageIntervalDays Int      @default(10)  // gap between sequence stages
+  followUpCount     Int      @default(4)   // follow-ups after the initial (capped)
+  weekdaysOnly      Boolean  @default(true)
+  sendWindowStart   Int      @default(9)    // send only between these hours (human-like)
+  sendWindowEnd     Int      @default(17)
+  stageIntervalJitterDays Int @default(2)   // ± random days on each follow-up gap
+  autoCohortEnabled Boolean  @default(false) // auto-create a monthly cohort
+  autoCohortListId  String?                  // source list for auto cohorts
+  autoCohortDay     Int      @default(1)      // day-of-month to create it
+  lastAutoCohortAt  DateTime?                 // guards once-per-month creation
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  mailboxes     EmailAccount[]
+  sequenceSteps SequenceStep[]
+  cohorts       Cohort[]
+  enrollments   Enrollment[]
+  contacts      Contact[]
+  contactLists  ContactList[]
+  templates     EmailTemplate[]
+  campaigns     Campaign[]
+
+  @@index([tenantId])
+}
+
+model SequenceStep {
+  id         String  @id @default(uuid())
+  clientId   String
+  stageOrder Int     // 0 = initial, 1 = FU-1, 2 = FU-2, …
+  templateId String?
+
+  client   Client         @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  template EmailTemplate? @relation(fields: [templateId], references: [id])
+
+  @@unique([clientId, stageOrder])
+}
+
+model Cohort {
+  id         String       @id @default(uuid())
+  tenantId   String
+  clientId   String
+  label      String
+  monthIndex Int          @default(1)
+  status     CohortStatus @default(RUNNING)
+  startDate  DateTime     @default(now())
+  endedAt    DateTime?
+  createdAt  DateTime     @default(now())
+
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  client      Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  enrollments Enrollment[]
+
+  @@index([clientId])
+}
+
+model Enrollment {
+  id          String           @id @default(uuid())
+  tenantId    String
+  clientId    String
+  cohortId    String
+  contactId   String
+  stage       Int              @default(0) // 0 = initial; matches SequenceStep.stageOrder
+  daySlot     Int              @default(1) // 1..batchWindowDays — preserves day order across stages
+  nextTouchAt DateTime
+  status      EnrollmentStatus @default(ACTIVE)
+  lastSentAt  DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  client  Client  @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  cohort  Cohort  @relation(fields: [cohortId], references: [id], onDelete: Cascade)
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([cohortId, contactId])
+  @@index([tenantId])
+  @@index([status, nextTouchAt])
 }

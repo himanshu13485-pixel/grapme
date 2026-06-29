@@ -5,6 +5,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   HttpCode,
 } from '@nestjs/common';
 import { IsOptional, IsString } from 'class-validator';
@@ -19,6 +20,7 @@ export class UpsertTemplateDto {
   @IsString() subject: string;
   @IsString() bodyHtml: string;
   @IsOptional() @IsString() bodyText?: string;
+  @IsOptional() @IsString() clientId?: string;
 }
 
 @Controller('templates')
@@ -26,8 +28,8 @@ export class TemplatesController {
   constructor(private readonly templates: TemplatesService) {}
 
   @Get()
-  list(@CurrentUser() user: AuthUser) {
-    return this.templates.list(user);
+  list(@CurrentUser() user: AuthUser, @Query('clientId') clientId?: string) {
+    return this.templates.list(user, clientId);
   }
 
   @Post()

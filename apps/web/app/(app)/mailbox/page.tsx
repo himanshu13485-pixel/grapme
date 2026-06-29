@@ -10,6 +10,7 @@ interface Message {
   status: string;
   sentAt?: string;
   createdAt: string;
+  fromAddress?: string;
   contact?: { email: string };
   campaign?: { name: string };
 }
@@ -57,7 +58,7 @@ export default function MailboxPage() {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase text-slate-400">
               <tr>
-                <th className="px-5 py-3">Contact</th>
+                <th className="px-5 py-3">{tab === 'inbox' ? 'From' : 'Contact'}</th>
                 <th className="px-5 py-3">Subject</th>
                 <th className="px-5 py-3">Campaign</th>
                 <th className="px-5 py-3">Status</th>
@@ -68,7 +69,7 @@ export default function MailboxPage() {
               {messages.map((m) => (
                 <tr key={m.id} className="border-t border-slate-100">
                   <td className="px-5 py-3 font-medium">
-                    {m.contact?.email ?? '—'}
+                    {m.contact?.email ?? m.fromAddress ?? '—'}
                   </td>
                   <td className="px-5 py-3 text-slate-600">
                     {m.subject ?? '—'}

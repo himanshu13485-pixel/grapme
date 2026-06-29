@@ -199,6 +199,7 @@ export class ApprovalsService {
           lastName: row.lastName,
           company: row.company,
           country: row.country,
+          clientId: job.clientId,
           dedupeHash: hash,
         },
       });

@@ -28,9 +28,11 @@ const FIELD_OPTIONS: { value: FieldKey; label: string }[] = [
 
 export function ImportWizard({
   lists,
+  clientId,
   onDone,
 }: {
   lists: List[];
+  clientId?: string;
   onDone: () => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -91,6 +93,7 @@ export function ImportWizard({
       if (newListName.trim()) {
         const created = await api.post<{ id: string }>('/contact-lists', {
           name: newListName.trim(),
+          clientId: clientId || undefined,
         });
         targetList = created.id;
       }
@@ -101,6 +104,7 @@ export function ImportWizard({
       }>('/contacts/import', {
         filename: filename || 'pasted-list.csv',
         listId: targetList || undefined,
+        clientId: clientId || undefined,
         rows: contacts,
       });
       setResult(

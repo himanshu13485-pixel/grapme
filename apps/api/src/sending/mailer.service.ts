@@ -19,7 +19,7 @@ export class MailerService {
       host: account.smtpHost ?? undefined,
       port: account.smtpPort ?? 587,
       secure: account.smtpSecure ?? false,
-      auth: { user: account.emailAddress, pass: password },
+      auth: { user: account.smtpUsername || account.emailAddress, pass: password },
     });
   }
 

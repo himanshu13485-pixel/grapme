@@ -1,0 +1,735 @@
+'use client';
+
+import { useEffect, useState, FormEvent } from 'react';
+import { api } from '@/lib/api';
+import { PageHeader, StatusBadge, EmptyState, Modal } from '@/components/ui';
+
+interface AuthResult {
+  domain?: string;
+  score?: number;
+  spf?: { found: boolean };
+  dmarc?: { found: boolean };
+  dkim?: { found: boolean; selector?: string | null };
+  advice?: string;
+  loading?: boolean;
+  error?: boolean;
+}
+
+interface Mailbox {
+  id: string;
+  label: string;
+  emailAddress: string;
+  protocol: string;
+  status: string;
+  dailyLimit: number;
+  smtpUsername?: string;
+  smtpHost?: string;
+  smtpPort?: number;
+  smtpSecure?: boolean;
+  imapHost?: string;
+  imapPort?: number;
+  imapUsername?: string;
+  sendSpeedSeconds?: number;
+  warmupEnabled?: boolean;
+}
+
+/**
+ * Mailbox manager. Standalone on /mailboxes, or scoped to one client inside the
+ * Clients Workspace (clientId) — listing only that client's mailboxes and
+ * allocating new ones to it.
+ */
+export function MailboxesManager({ clientId }: { clientId?: string }) {
+  const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
+  const [show, setShow] = useState(false);
+  const [test, setTest] = useState<Record<string, string>>({});
+  const [testMailbox, setTestMailbox] = useState<Mailbox | null>(null);
+  const [editMailbox, setEditMailbox] = useState<Mailbox | null>(null);
+  const [form, setForm] = useState({
+    label: '',
+    protocol: 'SMTP',
+    emailAddress: '',
+    smtpUsername: '',
+    password: '',
+    smtpHost: '',
+    smtpPort: 587,
+    imapHost: '',
+    imapPort: 993,
+    imapUsername: '',
+    imapPassword: '',
+  });
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [auth, setAuth] = useState<Record<string, AuthResult>>({});
+
+  async function checkAuth(m: Mailbox) {
+    const domain = m.emailAddress.split('@')[1];
+    if (!domain) return;
+    setAuth((a) => ({ ...a, [m.id]: { loading: true } }));
+    try {
+      const r = await api.get<AuthResult>(
+        `/deliverability/email-auth?domain=${encodeURIComponent(domain)}`,
+      );
+      setAuth((a) => ({ ...a, [m.id]: r }));
+    } catch {
+      setAuth((a) => ({ ...a, [m.id]: { error: true } }));
+    }
+  }
+
+  function flash(msg: string) {
+    setNotice(msg);
+    setTimeout(() => setNotice(''), 4000);
+  }
+
+  function load() {
+    const q = clientId ? `?clientId=${clientId}` : '';
+    api.get<Mailbox[]>(`/email-accounts${q}`).then(setMailboxes).catch(() => {});
+  }
+  useEffect(load, [clientId]);
+
+  async function removeMailbox(m: Mailbox) {
+    if (!confirm(`Delete mailbox "${m.label}" (${m.emailAddress})?`)) return;
+    try {
+      await api.del(`/email-accounts/${m.id}`);
+      flash('Mailbox deleted.');
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Delete failed');
+    }
+  }
+
+  async function create(e: FormEvent) {
+    e.preventDefault();
+    setError('');
+    try {
+      await api.post('/email-accounts', {
+        ...form,
+        smtpPort: Number(form.smtpPort),
+        imapPort: Number(form.imapPort),
+        clientId: clientId || undefined,
+      });
+      setShow(false);
+      flash(
+        clientId
+          ? 'Mailbox added & allocated to this client — pending admin approval.'
+          : 'Mailbox added — sent to admin for approval.',
+      );
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed');
+    }
+  }
+
+  async function runTest(id: string) {
+    setTest({ ...test, [id]: 'testing…' });
+    try {
+      const res = await api.post<{ reachable: boolean; detail: string }>(
+        `/email-accounts/${id}/test`,
+      );
+      setTest({ ...test, [id]: res.detail });
+    } catch (err) {
+      setTest({ ...test, [id]: err instanceof Error ? err.message : 'Failed' });
+    }
+  }
+
+  return (
+    <div>
+      {clientId ? (
+        <div className="mb-4 flex items-center justify-between">
+          <p className="text-sm text-slate-500">
+            Mailboxes allocated to this client. New ones are added to its sending group.
+          </p>
+          <button className="btn-primary" onClick={() => setShow((s) => !s)}>
+            {show ? 'Cancel' : '+ Add mailbox'}
+          </button>
+        </div>
+      ) : (
+        <PageHeader
+          title="Mailboxes"
+          subtitle="Credentials are encrypted; new mailboxes need admin approval"
+          action={
+            <button className="btn-primary" onClick={() => setShow((s) => !s)}>
+              {show ? 'Cancel' : '+ Add mailbox'}
+            </button>
+          }
+        />
+      )}
+
+      {notice && (
+        <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          {notice}
+        </div>
+      )}
+
+      {show && (
+        <form onSubmit={create} className="card mb-6 space-y-4 p-6">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">Label</label>
+              <input
+                className="input"
+                value={form.label}
+                onChange={(e) => setForm({ ...form, label: e.target.value })}
+                required
+              />
+            </div>
+            <div>
+              <label className="label">Protocol</label>
+              <select
+                className="input"
+                value={form.protocol}
+                onChange={(e) => setForm({ ...form, protocol: e.target.value })}
+              >
+                <option>SMTP</option>
+                <option>IMAP</option>
+                <option>POP</option>
+              </select>
+            </div>
+            <div>
+              <label className="label">Email address</label>
+              <input
+                type="email"
+                className="input"
+                value={form.emailAddress}
+                onChange={(e) =>
+                  setForm({ ...form, emailAddress: e.target.value })
+                }
+                required
+              />
+            </div>
+            <div>
+              <label className="label">SMTP username (optional)</label>
+              <input
+                className="input"
+                value={form.smtpUsername}
+                onChange={(e) =>
+                  setForm({ ...form, smtpUsername: e.target.value })
+                }
+                placeholder="Only if login ≠ email, e.g. AWS SES AKIA…"
+              />
+            </div>
+            <div>
+              <label className="label">Password / app-password</label>
+              <input
+                type="password"
+                className="input"
+                value={form.password}
+                onChange={(e) => setForm({ ...form, password: e.target.value })}
+                required
+              />
+            </div>
+            <div>
+              <label className="label">SMTP host</label>
+              <input
+                className="input"
+                value={form.smtpHost}
+                onChange={(e) => setForm({ ...form, smtpHost: e.target.value })}
+                placeholder="smtp.gmail.com"
+              />
+            </div>
+            <div>
+              <label className="label">SMTP port</label>
+              <input
+                type="number"
+                className="input"
+                value={form.smtpPort}
+                onChange={(e) =>
+                  setForm({ ...form, smtpPort: Number(e.target.value) })
+                }
+              />
+            </div>
+            <div>
+              <label className="label">IMAP host (for receiving)</label>
+              <input
+                className="input"
+                value={form.imapHost}
+                onChange={(e) => setForm({ ...form, imapHost: e.target.value })}
+                placeholder="mail.yourdomain.com"
+              />
+            </div>
+            <div>
+              <label className="label">IMAP port</label>
+              <input
+                type="number"
+                className="input"
+                value={form.imapPort}
+                onChange={(e) =>
+                  setForm({ ...form, imapPort: Number(e.target.value) })
+                }
+              />
+            </div>
+            <div>
+              <label className="label">IMAP username (optional)</label>
+              <input
+                className="input"
+                value={form.imapUsername}
+                onChange={(e) =>
+                  setForm({ ...form, imapUsername: e.target.value })
+                }
+                placeholder="Defaults to email; set if mail host differs"
+              />
+            </div>
+            <div>
+              <label className="label">IMAP password (optional)</label>
+              <input
+                type="password"
+                className="input"
+                value={form.imapPassword}
+                onChange={(e) =>
+                  setForm({ ...form, imapPassword: e.target.value })
+                }
+                placeholder="Mailbox password (if different from SMTP)"
+              />
+            </div>
+          </div>
+          {error && <p className="text-sm text-rose-600">{error}</p>}
+          <button className="btn-primary">Add mailbox</button>
+        </form>
+      )}
+
+      {mailboxes.length === 0 ? (
+        <EmptyState message="No mailboxes connected yet." />
+      ) : (
+        <div className="space-y-3">
+          {mailboxes.map((m) => (
+            <div
+              key={m.id}
+              className="card flex items-center justify-between p-5"
+            >
+              <div>
+                <div className="font-medium">{m.label}</div>
+                <div className="text-sm text-slate-500">
+                  {m.emailAddress} · {m.protocol} · cap {m.dailyLimit}/day
+                </div>
+                {test[m.id] && (
+                  <div className="mt-1 text-xs text-slate-400">{test[m.id]}</div>
+                )}
+                {auth[m.id] && <AuthStatus result={auth[m.id]} />}
+              </div>
+              <div className="flex items-center gap-3">
+                <StatusBadge status={m.status} />
+                <button
+                  className="btn-ghost px-3 py-1 text-xs"
+                  onClick={() => setEditMailbox(m)}
+                >
+                  Edit
+                </button>
+                <button
+                  className="btn-ghost px-3 py-1 text-xs"
+                  onClick={() => checkAuth(m)}
+                >
+                  Check DNS auth
+                </button>
+                <button
+                  className="btn-ghost px-3 py-1 text-xs"
+                  onClick={() => runTest(m.id)}
+                >
+                  Test connection
+                </button>
+                <button
+                  className="btn-ghost px-3 py-1 text-xs"
+                  onClick={() => setTestMailbox(m)}
+                >
+                  Send test email
+                </button>
+                <button
+                  className="btn-ghost px-3 py-1 text-xs text-rose-600"
+                  onClick={() => removeMailbox(m)}
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Modal
+        open={!!testMailbox}
+        onClose={() => setTestMailbox(null)}
+        title={
+          testMailbox ? `Send test email · ${testMailbox.label}` : 'Send test'
+        }
+      >
+        {testMailbox && (
+          <SendTestForm
+            mailbox={testMailbox}
+            onClose={() => setTestMailbox(null)}
+          />
+        )}
+      </Modal>
+
+      <Modal
+        open={!!editMailbox}
+        onClose={() => setEditMailbox(null)}
+        title={editMailbox ? `Edit mailbox · ${editMailbox.label}` : 'Edit'}
+        wide
+      >
+        {editMailbox && (
+          <EditMailboxForm
+            mailbox={editMailbox}
+            onDone={() => {
+              setEditMailbox(null);
+              flash('Mailbox updated successfully.');
+              load();
+            }}
+          />
+        )}
+      </Modal>
+    </div>
+  );
+}
+
+function EditMailboxForm({
+  mailbox,
+  onDone,
+}: {
+  mailbox: Mailbox;
+  onDone: () => void;
+}) {
+  const [form, setForm] = useState({
+    label: mailbox.label,
+    protocol: mailbox.protocol,
+    emailAddress: mailbox.emailAddress,
+    smtpUsername: mailbox.smtpUsername ?? '',
+    password: '',
+    smtpHost: mailbox.smtpHost ?? '',
+    smtpPort: mailbox.smtpPort ?? 587,
+    smtpSecure: mailbox.smtpSecure ?? true,
+    imapHost: mailbox.imapHost ?? '',
+    imapPort: mailbox.imapPort ?? 993,
+    imapUsername: mailbox.imapUsername ?? '',
+    imapPassword: '',
+    dailyLimit: mailbox.dailyLimit ?? 200,
+    sendSpeedSeconds: mailbox.sendSpeedSeconds ?? 90,
+    warmupEnabled: mailbox.warmupEnabled ?? true,
+  });
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setError('');
+    setBusy(true);
+    try {
+      await api.patch(`/email-accounts/${mailbox.id}`, {
+        label: form.label,
+        protocol: form.protocol,
+        emailAddress: form.emailAddress,
+        smtpUsername: form.smtpUsername || undefined,
+        password: form.password || undefined, // blank = keep current
+        smtpHost: form.smtpHost || undefined,
+        smtpPort: Number(form.smtpPort),
+        smtpSecure: form.smtpSecure,
+        imapHost: form.imapHost || undefined,
+        imapPort: Number(form.imapPort),
+        imapUsername: form.imapUsername || undefined,
+        imapPassword: form.imapPassword || undefined,
+        dailyLimit: Number(form.dailyLimit),
+        sendSpeedSeconds: Number(form.sendSpeedSeconds),
+        warmupEnabled: form.warmupEnabled,
+      });
+      onDone();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-4">
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="label">Label</label>
+          <input
+            className="input"
+            value={form.label}
+            onChange={(e) => setForm({ ...form, label: e.target.value })}
+            required
+          />
+        </div>
+        <div>
+          <label className="label">Protocol</label>
+          <select
+            className="input"
+            value={form.protocol}
+            onChange={(e) => setForm({ ...form, protocol: e.target.value })}
+          >
+            <option>SMTP</option>
+            <option>IMAP</option>
+            <option>POP</option>
+          </select>
+        </div>
+        <div>
+          <label className="label">Email address (From)</label>
+          <input
+            type="email"
+            className="input"
+            value={form.emailAddress}
+            onChange={(e) =>
+              setForm({ ...form, emailAddress: e.target.value })
+            }
+            required
+          />
+        </div>
+        <div>
+          <label className="label">SMTP username (optional)</label>
+          <input
+            className="input"
+            value={form.smtpUsername}
+            placeholder="Only if login ≠ email, e.g. AWS SES AKIA…"
+            onChange={(e) =>
+              setForm({ ...form, smtpUsername: e.target.value })
+            }
+          />
+        </div>
+        <div>
+          <label className="label">Password / app-password</label>
+          <input
+            type="password"
+            className="input"
+            value={form.password}
+            placeholder="Leave blank to keep current"
+            onChange={(e) => setForm({ ...form, password: e.target.value })}
+          />
+        </div>
+        <div>
+          <label className="label">SMTP host</label>
+          <input
+            className="input"
+            value={form.smtpHost}
+            onChange={(e) => setForm({ ...form, smtpHost: e.target.value })}
+          />
+        </div>
+        <div>
+          <label className="label">SMTP port</label>
+          <input
+            type="number"
+            className="input"
+            value={form.smtpPort}
+            onChange={(e) =>
+              setForm({ ...form, smtpPort: Number(e.target.value) })
+            }
+          />
+        </div>
+        <div>
+          <label className="label">IMAP host</label>
+          <input
+            className="input"
+            value={form.imapHost}
+            onChange={(e) => setForm({ ...form, imapHost: e.target.value })}
+          />
+        </div>
+        <div>
+          <label className="label">IMAP port</label>
+          <input
+            type="number"
+            className="input"
+            value={form.imapPort}
+            onChange={(e) =>
+              setForm({ ...form, imapPort: Number(e.target.value) })
+            }
+          />
+        </div>
+        <div>
+          <label className="label">IMAP username (optional)</label>
+          <input
+            className="input"
+            value={form.imapUsername}
+            placeholder="Defaults to email; set if mail host differs"
+            onChange={(e) =>
+              setForm({ ...form, imapUsername: e.target.value })
+            }
+          />
+        </div>
+        <div>
+          <label className="label">IMAP password (optional)</label>
+          <input
+            type="password"
+            className="input"
+            value={form.imapPassword}
+            placeholder="Leave blank to keep current"
+            onChange={(e) =>
+              setForm({ ...form, imapPassword: e.target.value })
+            }
+          />
+        </div>
+        <div>
+          <label className="label">Daily limit</label>
+          <input
+            type="number"
+            className="input"
+            value={form.dailyLimit}
+            onChange={(e) =>
+              setForm({ ...form, dailyLimit: Number(e.target.value) })
+            }
+          />
+        </div>
+        <div>
+          <label className="label">Send speed (seconds between sends)</label>
+          <input
+            type="number"
+            className="input"
+            value={form.sendSpeedSeconds}
+            onChange={(e) =>
+              setForm({ ...form, sendSpeedSeconds: Number(e.target.value) })
+            }
+          />
+        </div>
+      </div>
+      <div className="flex items-center gap-4">
+        <label className="flex items-center gap-2 text-sm text-slate-700">
+          <input
+            type="checkbox"
+            checked={form.smtpSecure}
+            onChange={(e) =>
+              setForm({ ...form, smtpSecure: e.target.checked })
+            }
+          />
+          SMTP TLS/SSL
+        </label>
+        <label className="flex items-center gap-2 text-sm text-slate-700">
+          <input
+            type="checkbox"
+            checked={form.warmupEnabled}
+            onChange={(e) =>
+              setForm({ ...form, warmupEnabled: e.target.checked })
+            }
+          />
+          Warm-up enabled
+        </label>
+      </div>
+      {error && <p className="text-sm text-rose-600">{error}</p>}
+      <button className="btn-primary w-full" disabled={busy}>
+        {busy ? 'Saving…' : 'Save changes'}
+      </button>
+    </form>
+  );
+}
+
+function SendTestForm({
+  mailbox,
+  onClose,
+}: {
+  mailbox: Mailbox;
+  onClose: () => void;
+}) {
+  const [to, setTo] = useState(mailbox.emailAddress);
+  const [subject, setSubject] = useState('AEO test email');
+  const [body, setBody] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ sent: boolean; detail: string } | null>(
+    null,
+  );
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setResult(null);
+    try {
+      const res = await api.post<{ sent: boolean; detail: string }>(
+        `/email-accounts/${mailbox.id}/test-email`,
+        { to, subject: subject || undefined, body: body || undefined },
+      );
+      setResult(res);
+    } catch (err) {
+      setResult({
+        sent: false,
+        detail: err instanceof Error ? err.message : 'Failed',
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-4">
+      <p className="text-sm text-slate-500">
+        Sends a real email from <strong>{mailbox.emailAddress}</strong>. Defaults
+        to itself (a send-to-self deliverability check).
+      </p>
+      <div>
+        <label className="label">Send to *</label>
+        <input
+          type="email"
+          className="input"
+          value={to}
+          onChange={(e) => setTo(e.target.value)}
+          required
+        />
+      </div>
+      <div>
+        <label className="label">Subject</label>
+        <input
+          className="input"
+          value={subject}
+          onChange={(e) => setSubject(e.target.value)}
+        />
+      </div>
+      <div>
+        <label className="label">Message (optional)</label>
+        <textarea
+          className="input min-h-24"
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          placeholder="Leave blank to send a default test body."
+        />
+      </div>
+      {result && (
+        <p
+          className={`text-sm ${
+            result.sent ? 'text-emerald-600' : 'text-rose-600'
+          }`}
+        >
+          {result.detail}
+        </p>
+      )}
+      <div className="flex gap-2">
+        <button
+          type="button"
+          className="btn-ghost"
+          onClick={onClose}
+          disabled={busy}
+        >
+          Close
+        </button>
+        <button className="btn-primary flex-1" disabled={busy}>
+          {busy ? 'Sending…' : 'Send test email'}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function AuthStatus({ result }: { result: AuthResult }) {
+  if (result.loading)
+    return <div className="mt-1 text-xs text-slate-400">Checking DNS…</div>;
+  if (result.error)
+    return <div className="mt-1 text-xs text-rose-600">DNS check failed.</div>;
+
+  const badge = (label: string, ok: boolean, extra = '') => (
+    <span
+      className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+        ok ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
+      }`}
+    >
+      {label} {ok ? '✓' : '✗'}
+      {extra}
+    </span>
+  );
+
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2">
+      {badge('SPF', !!result.spf?.found)}
+      {badge(
+        'DKIM',
+        !!result.dkim?.found,
+        result.dkim?.selector ? ` (${result.dkim.selector})` : '',
+      )}
+      {badge('DMARC', !!result.dmarc?.found)}
+      <span className="text-xs text-slate-400">
+        score {result.score ?? 0}/100
+      </span>
+    </div>
+  );
+}

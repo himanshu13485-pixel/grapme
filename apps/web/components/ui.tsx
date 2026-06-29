@@ -12,6 +12,7 @@ const STATUS_STYLES: Record<string, string> = {
   ACTIVE: 'bg-emerald-100 text-emerald-700',
   DISABLED: 'bg-rose-100 text-rose-700',
   DONE: 'bg-emerald-100 text-emerald-700',
+  STOPPED: 'bg-rose-100 text-rose-700',
 };
 
 export function StatusBadge({ status }: { status: string }) {

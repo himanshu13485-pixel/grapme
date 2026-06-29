@@ -5,6 +5,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   HttpCode,
 } from '@nestjs/common';
 import { CampaignsService } from './campaigns.service';
@@ -24,8 +25,8 @@ export class CampaignsController {
   constructor(private readonly campaigns: CampaignsService) {}
 
   @Get()
-  list(@CurrentUser() user: AuthUser) {
-    return this.campaigns.list(user);
+  list(@CurrentUser() user: AuthUser, @Query('clientId') clientId?: string) {
+    return this.campaigns.list(user, clientId);
   }
 
   @Post()
@@ -81,6 +82,12 @@ export class CampaignsController {
   @Post(':id/resume')
   resume(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.campaigns.resume(user, id);
+  }
+
+  @HttpCode(200)
+  @Post(':id/stop')
+  stop(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.campaigns.stop(user, id);
   }
 
   @Get(':id/analytics')

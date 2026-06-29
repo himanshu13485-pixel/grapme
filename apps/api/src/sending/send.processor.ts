@@ -1,12 +1,13 @@
 import { Logger } from '@nestjs/common';
-import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { Job } from 'bullmq';
+import { Processor, WorkerHost, InjectQueue } from '@nestjs/bullmq';
+import { Job, Queue } from 'bullmq';
 import { ConfigService } from '@nestjs/config';
 import {
   CampaignStatus,
   ContactStatus,
   EventType,
   MessageStatus,
+  StepCondition,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailerService } from './mailer.service';
@@ -23,6 +24,7 @@ export class SendProcessor extends WorkerHost {
     private prisma: PrismaService,
     private mailer: MailerService,
     private config: ConfigService,
+    @InjectQueue(QUEUE_SEND) private sendQueue: Queue,
   ) {
     super();
   }
@@ -52,8 +54,10 @@ export class SendProcessor extends WorkerHost {
     });
     if (!contact || contact.status !== ContactStatus.ACTIVE) return;
 
-    // Follow-up guard: if the contact already replied, stop the sequence.
+    // Follow-up guards: a reply always stops the sequence, then the step's
+    // own condition (NO_REPLY / OPENED / NOT_OPENED) decides whether to send.
     if (stepId) {
+      // 1. A reply always halts the sequence, regardless of the step condition.
       const replied = await this.prisma.emailEvent.findFirst({
         where: {
           campaignId,
@@ -63,8 +67,42 @@ export class SendProcessor extends WorkerHost {
       });
       if (replied) {
         this.logger.log(`Skipping follow-up for ${contact.email} (replied)`);
+        await this.maybeComplete(campaignId, job.id);
         return;
       }
+
+      // 2. Evaluate the step's open-based condition against prior touches.
+      const step = await this.prisma.campaignStep.findUnique({
+        where: { id: stepId },
+      });
+      const condition = step?.condition ?? StepCondition.ALWAYS;
+      if (
+        condition === StepCondition.OPENED ||
+        condition === StepCondition.NOT_OPENED
+      ) {
+        const opened = await this.prisma.emailEvent.findFirst({
+          where: {
+            campaignId,
+            eventType: EventType.OPEN,
+            message: { contactId },
+          },
+        });
+        if (condition === StepCondition.OPENED && !opened) {
+          this.logger.log(
+            `Skipping follow-up for ${contact.email} (condition OPENED, none opened)`,
+          );
+          await this.maybeComplete(campaignId, job.id);
+          return;
+        }
+        if (condition === StepCondition.NOT_OPENED && opened) {
+          this.logger.log(
+            `Skipping follow-up for ${contact.email} (condition NOT_OPENED, was opened)`,
+          );
+          await this.maybeComplete(campaignId, job.id);
+          return;
+        }
+      }
+      // NO_REPLY / ALWAYS: the reply check above already covers NO_REPLY.
     }
 
     const template = await this.prisma.emailTemplate.findUnique({
@@ -125,7 +163,7 @@ export class SendProcessor extends WorkerHost {
         data: { messageId: message.id, campaignId, eventType: EventType.SENT },
       });
 
-      await this.maybeComplete(campaignId);
+      await this.maybeComplete(campaignId, job.id);
     } catch (err) {
       await this.prisma.emailMessage.update({
         where: { id: message.id },
@@ -135,16 +173,37 @@ export class SendProcessor extends WorkerHost {
     }
   }
 
-  /** Marks the campaign COMPLETED once nothing is left queued. */
-  private async maybeComplete(campaignId: string) {
-    const pending = await this.prisma.emailMessage.count({
+  /**
+   * Marks the campaign COMPLETED only when nothing is left to send — both
+   * in-flight message rows AND scheduled follow-up jobs still sitting in the
+   * send queue (initial + follow-ups are enqueued up-front as delayed jobs,
+   * so counting QUEUED message rows alone completes the campaign too early
+   * and the status flip then silently drops every pending follow-up).
+   */
+  private async maybeComplete(campaignId: string, currentJobId?: string) {
+    const pendingRows = await this.prisma.emailMessage.count({
       where: { campaignId, status: MessageStatus.QUEUED },
     });
-    if (pending === 0) {
-      await this.prisma.campaign.updateMany({
-        where: { id: campaignId, status: CampaignStatus.RUNNING },
-        data: { status: CampaignStatus.COMPLETED },
-      });
-    }
+    if (pendingRows > 0) return;
+
+    // Any follow-up sends for this campaign still waiting/delayed/active?
+    const jobs = await this.sendQueue.getJobs([
+      'delayed',
+      'waiting',
+      'active',
+      'paused',
+    ]);
+    const hasPending = jobs.some(
+      (j) =>
+        j &&
+        (j.data as SendEmailJob)?.campaignId === campaignId &&
+        String(j.id) !== String(currentJobId),
+    );
+    if (hasPending) return;
+
+    await this.prisma.campaign.updateMany({
+      where: { id: campaignId, status: CampaignStatus.RUNNING },
+      data: { status: CampaignStatus.COMPLETED },
+    });
   }
 }

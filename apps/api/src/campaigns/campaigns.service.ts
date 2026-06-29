@@ -33,11 +33,17 @@ export class CampaignsService {
     private activity: ActivityService,
   ) {}
 
-  list(user: AuthUser) {
+  list(user: AuthUser, clientId?: string) {
     return this.prisma.campaign.findMany({
-      where: { tenantId: user.tenantId, userId: user.userId },
+      where: {
+        tenantId: user.tenantId,
+        ...(clientId ? { clientId } : {}),
+      },
       orderBy: { createdAt: 'desc' },
-      include: { _count: { select: { steps: true, messages: true } } },
+      include: {
+        _count: { select: { steps: true, messages: true } },
+        client: { select: { id: true, name: true } },
+      },
     });
   }
 
@@ -57,6 +63,7 @@ export class CampaignsService {
         userId: user.userId,
         name: dto.name,
         clientLabel: dto.clientLabel,
+        clientId: dto.clientId || null,
         emailAccountId: dto.emailAccountId,
         listId: dto.listId,
         templateId: dto.templateId,
@@ -160,6 +167,12 @@ export class CampaignsService {
       throw new BadRequestException('Only paused campaigns can be resumed.');
     }
     return this.setStatus(id, CampaignStatus.RUNNING);
+  }
+
+  /** Stop a campaign for good — pending sends are dropped (status guards them). */
+  async stop(user: AuthUser, id: string) {
+    await this.getOne(user, id);
+    return this.setStatus(id, CampaignStatus.COMPLETED);
   }
 
   /** Aggregates events into the campaign performance card. */

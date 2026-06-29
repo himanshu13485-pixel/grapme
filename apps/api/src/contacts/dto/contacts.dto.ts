@@ -2,10 +2,12 @@ import { Type } from 'class-transformer';
 import {
   IsArray,
   IsEmail,
+  IsEnum,
   IsOptional,
   IsString,
   ValidateNested,
 } from 'class-validator';
+import { ContactStatus } from '@prisma/client';
 
 export class CreateContactDto {
   @IsEmail()
@@ -15,6 +17,28 @@ export class CreateContactDto {
   @IsOptional() @IsString() lastName?: string;
   @IsOptional() @IsString() company?: string;
   @IsOptional() @IsString() country?: string;
+
+  /** Optional: add the contact to this existing list on create. */
+  @IsOptional() @IsString() listId?: string;
+  /** Optional: owning client (empty string clears it). */
+  @IsOptional() @IsString() clientId?: string;
+}
+
+export class UpdateContactDto {
+  @IsOptional() @IsEmail() email?: string;
+  @IsOptional() @IsString() firstName?: string;
+  @IsOptional() @IsString() lastName?: string;
+  @IsOptional() @IsString() company?: string;
+  @IsOptional() @IsString() country?: string;
+  @IsOptional() @IsEnum(ContactStatus) status?: ContactStatus;
+  /** Owning client; empty string clears it. */
+  @IsOptional() @IsString() clientId?: string;
+
+  /** Full desired set of list memberships — memberships are synced to match. */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  listIds?: string[];
 }
 
 export class CreateListDto {
@@ -24,6 +48,16 @@ export class CreateListDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @IsOptional()
+  @IsString()
+  clientId?: string;
+}
+
+export class ListMembersDto {
+  @IsArray()
+  @IsString({ each: true })
+  contactIds: string[];
 }
 
 export class ImportRowDto {
@@ -43,6 +77,10 @@ export class ImportContactsDto {
   @IsOptional()
   @IsString()
   listId?: string;
+
+  @IsOptional()
+  @IsString()
+  clientId?: string;
 
   @IsArray()
   @ValidateNested({ each: true })

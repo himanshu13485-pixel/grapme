@@ -6,9 +6,12 @@ import {
   QUEUE_DISPATCH,
   QUEUE_REPLIES,
   QUEUE_SEND,
+  QUEUE_ENROLL,
   JOB_SCAN,
   JOB_POLL_REPLIES,
   JOB_SEND_EMAIL,
+  JOB_RUN_ENROLL,
+  JOB_RUN_AUTO_COHORT,
 } from '../queue/queue.constants';
 
 export interface SendEmailJob {
@@ -31,11 +34,13 @@ export class SendingService implements OnModuleInit {
     @InjectQueue(QUEUE_DISPATCH) private dispatchQueue: Queue,
     @InjectQueue(QUEUE_SEND) private sendQueue: Queue,
     @InjectQueue(QUEUE_REPLIES) private repliesQueue: Queue,
+    @InjectQueue(QUEUE_ENROLL) private enrollQueue: Queue,
   ) {}
 
   async onModuleInit() {
     const scanEvery = this.config.get<number>('DISPATCH_SCAN_MS', 60_000);
     const pollEvery = this.config.get<number>('REPLY_POLL_MS', 300_000);
+    const enrollEvery = this.config.get<number>('ENROLL_SCAN_MS', 60_000);
 
     await this.dispatchQueue.add(JOB_SCAN, {}, { repeat: { every: scanEvery } });
     await this.repliesQueue.add(
@@ -43,8 +48,22 @@ export class SendingService implements OnModuleInit {
       {},
       { repeat: { every: pollEvery } },
     );
+    await this.enrollQueue.add(
+      JOB_RUN_ENROLL,
+      {},
+      { repeat: { every: enrollEvery } },
+    );
+    const autoCohortEvery = this.config.get<number>(
+      'AUTO_COHORT_SCAN_MS',
+      3_600_000, // hourly check; idempotent (once per client per month)
+    );
+    await this.enrollQueue.add(
+      JOB_RUN_AUTO_COHORT,
+      {},
+      { repeat: { every: autoCohortEvery } },
+    );
     this.logger.log(
-      `Dispatcher every ${scanEvery}ms, reply poll every ${pollEvery}ms`,
+      `Dispatcher every ${scanEvery}ms, reply poll every ${pollEvery}ms, cohort engine every ${enrollEvery}ms, auto-cohort every ${autoCohortEvery}ms`,
     );
   }
 

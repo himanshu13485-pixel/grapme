@@ -5,6 +5,7 @@ import {
   QUEUE_DISPATCH,
   QUEUE_SEND,
   QUEUE_REPLIES,
+  QUEUE_ENROLL,
 } from './queue.constants';
 
 @Global()
@@ -30,6 +31,7 @@ import {
       { name: QUEUE_DISPATCH },
       { name: QUEUE_SEND },
       { name: QUEUE_REPLIES },
+      { name: QUEUE_ENROLL },
     ),
   ],
   exports: [BullModule],

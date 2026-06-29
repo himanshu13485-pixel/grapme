@@ -29,10 +29,14 @@ export function renderTemplate(
 export class TemplatesService {
   constructor(private prisma: PrismaService) {}
 
-  list(user: AuthUser) {
+  list(user: AuthUser, clientId?: string) {
     return this.prisma.emailTemplate.findMany({
-      where: { tenantId: user.tenantId, userId: user.userId },
+      where: {
+        tenantId: user.tenantId,
+        ...(clientId ? { clientId } : {}),
+      },
       orderBy: { updatedAt: 'desc' },
+      include: { client: { select: { id: true, name: true } } },
     });
   }
 
@@ -53,6 +57,7 @@ export class TemplatesService {
         subject: dto.subject,
         bodyHtml: dto.bodyHtml,
         bodyText: dto.bodyText,
+        clientId: dto.clientId || null,
         variables: extractVariables(dto.subject, dto.bodyHtml),
       },
     });
@@ -68,6 +73,7 @@ export class TemplatesService {
         bodyHtml: dto.bodyHtml,
         bodyText: dto.bodyText,
         variables: extractVariables(dto.subject, dto.bodyHtml),
+        ...(dto.clientId !== undefined ? { clientId: dto.clientId || null } : {}),
       },
     });
   }

@@ -34,3 +34,10 @@ Thumbs.db
 
 # Test / coverage
 coverage/
+
+# Build cache
+*.tsbuildinfo
+
+# Redis runtime dump (bundled portable Redis, no-Docker dev)
+.redis/dump.rdb
+*.rdb

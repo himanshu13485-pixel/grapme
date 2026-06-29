@@ -20,6 +20,7 @@ import { CreditsModule } from './credits/credits.module';
 import { MessagesModule } from './messages/messages.module';
 import { DeliverabilityModule } from './deliverability/deliverability.module';
 import { ComplianceModule } from './compliance/compliance.module';
+import { ProgramsModule } from './programs/programs.module';
 import { HealthController } from './health.controller';
 
 // The sending engine needs Redis. Set QUEUE_ENABLED=false to run the rest of
@@ -47,6 +48,7 @@ const engineModules = queueEnabled ? [QueueModule, SendingModule] : [];
     MessagesModule,
     DeliverabilityModule,
     ComplianceModule,
+    ProgramsModule,
     ...engineModules,
   ],
   controllers: [HealthController],

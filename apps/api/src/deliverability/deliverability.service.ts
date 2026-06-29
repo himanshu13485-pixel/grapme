@@ -1,8 +1,23 @@
 import { Injectable } from '@nestjs/common';
-import { promises as dns } from 'dns';
+import { promises as dns, setServers } from 'dns';
 
 @Injectable()
 export class DeliverabilityService {
+  constructor() {
+    // Node's default c-ares resolver can't reach the system DNS in some
+    // environments (lookups fail with ECONNREFUSED → every record shows as
+    // missing). Pin public resolvers so SPF/DKIM/DMARC/MX checks actually work.
+    const servers = (process.env.DNS_SERVERS ?? '8.8.8.8,1.1.1.1')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    try {
+      if (servers.length) setServers(servers);
+    } catch {
+      /* keep system defaults if this fails */
+    }
+  }
+
   /**
    * Checks the three records that govern cold-email deliverability for a domain:
    * SPF (TXT), DMARC (_dmarc TXT), and DKIM (best-effort, common selectors).
@@ -76,7 +91,12 @@ export class DeliverabilityService {
 
   /** DKIM is selector-specific; probe the most common selectors. */
   private async lookupDkim(domain: string) {
-    const selectors = ['default', 'google', 'selector1', 'k1', 'mail'];
+    // Common provider selectors. NOTE: AWS SES "Easy DKIM" uses random tokens
+    // (e.g. <token>._domainkey) that can't be guessed — those won't be detected.
+    const selectors = [
+      'default', 'google', 'selector1', 'selector2', 'k1', 'k2',
+      's1', 's2', 'mail', 'dkim', 'smtp', 'zmail', 'zoho', 'mxvault',
+    ];
     for (const selector of selectors) {
       try {
         const records = await dns.resolveTxt(`${selector}._domainkey.${domain}`);

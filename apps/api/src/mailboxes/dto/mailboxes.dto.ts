@@ -20,6 +20,11 @@ export class CreateMailboxDto {
   @IsEmail()
   emailAddress: string;
 
+  /** SMTP login when it differs from the From address (e.g. AWS SES AKIA… user). */
+  @IsOptional()
+  @IsString()
+  smtpUsername?: string;
+
   /** Plaintext password / app-password — encrypted before persistence. */
   @IsString()
   password: string;
@@ -44,6 +49,16 @@ export class CreateMailboxDto {
   @IsInt()
   imapPort?: number;
 
+  /** IMAP login when receiving lives on a different host (e.g. mailbox user). */
+  @IsOptional()
+  @IsString()
+  imapUsername?: string;
+
+  /** IMAP password — encrypted before persistence. Falls back to SMTP password. */
+  @IsOptional()
+  @IsString()
+  imapPassword?: string;
+
   @IsOptional()
   @IsInt()
   @Min(1)
@@ -54,4 +69,48 @@ export class CreateMailboxDto {
   @IsInt()
   @Min(10)
   sendSpeedSeconds?: number;
+
+  /** Allocate the new mailbox to a client (its sending group) on create. */
+  @IsOptional()
+  @IsString()
+  clientId?: string;
+
+  @IsOptional()
+  @IsInt()
+  rotationOrder?: number;
+}
+
+export class UpdateMailboxDto {
+  @IsOptional() @IsString() label?: string;
+  @IsOptional() @IsEnum(MailProtocol) protocol?: MailProtocol;
+  @IsOptional() @IsEmail() emailAddress?: string;
+  @IsOptional() @IsString() smtpUsername?: string;
+
+  /** Optional — only re-encrypts/replaces the password when provided. */
+  @IsOptional() @IsString() password?: string;
+
+  @IsOptional() @IsString() smtpHost?: string;
+  @IsOptional() @IsInt() smtpPort?: number;
+  @IsOptional() @IsBoolean() smtpSecure?: boolean;
+  @IsOptional() @IsString() imapHost?: string;
+  @IsOptional() @IsInt() imapPort?: number;
+  @IsOptional() @IsString() imapUsername?: string;
+  @IsOptional() @IsString() imapPassword?: string;
+
+  @IsOptional() @IsInt() @Min(1) @Max(2000) dailyLimit?: number;
+  @IsOptional() @IsInt() @Min(10) sendSpeedSeconds?: number;
+  @IsOptional() @IsBoolean() warmupEnabled?: boolean;
+}
+
+export class SendTestEmailDto {
+  @IsEmail()
+  to: string;
+
+  @IsOptional()
+  @IsString()
+  subject?: string;
+
+  @IsOptional()
+  @IsString()
+  body?: string;
 }

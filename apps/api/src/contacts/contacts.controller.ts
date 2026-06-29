@@ -1,9 +1,20 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { ContactsService } from './contacts.service';
 import {
   CreateContactDto,
   CreateListDto,
   ImportContactsDto,
+  ListMembersDto,
+  UpdateContactDto,
 } from './dto/contacts.dto';
 import {
   CurrentUser,
@@ -15,13 +26,27 @@ export class ContactsController {
   constructor(private readonly contacts: ContactsService) {}
 
   @Get('contacts')
-  list(@CurrentUser() user: AuthUser) {
-    return this.contacts.list(user);
+  list(@CurrentUser() user: AuthUser, @Query('clientId') clientId?: string) {
+    return this.contacts.list(user, clientId);
   }
 
   @Post('contacts')
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateContactDto) {
     return this.contacts.create(user, dto);
+  }
+
+  @Patch('contacts/:id')
+  update(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: UpdateContactDto,
+  ) {
+    return this.contacts.update(user, id, dto);
+  }
+
+  @Delete('contacts/:id')
+  remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.contacts.remove(user, id);
   }
 
   @Post('contacts/import')
@@ -35,8 +60,8 @@ export class ContactsController {
   }
 
   @Get('contact-lists')
-  listLists(@CurrentUser() user: AuthUser) {
-    return this.contacts.listLists(user);
+  listLists(@CurrentUser() user: AuthUser, @Query('clientId') clientId?: string) {
+    return this.contacts.listLists(user, clientId);
   }
 
   @Post('contact-lists')
@@ -47,5 +72,23 @@ export class ContactsController {
   @Get('contact-lists/:id')
   getList(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.contacts.getList(user, id);
+  }
+
+  @Post('contact-lists/:id/members')
+  addMembers(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: ListMembersDto,
+  ) {
+    return this.contacts.addMembers(user, id, dto.contactIds);
+  }
+
+  @Post('contact-lists/:id/members/remove')
+  removeMembers(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: ListMembersDto,
+  ) {
+    return this.contacts.removeMembers(user, id, dto.contactIds);
   }
 }
