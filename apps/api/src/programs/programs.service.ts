@@ -179,6 +179,23 @@ export class ProgramsService {
     if (contactIds.length === 0) {
       throw new BadRequestException('No contacts provided for the cohort');
     }
+
+    // Fresh-only: a new month/cohort must target NEW people. Skip contacts
+    // already enrolled for this client so the same person is never put in two
+    // cohorts (which would double-email them and blur the monthly structure).
+    const already = await this.prisma.enrollment.findMany({
+      where: { clientId, contactId: { in: contactIds } },
+      select: { contactId: true },
+    });
+    const enrolled = new Set(already.map((e) => e.contactId));
+    const fresh = contactIds.filter((id) => !enrolled.has(id));
+    if (fresh.length === 0) {
+      throw new BadRequestException(
+        'Every contact in this list is already enrolled for this client. ' +
+          'For a new month, upload a list of NEW contacts.',
+      );
+    }
+
     // Label the cohort with its source list name (so you can see which list is running).
     let label = dto.label;
     if (!label && dto.listId) {
@@ -188,7 +205,7 @@ export class ProgramsService {
       });
       label = list?.name;
     }
-    return this.createAndEnroll(client, contactIds, label, dto.monthIndex);
+    return this.createAndEnroll(client, fresh, label, dto.monthIndex);
   }
 
   /** Manual or auto: create the next cohort from the client's source list,
