@@ -384,6 +384,64 @@ export class ProgramsService {
     });
   }
 
+  /** Cumulative per-stage timeline for a cohort from its resolved sequence.
+   *  Used by BOTH the per-client cohort view and the global agenda so they
+   *  always agree. maxStage = the cohort's own last stage (matches the engine). */
+  private projectStages(
+    startDate: Date,
+    batchWindowDays: number,
+    fallbackInterval: number,
+    steps: { stageOrder: number; waitDays: number }[],
+  ) {
+    const waitByStage = new Map<number, number>();
+    for (const s of steps) waitByStage.set(s.stageOrder, s.waitDays);
+    const maxStage = steps.reduce((m, s) => Math.max(m, s.stageOrder), 0);
+    const today = new Date();
+    const out: Array<{
+      stage: string;
+      estStart: Date;
+      estEnd: Date;
+      state: 'done' | 'current' | 'upcoming';
+    }> = [];
+    let cursor = new Date(startDate);
+    for (let stage = 0; stage <= maxStage; stage++) {
+      const wait = waitByStage.get(stage) ?? (stage === 0 ? 0 : fallbackInterval);
+      if (stage > 0) cursor = addBusinessDays(cursor, wait);
+      const estStart = new Date(cursor);
+      const estEnd = addBusinessDays(estStart, Math.max(0, batchWindowDays - 1));
+      out.push({
+        stage: stage === 0 ? 'Initial' : `Follow-up ${stage}`,
+        estStart,
+        estEnd,
+        state: today > estEnd ? 'done' : today >= estStart ? 'current' : 'upcoming',
+      });
+    }
+    return out;
+  }
+
+  /** Builds a resolver: each cohort's own steps, else the client default. */
+  private async resolveSteps(clientId: string, cohortIds: string[]) {
+    const allSteps = await this.prisma.sequenceStep.findMany({
+      where: {
+        OR: [{ cohortId: { in: cohortIds } }, { clientId, cohortId: null }],
+      },
+      select: { cohortId: true, stageOrder: true, waitDays: true },
+      orderBy: { stageOrder: 'asc' },
+    });
+    const def = allSteps.filter((s) => s.cohortId === null);
+    const byCohort = new Map<string, typeof allSteps>();
+    for (const s of allSteps) {
+      if (!s.cohortId) continue;
+      const arr = byCohort.get(s.cohortId) ?? [];
+      arr.push(s);
+      byCohort.set(s.cohortId, arr);
+    }
+    return (cohortId: string) => {
+      const own = byCohort.get(cohortId);
+      return own && own.length ? own : def;
+    };
+  }
+
   /** Per-cohort live status breakdown for the dashboard. */
   async cohortStats(user: AuthUser, clientId: string) {
     const client = await this.assertClient(user, clientId);
@@ -417,10 +475,20 @@ export class ProgramsService {
     const nextMap = new Map(
       nextGrouped.map((n) => [n.cohortId, n._min.nextTouchAt]),
     );
-    const totalSpanDays =
-      client.batchWindowDays + client.followUpCount * client.stageIntervalDays;
+    // Per-cohort projected schedule from each cohort's OWN sequence (same logic
+    // the global agenda uses, so the two views always agree).
+    const stepsFor = await this.resolveSteps(
+      clientId,
+      cohorts.map((c) => c.id),
+    );
 
     return cohorts.map((co) => {
+      const schedule = this.projectStages(
+        co.startDate,
+        client.batchWindowDays,
+        client.stageIntervalDays,
+        stepsFor(co.id),
+      );
       const rows = grouped.filter((g) => g.cohortId === co.id);
       const byStatus: Record<string, number> = {};
       let total = 0;
@@ -442,7 +510,8 @@ export class ProgramsService {
         startDate: co.startDate,
         endedAt: co.endedAt,
         nextSendAt: nextMap.get(co.id) ?? null,
-        estEndAt: addBusinessDays(co.startDate, totalSpanDays),
+        estEndAt: schedule[schedule.length - 1]?.estEnd ?? co.startDate,
+        schedule,
         total,
         active: byStatus['ACTIVE'] ?? 0,
         due: dueMap.get(co.id) ?? 0,
@@ -480,22 +549,21 @@ export class ProgramsService {
       },
     });
 
-    const allSteps = await this.prisma.sequenceStep.findMany({
-      where: { client: { tenantId: user.tenantId } },
-      select: { clientId: true, cohortId: true, stageOrder: true, waitDays: true },
-      orderBy: { stageOrder: 'asc' },
-    });
-    const defaultByClient = new Map<string, typeof allSteps>();
-    const byCohort = new Map<string, typeof allSteps>();
-    for (const s of allSteps) {
-      const map = s.cohortId ? byCohort : defaultByClient;
-      const key = s.cohortId ?? s.clientId;
-      const arr = map.get(key) ?? [];
-      arr.push(s);
-      map.set(key, arr);
+    // Resolve steps across this tenant's cohorts in one query (own, else default).
+    const cohortIdsByClient = new Map<string, string[]>();
+    for (const co of cohorts) {
+      const arr = cohortIdsByClient.get(co.clientId) ?? [];
+      arr.push(co.id);
+      cohortIdsByClient.set(co.clientId, arr);
+    }
+    const resolverByClient = new Map<
+      string,
+      (cohortId: string) => { stageOrder: number; waitDays: number }[]
+    >();
+    for (const [cid, ids] of cohortIdsByClient) {
+      resolverByClient.set(cid, await this.resolveSteps(cid, ids));
     }
 
-    const today = new Date();
     const rows: Array<{
       clientName: string;
       cohortLabel: string;
@@ -508,34 +576,24 @@ export class ProgramsService {
 
     for (const co of cohorts) {
       const client = clientMap.get(co.clientId);
-      if (!client) continue;
-      const steps = byCohort.get(co.id)?.length
-        ? byCohort.get(co.id)!
-        : (defaultByClient.get(co.clientId) ?? []);
-      const maxStage = steps.reduce(
-        (m, s) => Math.max(m, s.stageOrder),
-        client.followUpCount,
+      const stepsFor = resolverByClient.get(co.clientId);
+      if (!client || !stepsFor) continue;
+      const schedule = this.projectStages(
+        co.startDate,
+        client.batchWindowDays,
+        client.stageIntervalDays,
+        stepsFor(co.id),
       );
-      let cursor = new Date(co.startDate);
-      for (let stage = 0; stage <= maxStage; stage++) {
-        const wait =
-          steps.find((s) => s.stageOrder === stage)?.waitDays ??
-          (stage === 0 ? 0 : client.stageIntervalDays);
-        if (stage > 0) cursor = addBusinessDays(cursor, wait);
-        const estStart = new Date(cursor);
-        const estEnd = addBusinessDays(
-          estStart,
-          Math.max(0, client.batchWindowDays - 1),
-        );
-        if (today > estEnd) continue; // already done
+      for (const s of schedule) {
+        if (s.state === 'done') continue;
         rows.push({
           clientName: client.name,
           cohortLabel: co.label,
           monthIndex: co.monthIndex,
-          stage: stage === 0 ? 'Initial' : `Follow-up ${stage}`,
-          estStart,
-          estEnd,
-          state: today >= estStart ? 'current' : 'upcoming',
+          stage: s.stage,
+          estStart: s.estStart,
+          estEnd: s.estEnd,
+          state: s.state,
         });
       }
     }

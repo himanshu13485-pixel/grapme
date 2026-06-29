@@ -16,54 +16,8 @@ function hourLabel(h: number): string {
   return `${hr} ${ampm}`;
 }
 
-function addBusinessDays(base: Date, n: number): Date {
-  const d = new Date(base);
-  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
-  let added = 0;
-  while (added < n) {
-    d.setDate(d.getDate() + 1);
-    if (d.getDay() !== 0 && d.getDay() !== 6) added++;
-  }
-  return d;
-}
-
 const fmtDay = (d: Date) =>
   d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-
-interface StageRow {
-  label: string;
-  estStart: Date;
-  estEnd: Date;
-  state: 'done' | 'current' | 'upcoming';
-}
-
-/** Projected per-stage timeline for a cohort (Initial + each follow-up), using
- *  each stage's own waitDays cumulatively. */
-function buildSchedule(
-  cfg: {
-    stageIntervalDays: number;
-    batchWindowDays: number;
-    followUpCount: number;
-    sequenceSteps: SeqStep[];
-  },
-  startDateStr: string,
-): StageRow[] {
-  const waitFor = (stage: number) =>
-    cfg.sequenceSteps.find((x) => x.stageOrder === stage)?.waitDays ??
-    cfg.stageIntervalDays;
-  const today = new Date();
-  const rows: StageRow[] = [];
-  let cursor = new Date(startDateStr); // stage-0 start
-  for (let s = 0; s <= cfg.followUpCount; s++) {
-    if (s > 0) cursor = addBusinessDays(cursor, waitFor(s));
-    const estStart = new Date(cursor);
-    const estEnd = addBusinessDays(estStart, Math.max(0, cfg.batchWindowDays - 1));
-    const state =
-      today > estEnd ? 'done' : today >= estStart ? 'current' : 'upcoming';
-    rows.push({ label: s === 0 ? 'Initial' : `Follow-up ${s}`, estStart, estEnd, state });
-  }
-  return rows;
-}
 
 interface Mailbox {
   id: string;
@@ -109,6 +63,12 @@ interface Client {
 }
 interface Template { id: string; name: string }
 interface ContactList { id: string; name: string; _count?: { members: number } }
+interface ScheduleItem {
+  stage: string;
+  estStart: string;
+  estEnd: string;
+  state: 'done' | 'current' | 'upcoming';
+}
 interface CohortStat {
   id: string;
   label: string;
@@ -118,6 +78,7 @@ interface CohortStat {
   endedAt?: string | null;
   nextSendAt?: string | null;
   estEndAt?: string | null;
+  schedule: ScheduleItem[];
   total: number;
   active: number;
   due: number;
@@ -902,11 +863,11 @@ function Cohorts({
                           </tr>
                         </thead>
                         <tbody>
-                          {buildSchedule(client, c.startDate).map((s) => (
-                            <tr key={s.label} className="border-t border-slate-100">
-                              <td className="py-1 pr-6 font-medium text-slate-700">{s.label}</td>
-                              <td className="py-1 pr-6 text-slate-600">{fmtDay(s.estStart)}</td>
-                              <td className="py-1 pr-6 text-slate-600">{fmtDay(s.estEnd)}</td>
+                          {c.schedule.map((s) => (
+                            <tr key={s.stage} className="border-t border-slate-100">
+                              <td className="py-1 pr-6 font-medium text-slate-700">{s.stage}</td>
+                              <td className="py-1 pr-6 text-slate-600">{fmtDay(new Date(s.estStart))}</td>
+                              <td className="py-1 pr-6 text-slate-600">{fmtDay(new Date(s.estEnd))}</td>
                               <td className="py-1">
                                 <span
                                   className={
@@ -939,14 +900,14 @@ function Cohorts({
         const items = cohorts
           .filter((c) => c.status === 'RUNNING')
           .flatMap((c) =>
-            buildSchedule(client, c.startDate)
+            c.schedule
               .filter((s) => s.state !== 'done')
               .map((s) => ({
-                key: c.id + s.label,
-                date: s.estStart,
-                end: s.estEnd,
+                key: c.id + s.stage,
+                date: new Date(s.estStart),
+                end: new Date(s.estEnd),
                 cohort: c,
-                stage: s.label,
+                stage: s.stage,
                 state: s.state,
               })),
           )

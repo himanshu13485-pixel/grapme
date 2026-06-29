@@ -14,7 +14,7 @@ interface AgendaRow {
   state: 'current' | 'upcoming';
 }
 
-type Range = 'today' | 'week' | 'all';
+type Range = 'today' | 'week' | 'all' | 'custom';
 
 function dayKey(d: Date) {
   return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
@@ -26,6 +26,8 @@ function isSameDay(a: Date, b: Date) {
 export default function CohortSchedulePage() {
   const [rows, setRows] = useState<AgendaRow[]>([]);
   const [range, setRange] = useState<Range>('week');
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
   const [clientFilter, setClientFilter] = useState('ALL');
   const [stageFilter, setStageFilter] = useState<'ALL' | 'INITIAL' | 'FU'>('ALL');
   const [search, setSearch] = useState('');
@@ -45,9 +47,18 @@ export default function CohortSchedulePage() {
     const limit = new Date(today);
     if (range === 'today') limit.setDate(limit.getDate() + 1);
     else if (range === 'week') limit.setDate(limit.getDate() + 7);
+    const from = customFrom ? new Date(customFrom) : null;
+    const to = customTo ? new Date(customTo) : null;
+    if (to) to.setHours(23, 59, 59, 999);
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {
-      if (range !== 'all' && new Date(r.estStart) >= limit) return false;
+      const d = new Date(r.estStart);
+      if (range === 'custom') {
+        if (from && d < from) return false;
+        if (to && d > to) return false;
+      } else if (range !== 'all' && d >= limit) {
+        return false;
+      }
       if (clientFilter !== 'ALL' && r.clientName !== clientFilter) return false;
       if (stageFilter === 'INITIAL' && r.stage !== 'Initial') return false;
       if (stageFilter === 'FU' && r.stage === 'Initial') return false;
@@ -55,7 +66,7 @@ export default function CohortSchedulePage() {
         return false;
       return true;
     });
-  }, [rows, range, clientFilter, stageFilter, search]);
+  }, [rows, range, customFrom, customTo, clientFilter, stageFilter, search]);
 
   // Group by day for a clean "line-up for the day" view.
   const groups = useMemo(() => {
@@ -78,13 +89,13 @@ export default function CohortSchedulePage() {
         subtitle="Daily send line-up across all clients' running cohorts"
         action={
           <div className="inline-flex overflow-hidden rounded-lg border border-slate-200">
-            {(['today', 'week', 'all'] as Range[]).map((r) => (
+            {(['today', 'week', 'all', 'custom'] as Range[]).map((r) => (
               <button
                 key={r}
                 onClick={() => setRange(r)}
                 className={`px-3 py-1.5 text-sm ${range === r ? 'bg-brand-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
               >
-                {r === 'today' ? 'Today' : r === 'week' ? 'Next 7 days' : 'All upcoming'}
+                {r === 'today' ? 'Today' : r === 'week' ? 'Next 7 days' : r === 'all' ? 'All upcoming' : 'Custom'}
               </button>
             ))}
           </div>
@@ -92,6 +103,14 @@ export default function CohortSchedulePage() {
       />
 
       <div className="mb-5 flex flex-wrap items-center gap-3">
+        {range === 'custom' && (
+          <div className="flex items-center gap-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-1.5">
+            <span className="text-xs text-slate-500">From</span>
+            <input type="date" className="input py-1" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} />
+            <span className="text-xs text-slate-500">To</span>
+            <input type="date" className="input py-1" value={customTo} onChange={(e) => setCustomTo(e.target.value)} />
+          </div>
+        )}
         <input
           className="input max-w-xs"
           placeholder="Search client, cohort, stage…"
