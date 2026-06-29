@@ -26,10 +26,18 @@ function isSameDay(a: Date, b: Date) {
 export default function CohortSchedulePage() {
   const [rows, setRows] = useState<AgendaRow[]>([]);
   const [range, setRange] = useState<Range>('week');
+  const [clientFilter, setClientFilter] = useState('ALL');
+  const [stageFilter, setStageFilter] = useState<'ALL' | 'INITIAL' | 'FU'>('ALL');
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     api.get<AgendaRow[]>('/programs/agenda').then(setRows).catch(() => setRows([]));
   }, []);
+
+  const clientNames = useMemo(
+    () => [...new Set(rows.map((r) => r.clientName))].sort(),
+    [rows],
+  );
 
   const filtered = useMemo(() => {
     const today = new Date();
@@ -37,12 +45,17 @@ export default function CohortSchedulePage() {
     const limit = new Date(today);
     if (range === 'today') limit.setDate(limit.getDate() + 1);
     else if (range === 'week') limit.setDate(limit.getDate() + 7);
+    const q = search.trim().toLowerCase();
     return rows.filter((r) => {
-      const d = new Date(r.estStart);
-      if (range === 'all') return true;
-      return d < limit;
+      if (range !== 'all' && new Date(r.estStart) >= limit) return false;
+      if (clientFilter !== 'ALL' && r.clientName !== clientFilter) return false;
+      if (stageFilter === 'INITIAL' && r.stage !== 'Initial') return false;
+      if (stageFilter === 'FU' && r.stage === 'Initial') return false;
+      if (q && ![r.clientName, r.cohortLabel, r.stage].some((v) => v.toLowerCase().includes(q)))
+        return false;
+      return true;
     });
-  }, [rows, range]);
+  }, [rows, range, clientFilter, stageFilter, search]);
 
   // Group by day for a clean "line-up for the day" view.
   const groups = useMemo(() => {
@@ -77,6 +90,37 @@ export default function CohortSchedulePage() {
           </div>
         }
       />
+
+      <div className="mb-5 flex flex-wrap items-center gap-3">
+        <input
+          className="input max-w-xs"
+          placeholder="Search client, cohort, stage…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <select
+          className="input w-56"
+          value={clientFilter}
+          onChange={(e) => setClientFilter(e.target.value)}
+        >
+          <option value="ALL">All clients</option>
+          {clientNames.map((c) => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
+        <select
+          className="input w-44"
+          value={stageFilter}
+          onChange={(e) => setStageFilter(e.target.value as 'ALL' | 'INITIAL' | 'FU')}
+        >
+          <option value="ALL">All stages</option>
+          <option value="INITIAL">Initial only</option>
+          <option value="FU">Follow-ups only</option>
+        </select>
+        <span className="ml-auto text-sm text-slate-400">
+          {filtered.length} send{filtered.length === 1 ? '' : 's'}
+        </span>
+      </div>
 
       {groups.length === 0 ? (
         <EmptyState message="No scheduled sends in this range." />
