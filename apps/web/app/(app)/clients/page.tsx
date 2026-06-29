@@ -119,7 +119,7 @@ export default function ClientsPage() {
         </>
       )}
 
-      <Modal open={show} onClose={() => setShow(false)} title="New client">
+      <Modal open={show} onClose={() => setShow(false)} title="New client" disableBackdropClose>
         <NewClientForm
           onDone={() => {
             setShow(false);

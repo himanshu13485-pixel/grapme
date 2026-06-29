@@ -242,17 +242,34 @@ function TemplateEditor({
     }
   }
 
-  async function runSpamCheck() {
-    if (!template) {
-      setError('Save the template first, then run the spam check.');
-      return;
-    }
-    try {
-      const r = await api.post<SpamResult>(`/templates/${template.id}/spam-check`);
-      setSpam(r);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed');
-    }
+  // Runs on the LIVE editor content (mirrors the server lint) so it works for
+  // brand-new, unsaved templates too — no save required.
+  function runSpamCheck() {
+    setError('');
+    const liveBody =
+      mode === 'visual' && visualRef.current
+        ? visualRef.current.innerHTML
+        : bodyHtml;
+    const haystack = `${subject} ${liveBody}`.toLowerCase();
+    const triggers = ['free', 'guarantee', 'act now', 'winner', '100%', '$$$'];
+    const hits = triggers.filter((t) => haystack.includes(t));
+    const linkCount = (liveBody.match(/href=/gi) ?? []).length;
+    const hasUnsub = /unsubscribe/i.test(liveBody);
+
+    let score = 100;
+    score -= hits.length * 8;
+    if (linkCount > 5) score -= 15;
+    if (!hasUnsub) score -= 20;
+
+    setSpam({
+      score: Math.max(0, score),
+      spamTriggerWords: hits,
+      linkCount,
+      hasUnsubscribe: hasUnsub,
+      advice: hasUnsub
+        ? 'Looks reasonable.'
+        : 'Add an unsubscribe link (required for CAN-SPAM/GDPR compliance).',
+    });
   }
 
   const tool = 'rounded border border-slate-200 px-2 py-1 text-xs hover:bg-slate-50';
@@ -376,7 +393,7 @@ function TemplateEditor({
       {error && <p className="text-sm text-rose-600">{error}</p>}
 
       <div className="flex gap-2">
-        <button type="button" className="btn-ghost" onClick={runSpamCheck} disabled={!template}>
+        <button type="button" className="btn-ghost" onClick={runSpamCheck}>
           Spam check
         </button>
         <button className="btn-primary flex-1" disabled={busy}>

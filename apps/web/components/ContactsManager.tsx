@@ -328,7 +328,7 @@ export function ContactsManager({ clientId }: { clientId?: string }) {
       )}
 
       {/* ── Modals ── */}
-      <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add contact">
+      <Modal open={showAdd} onClose={() => setShowAdd(false)} title="Add contact" disableBackdropClose>
         <AddContactForm
           lists={lists}
           clients={clients}
@@ -345,6 +345,7 @@ export function ContactsManager({ clientId }: { clientId?: string }) {
         onClose={() => setShowImport(false)}
         title="Import contacts"
         wide
+        disableBackdropClose
       >
         <ImportWizard
           lists={lists}
@@ -356,7 +357,7 @@ export function ContactsManager({ clientId }: { clientId?: string }) {
         />
       </Modal>
 
-      <Modal open={showList} onClose={() => setShowList(false)} title="New list">
+      <Modal open={showList} onClose={() => setShowList(false)} title="New list" disableBackdropClose>
         <NewListForm
           clients={clients}
           lockedClientId={clientId}
@@ -371,6 +372,7 @@ export function ContactsManager({ clientId }: { clientId?: string }) {
         open={!!editing}
         onClose={() => setEditing(null)}
         title="Edit contact"
+        disableBackdropClose
       >
         {editing && (
           <EditContactForm

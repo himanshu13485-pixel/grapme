@@ -84,6 +84,21 @@ export function CampaignsManager({ clientId }: { clientId?: string }) {
     }
   }
 
+  async function deleteCampaign(c: Campaign) {
+    if (
+      !confirm(
+        `Delete the campaign "${c.name}" permanently? Its steps, recipients and sent-message records are removed.`,
+      )
+    )
+      return;
+    try {
+      await api.del(`/campaigns/${c.id}`);
+      reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete campaign');
+    }
+  }
+
   const fmtStart = (s?: string | null) =>
     s ? new Date(s).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
 
@@ -194,6 +209,12 @@ export function CampaignsManager({ clientId }: { clientId?: string }) {
                     <Link href={`/campaigns/${c.id}`} className="ml-1 text-brand-600 hover:underline">
                       Open
                     </Link>
+                    <button
+                      className="btn-ghost text-xs text-rose-600"
+                      onClick={() => deleteCampaign(c)}
+                    >
+                      Delete
+                    </button>
                   </td>
                 </tr>
               ))}

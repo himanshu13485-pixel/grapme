@@ -56,6 +56,21 @@ export class CampaignsService {
     return campaign;
   }
 
+  /** Delete a campaign and its steps/recipients/messages (cascade). Email
+   *  events keep their history but are detached (campaignId nulled) so the
+   *  non-cascading FK doesn't block the delete. */
+  async remove(user: AuthUser, id: string) {
+    await this.getOne(user, id);
+    await this.prisma.$transaction([
+      this.prisma.emailEvent.updateMany({
+        where: { campaignId: id },
+        data: { campaignId: null },
+      }),
+      this.prisma.campaign.delete({ where: { id } }),
+    ]);
+    return { ok: true };
+  }
+
   create(user: AuthUser, dto: CreateCampaignDto) {
     return this.prisma.campaign.create({
       data: {

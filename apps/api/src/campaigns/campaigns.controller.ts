@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -93,5 +94,10 @@ export class CampaignsController {
   @Get(':id/analytics')
   analytics(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.campaigns.analytics(user, id);
+  }
+
+  @Delete(':id')
+  remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.campaigns.remove(user, id);
   }
 }
