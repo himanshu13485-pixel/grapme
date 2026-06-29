@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -49,6 +50,11 @@ export class TemplatesController {
     @Body() dto: UpsertTemplateDto,
   ) {
     return this.templates.update(user, id, dto);
+  }
+
+  @Delete(':id')
+  remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.templates.remove(user, id);
   }
 
   @HttpCode(200)

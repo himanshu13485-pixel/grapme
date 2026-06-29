@@ -78,6 +78,28 @@ export class TemplatesService {
     });
   }
 
+  /** Delete a template, first detaching it from anything that points at it
+   *  (campaigns, campaign steps, sequence steps) so the FK never blocks it. */
+  async remove(user: AuthUser, id: string) {
+    await this.getOne(user, id);
+    await this.prisma.$transaction([
+      this.prisma.campaign.updateMany({
+        where: { templateId: id, tenantId: user.tenantId },
+        data: { templateId: null },
+      }),
+      this.prisma.campaignStep.updateMany({
+        where: { templateId: id },
+        data: { templateId: null },
+      }),
+      this.prisma.sequenceStep.updateMany({
+        where: { templateId: id },
+        data: { templateId: null },
+      }),
+      this.prisma.emailTemplate.delete({ where: { id } }),
+    ]);
+    return { ok: true };
+  }
+
   /** Basic deliverability lint surfaced in the builder. */
   async spamCheck(user: AuthUser, id: string) {
     const tpl = await this.getOne(user, id);

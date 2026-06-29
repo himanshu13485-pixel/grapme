@@ -42,6 +42,21 @@ export function TemplatesManager({ clientId }: { clientId?: string }) {
   }
   useEffect(load, [clientId]);
 
+  async function deleteTemplate(t: Template) {
+    if (
+      !confirm(
+        `Delete the template "${t.name}"? Any sequence/campaign using it will be unassigned.`,
+      )
+    )
+      return;
+    try {
+      await api.del(`/templates/${t.id}`);
+      load();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to delete template');
+    }
+  }
+
   return (
     <div>
       {!clientId && (
@@ -90,9 +105,17 @@ export function TemplatesManager({ clientId }: { clientId?: string }) {
                 </div>
                 <div className="mt-1 text-sm text-slate-500">{t.subject}</div>
               </div>
-              <button className="btn-ghost text-xs" onClick={() => setEditing(t)}>
-                Edit
-              </button>
+              <div className="whitespace-nowrap">
+                <button className="btn-ghost text-xs" onClick={() => setEditing(t)}>
+                  Edit
+                </button>
+                <button
+                  className="btn-ghost text-xs text-rose-600"
+                  onClick={() => deleteTemplate(t)}
+                >
+                  Delete
+                </button>
+              </div>
             </div>
           ))}
         </div>
