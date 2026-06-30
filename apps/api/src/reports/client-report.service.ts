@@ -239,19 +239,24 @@ export class ClientReportService {
     const client = await this.prisma.client.findUnique({ where: { id: clientId } });
     if (!client) return { sent: false, detail: 'Client not found.' };
     if (!client.email)
-      return { sent: false, detail: 'No client email set — add one on the client.' };
+      return {
+        sent: false,
+        detail: 'No client contact email set — add one on the client.',
+      };
 
-    const mailbox = await this.prisma.emailAccount.findFirst({
-      where: { clientId, status: MailboxStatus.ACTIVE },
-      orderBy: { rotationOrder: 'asc' },
-    });
-    if (!mailbox)
-      return { sent: false, detail: 'No active mailbox for this client to send from.' };
-
+    // Reports are sent FROM the admin's email (not the client's mailbox), TO the
+    // client's contact email.
     const admin = await this.prisma.user.findFirst({
       where: { tenantId: client.tenantId, role: Role.SUPER_ADMIN },
       select: { email: true },
     });
+    const mailbox = await this.resolveAdminMailbox(client.tenantId, admin?.email);
+    if (!mailbox)
+      return {
+        sent: false,
+        detail:
+          'No admin mailbox available to send from. Add an active mailbox (ideally the admin address) under Mailboxes.',
+      };
 
     const data = await this.buildReport(clientId, period);
     const html = this.renderHtml(client.name, client.contactPerson, period, data);
@@ -261,16 +266,44 @@ export class ClientReportService {
       await this.mailer.send({
         account: mailbox,
         to: client.email,
-        cc: admin?.email,
         subject,
         html,
       });
-      return { sent: true, detail: `Report emailed to ${client.email}.` };
+      return {
+        sent: true,
+        detail: `Report emailed to ${client.email} from ${mailbox.emailAddress}.`,
+      };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.warn(`Report send failed for ${client.name}: ${msg}`);
       return { sent: false, detail: `Send failed: ${msg}` };
     }
+  }
+
+  /**
+   * The mailbox reports are sent from: prefer one matching the admin's email,
+   * then any tenant-level (unassigned) mailbox, then any active mailbox.
+   */
+  private async resolveAdminMailbox(tenantId: string, adminEmail?: string) {
+    if (adminEmail) {
+      const byEmail = await this.prisma.emailAccount.findFirst({
+        where: {
+          tenantId,
+          status: MailboxStatus.ACTIVE,
+          emailAddress: { equals: adminEmail, mode: 'insensitive' },
+        },
+      });
+      if (byEmail) return byEmail;
+    }
+    const shared = await this.prisma.emailAccount.findFirst({
+      where: { tenantId, status: MailboxStatus.ACTIVE, clientId: null },
+      orderBy: { rotationOrder: 'asc' },
+    });
+    if (shared) return shared;
+    return this.prisma.emailAccount.findFirst({
+      where: { tenantId, status: MailboxStatus.ACTIVE },
+      orderBy: { rotationOrder: 'asc' },
+    });
   }
 
   /**

@@ -681,8 +681,8 @@ function ReportSettings({ client, onChanged }: { client: Client; onChanged: () =
       </div>
       <p className="text-xs text-slate-400">
         A professional performance report (emails sent, opens, clicks, replies received,
-        bounces) is emailed to the client at the chosen time, with a copy to the admin.
-        Sent from this client&apos;s first active mailbox.
+        bounces) is emailed <strong>from the admin address</strong> to the client&apos;s
+        contact email at the chosen time.
       </p>
       <div className="flex flex-wrap items-center gap-4">
         <label className="flex items-center gap-2 text-sm text-slate-700">
