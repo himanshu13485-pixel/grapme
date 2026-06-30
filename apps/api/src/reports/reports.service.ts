@@ -42,6 +42,35 @@ export class ReportsService {
 
     const ev: Record<string, number> = {};
     for (const g of eventGroups) ev[g.eventType] = g._count._all;
+
+    // Fold in the GRAPOUT cohort engine: its sends/opens/replies carry a
+    // cohortId (no campaignId), so without this the dashboard would ignore all
+    // cohort outreach. Admin-scoped (cohorts are tenant-level, not user-owned).
+    let cohortCount = 0;
+    let activeCohorts = 0;
+    if (user.role !== Role.USER) {
+      const [cohortEvents, cohortStatuses] = await Promise.all([
+        this.prisma.emailEvent.groupBy({
+          by: ['eventType'],
+          where: {
+            message: { tenantId: user.tenantId, cohortId: { not: null } },
+          },
+          _count: { _all: true },
+        }),
+        this.prisma.cohort.groupBy({
+          by: ['status'],
+          where: { tenantId: user.tenantId },
+          _count: { _all: true },
+        }),
+      ]);
+      for (const g of cohortEvents)
+        ev[g.eventType] = (ev[g.eventType] ?? 0) + g._count._all;
+      for (const c of cohortStatuses) {
+        cohortCount += c._count._all;
+        if (c.status === 'RUNNING') activeCohorts += c._count._all;
+      }
+    }
+
     const sent = ev[EventType.SENT] ?? 0;
     const rate = (n: number) =>
       sent ? Math.round((n / sent) * 1000) / 10 : 0;
@@ -53,6 +82,8 @@ export class ReportsService {
       activeCampaigns:
         (byStatus[CampaignStatus.RUNNING] ?? 0) +
         (byStatus[CampaignStatus.SCHEDULED] ?? 0),
+      totalCohorts: cohortCount,
+      activeCohorts,
       pendingApprovals,
       sent,
       delivered: ev[EventType.DELIVERED] ?? 0,

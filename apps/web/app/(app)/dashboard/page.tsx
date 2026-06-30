@@ -17,6 +17,8 @@ interface Campaign {
 interface Summary {
   totalCampaigns: number;
   activeCampaigns: number;
+  totalCohorts: number;
+  activeCohorts: number;
   pendingApprovals: number;
   sent: number;
   opens: number;
@@ -40,8 +42,10 @@ export default function DashboardPage() {
 
   const cards = [
     { label: 'Total campaigns', value: summary?.totalCampaigns ?? 0 },
-    { label: 'Active', value: summary?.activeCampaigns ?? 0 },
+    { label: 'Active cohorts', value: summary?.activeCohorts ?? 0 },
     { label: 'Emails sent', value: summary?.sent ?? 0 },
+    { label: 'Replies', value: summary?.replies ?? 0 },
+    { label: 'Open rate', value: `${summary?.openRate ?? 0}%` },
     { label: 'Reply rate', value: `${summary?.replyRate ?? 0}%` },
   ];
 
@@ -52,7 +56,7 @@ export default function DashboardPage() {
         subtitle="Your outreach at a glance"
       />
 
-      <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
         {cards.map((c) => (
           <div key={c.label} className="card p-5">
             <div className="text-sm text-slate-500">{c.label}</div>
