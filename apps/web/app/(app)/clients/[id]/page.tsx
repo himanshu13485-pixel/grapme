@@ -641,6 +641,7 @@ function Cohorts({
   const [autoDay, setAutoDay] = useState(client.autoCohortDay);
   const [openCohort, setOpenCohort] = useState<string | null>(null);
   const [seqCohort, setSeqCohort] = useState<CohortStat | null>(null);
+  const [reportCohort, setReportCohort] = useState('ALL');
 
   async function upload() {
     if (!listId) return;
@@ -812,8 +813,8 @@ function Cohorts({
       {err && <p className="text-sm text-rose-600">{err}</p>}
 
       {cohorts.length > 0 && (() => {
-        // Client-wide rollup across every cohort (rates recomputed from totals).
-        const t = cohorts.reduce(
+        // Totals across every cohort (rates recomputed from totals).
+        const totals = cohorts.reduce(
           (a, c) => ({
             sent: a.sent + c.metrics.sent,
             opens: a.opens + c.metrics.opens,
@@ -824,50 +825,75 @@ function Cohorts({
           }),
           { sent: 0, opens: 0, clicks: 0, replies: 0, bounces: 0, unsubscribes: 0 },
         );
-        const pct = (n: number) => (t.sent ? Math.round((n / t.sent) * 1000) / 10 : 0);
+        // The selected view: one cohort, or all combined.
+        const selected =
+          reportCohort === 'ALL'
+            ? null
+            : cohorts.find((c) => c.id === reportCohort) ?? null;
+        const m = selected ? selected.metrics : totals;
+        const pct = (n: number) => (m.sent ? Math.round((n / m.sent) * 1000) / 10 : 0);
 
         function exportCsv() {
           const headers = [
             'Cohort', 'Month', 'Status', 'Sent', 'Opens', 'Open %', 'Clicks',
             'Click %', 'Replies', 'Reply %', 'Bounces', 'Bounce %', 'Unsub',
           ];
-          const rows = cohorts.map((c) => [
+          const rowFor = (c: CohortStat) => [
             c.label, c.monthIndex, c.status, c.metrics.sent, c.metrics.opens,
             c.metrics.openRate, c.metrics.clicks, c.metrics.clickRate,
             c.metrics.replies, c.metrics.replyRate, c.metrics.bounces,
             c.metrics.bounceRate, c.metrics.unsubscribes,
-          ]);
-          rows.push([
-            'ALL COHORTS', '', '', t.sent, t.opens, pct(t.opens), t.clicks,
-            pct(t.clicks), t.replies, pct(t.replies), t.bounces, pct(t.bounces),
-            t.unsubscribes,
-          ]);
+          ];
           const safe = client.name.replace(/[^\w-]+/g, '_');
+          if (selected) {
+            downloadCsv(`${safe}_${selected.label.replace(/[^\w-]+/g, '_')}_report`, headers, [rowFor(selected)]);
+            return;
+          }
+          const rows: (string | number)[][] = cohorts.map(rowFor);
+          rows.push([
+            'ALL COHORTS', '', '', totals.sent, totals.opens, pct(totals.opens),
+            totals.clicks, pct(totals.clicks), totals.replies, pct(totals.replies),
+            totals.bounces, pct(totals.bounces), totals.unsubscribes,
+          ]);
           downloadCsv(`${safe}_cohort_report`, headers, rows);
         }
 
         return (
           <div className="card p-4">
-            <div className="mb-3 flex items-center justify-between">
+            <div className="mb-3 flex items-center justify-between gap-3">
               <h3 className="text-sm font-semibold text-slate-700">
-                Client report — all cohorts
+                {selected ? `Report — #${selected.monthIndex} ${selected.label}` : 'Client report — all cohorts'}
               </h3>
-              <button className="btn-ghost text-xs" onClick={exportCsv}>
-                ⭳ Export CSV
-              </button>
+              <div className="flex items-center gap-2">
+                <select
+                  className="input py-1 text-xs"
+                  value={reportCohort}
+                  onChange={(e) => setReportCohort(e.target.value)}
+                >
+                  <option value="ALL">All cohorts (total)</option>
+                  {cohorts.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      #{c.monthIndex} {c.label}
+                    </option>
+                  ))}
+                </select>
+                <button className="btn-ghost text-xs" onClick={exportCsv}>
+                  ⭳ Export CSV
+                </button>
+              </div>
             </div>
             <div className="grid grid-cols-3 gap-2 sm:grid-cols-5 lg:grid-cols-10">
               {([
-                ['Sent', t.sent],
-                ['Opens', t.opens],
-                ['Open %', `${pct(t.opens)}%`],
-                ['Clicks', t.clicks],
-                ['Click %', `${pct(t.clicks)}%`],
-                ['Replies', t.replies],
-                ['Reply %', `${pct(t.replies)}%`],
-                ['Bounces', t.bounces],
-                ['Bounce %', `${pct(t.bounces)}%`],
-                ['Unsub', t.unsubscribes],
+                ['Sent', m.sent],
+                ['Opens', m.opens],
+                ['Open %', `${pct(m.opens)}%`],
+                ['Clicks', m.clicks],
+                ['Click %', `${pct(m.clicks)}%`],
+                ['Replies', m.replies],
+                ['Reply %', `${pct(m.replies)}%`],
+                ['Bounces', m.bounces],
+                ['Bounce %', `${pct(m.bounces)}%`],
+                ['Unsub', m.unsubscribes],
               ] as [string, string | number][]).map(([label, value]) => (
                 <div key={label} className="rounded-lg bg-slate-50 px-3 py-2">
                   <div className="text-[10px] uppercase tracking-wide text-slate-400">{label}</div>
