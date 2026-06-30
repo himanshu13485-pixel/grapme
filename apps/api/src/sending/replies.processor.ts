@@ -49,6 +49,10 @@ export class RepliesProcessor extends WorkerHost {
           mailbox.imapCredentialsEncrypted ?? mailbox.credentialsEncrypted,
         ),
       },
+      // Some self-hosted mail servers present a self-signed / private-CA cert.
+      tls: mailbox.imapAllowSelfSigned
+        ? { rejectUnauthorized: false }
+        : undefined,
       logger: false,
     });
 

@@ -59,6 +59,12 @@ export class CreateMailboxDto {
   @IsString()
   imapPassword?: string;
 
+  /** Accept a self-signed / private-CA IMAP TLS certificate (e.g. some
+   *  self-hosted mail servers). Only relax this for hosts you control. */
+  @IsOptional()
+  @IsBoolean()
+  imapAllowSelfSigned?: boolean;
+
   @IsOptional()
   @IsInt()
   @Min(1)
@@ -96,6 +102,7 @@ export class UpdateMailboxDto {
   @IsOptional() @IsInt() imapPort?: number;
   @IsOptional() @IsString() imapUsername?: string;
   @IsOptional() @IsString() imapPassword?: string;
+  @IsOptional() @IsBoolean() imapAllowSelfSigned?: boolean;
 
   @IsOptional() @IsInt() @Min(1) @Max(2000) dailyLimit?: number;
   @IsOptional() @IsInt() @Min(10) sendSpeedSeconds?: number;

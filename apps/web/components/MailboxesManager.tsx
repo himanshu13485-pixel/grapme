@@ -29,6 +29,7 @@ interface Mailbox {
   imapHost?: string;
   imapPort?: number;
   imapUsername?: string;
+  imapAllowSelfSigned?: boolean;
   sendSpeedSeconds?: number;
   warmupEnabled?: boolean;
 }
@@ -56,6 +57,7 @@ export function MailboxesManager({ clientId }: { clientId?: string }) {
     imapPort: 993,
     imapUsername: '',
     imapPassword: '',
+    imapAllowSelfSigned: false,
   });
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -307,6 +309,16 @@ export function MailboxesManager({ clientId }: { clientId?: string }) {
               />
             </div>
           </div>
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={form.imapAllowSelfSigned}
+              onChange={(e) =>
+                setForm({ ...form, imapAllowSelfSigned: e.target.checked })
+              }
+            />
+            Allow self-signed IMAP certificate (self-hosted mail servers)
+          </label>
           {error && <p className="text-sm text-rose-600">{error}</p>}
           <button className="btn-primary">Add mailbox</button>
         </form>
@@ -431,6 +443,7 @@ function EditMailboxForm({
     imapPort: mailbox.imapPort ?? 993,
     imapUsername: mailbox.imapUsername ?? '',
     imapPassword: '',
+    imapAllowSelfSigned: mailbox.imapAllowSelfSigned ?? false,
     dailyLimit: mailbox.dailyLimit ?? 200,
     sendSpeedSeconds: mailbox.sendSpeedSeconds ?? 90,
     warmupEnabled: mailbox.warmupEnabled ?? true,
@@ -456,6 +469,7 @@ function EditMailboxForm({
         imapPort: Number(form.imapPort),
         imapUsername: form.imapUsername || undefined,
         imapPassword: form.imapPassword || undefined,
+        imapAllowSelfSigned: form.imapAllowSelfSigned,
         dailyLimit: Number(form.dailyLimit),
         sendSpeedSeconds: Number(form.sendSpeedSeconds),
         warmupEnabled: form.warmupEnabled,
@@ -585,6 +599,18 @@ function EditMailboxForm({
               setForm({ ...form, imapPassword: e.target.value })
             }
           />
+        </div>
+        <div className="flex items-end">
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={form.imapAllowSelfSigned}
+              onChange={(e) =>
+                setForm({ ...form, imapAllowSelfSigned: e.target.checked })
+              }
+            />
+            Allow self-signed IMAP cert
+          </label>
         </div>
         <div>
           <label className="label">Daily limit</label>

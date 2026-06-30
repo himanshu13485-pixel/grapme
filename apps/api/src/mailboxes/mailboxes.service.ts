@@ -29,6 +29,7 @@ const SAFE = {
   imapHost: true,
   imapPort: true,
   imapUsername: true,
+  imapAllowSelfSigned: true,
   status: true,
   dailyLimit: true,
   warmupEnabled: true,
@@ -79,6 +80,7 @@ export class MailboxesService {
         imapCredentialsEncrypted: dto.imapPassword
           ? encryptCredential(dto.imapPassword)
           : null,
+        imapAllowSelfSigned: dto.imapAllowSelfSigned ?? false,
         dailyLimit: dto.dailyLimit ?? 200,
         sendSpeedSeconds: dto.sendSpeedSeconds ?? 90,
         clientId: dto.clientId || null,
@@ -119,6 +121,7 @@ export class MailboxesService {
       imapHost: dto.imapHost,
       imapPort: dto.imapPort,
       imapUsername: dto.imapUsername,
+      imapAllowSelfSigned: dto.imapAllowSelfSigned,
       dailyLimit: dto.dailyLimit,
       sendSpeedSeconds: dto.sendSpeedSeconds,
       warmupEnabled: dto.warmupEnabled,
@@ -262,6 +265,9 @@ export class MailboxesService {
             account.imapCredentialsEncrypted ?? account.credentialsEncrypted,
           ),
         },
+        tls: account.imapAllowSelfSigned
+          ? { rejectUnauthorized: false }
+          : undefined,
         logger: false,
       });
       await client.connect();

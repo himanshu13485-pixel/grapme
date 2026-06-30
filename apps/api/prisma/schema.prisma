@@ -281,6 +281,7 @@ model EmailAccount {
   credentialsEncrypted String        // AES-256-GCM blob (SMTP password), never returned to client
   imapUsername         String?       // IMAP login when receiving lives on a different host than SMTP
   imapCredentialsEncrypted String?   // AES-256-GCM blob (IMAP password); falls back to SMTP creds when null
+  imapAllowSelfSigned  Boolean       @default(false) // accept self-signed / private-CA IMAP TLS certs
   status               MailboxStatus @default(PENDING)
   dailyLimit           Int           @default(200)
   warmupEnabled        Boolean       @default(true)
