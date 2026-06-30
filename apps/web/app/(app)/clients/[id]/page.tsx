@@ -9,6 +9,7 @@ import { ContactsManager } from '@/components/ContactsManager';
 import { TemplatesManager } from '@/components/TemplatesManager';
 import { CampaignsManager } from '@/components/CampaignsManager';
 import { MailboxesManager } from '@/components/MailboxesManager';
+import { MailboxManager } from '@/components/MailboxManager';
 
 function hourLabel(h: number): string {
   const ampm = h < 12 ? 'AM' : 'PM';
@@ -181,10 +182,12 @@ export default function ClientCockpit() {
           { key: 'contacts', label: 'Contacts & Lists', count: client._count?.contacts ?? 0 },
           { key: 'templates', label: 'Templates', count: client._count?.templates ?? 0 },
           { key: 'campaigns', label: 'Campaigns', count: client._count?.campaigns ?? 0 },
+          { key: 'inbox', label: 'Inbox & Sent' },
         ]}
       />
 
       {tab === 'mailboxes' && <MailboxesManager clientId={client.id} />}
+      {tab === 'inbox' && <MailboxManager clientId={client.id} />}
       {tab === 'rotation' && (
         <MailboxGroup client={client} allMailboxes={allMailboxes} onChanged={() => { load(); flash('Mailbox group updated.'); }} />
       )}

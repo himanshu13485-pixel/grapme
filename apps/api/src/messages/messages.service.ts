@@ -7,47 +7,65 @@ import { AuthUser } from '../common/decorators/current-user.decorator';
 export class MessagesService {
   constructor(private prisma: PrismaService) {}
 
-  private base(user: AuthUser, where: object) {
+  private base(user: AuthUser, where: object, clientId?: string) {
+    // Scope to one client = messages either sent through one of its mailboxes
+    // or addressed to/from one of its contacts.
+    const clientScope = clientId
+      ? {
+          OR: [
+            { emailAccount: { clientId } },
+            { contact: { clientId } },
+          ],
+        }
+      : {};
     return this.prisma.emailMessage.findMany({
-      where: { tenantId: user.tenantId, ...where },
+      where: { tenantId: user.tenantId, ...clientScope, ...where },
       orderBy: { createdAt: 'desc' },
       take: 200,
       include: {
         contact: { select: { email: true } },
         campaign: { select: { name: true } },
+        emailAccount: { select: { emailAddress: true, label: true } },
       },
     });
   }
 
-  sent(user: AuthUser) {
-    return this.base(user, {
-      direction: MessageDirection.OUTBOUND,
-      status: MessageStatus.SENT,
-    });
+  sent(user: AuthUser, clientId?: string) {
+    return this.base(
+      user,
+      { direction: MessageDirection.OUTBOUND, status: MessageStatus.SENT },
+      clientId,
+    );
   }
 
-  failed(user: AuthUser) {
-    return this.base(user, {
-      direction: MessageDirection.OUTBOUND,
-      status: { in: [MessageStatus.FAILED, MessageStatus.BOUNCED] },
-    });
+  failed(user: AuthUser, clientId?: string) {
+    return this.base(
+      user,
+      {
+        direction: MessageDirection.OUTBOUND,
+        status: { in: [MessageStatus.FAILED, MessageStatus.BOUNCED] },
+      },
+      clientId,
+    );
   }
 
-  scheduled(user: AuthUser) {
-    return this.base(user, {
-      direction: MessageDirection.OUTBOUND,
-      status: MessageStatus.QUEUED,
-    });
+  scheduled(user: AuthUser, clientId?: string) {
+    return this.base(
+      user,
+      { direction: MessageDirection.OUTBOUND, status: MessageStatus.QUEUED },
+      clientId,
+    );
   }
 
-  drafts(user: AuthUser) {
-    return this.base(user, {
-      direction: MessageDirection.OUTBOUND,
-      status: MessageStatus.DRAFT,
-    });
+  drafts(user: AuthUser, clientId?: string) {
+    return this.base(
+      user,
+      { direction: MessageDirection.OUTBOUND, status: MessageStatus.DRAFT },
+      clientId,
+    );
   }
 
-  inbox(user: AuthUser) {
-    return this.base(user, { direction: MessageDirection.INBOUND });
+  inbox(user: AuthUser, clientId?: string) {
+    return this.base(user, { direction: MessageDirection.INBOUND }, clientId);
   }
 }

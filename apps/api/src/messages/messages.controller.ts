@@ -1,4 +1,4 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Query } from '@nestjs/common';
 import { MessagesService } from './messages.service';
 import {
   CurrentUser,
@@ -10,27 +10,27 @@ export class MessagesController {
   constructor(private readonly messages: MessagesService) {}
 
   @Get('sent')
-  sent(@CurrentUser() user: AuthUser) {
-    return this.messages.sent(user);
+  sent(@CurrentUser() user: AuthUser, @Query('clientId') clientId?: string) {
+    return this.messages.sent(user, clientId);
   }
 
   @Get('failed')
-  failed(@CurrentUser() user: AuthUser) {
-    return this.messages.failed(user);
+  failed(@CurrentUser() user: AuthUser, @Query('clientId') clientId?: string) {
+    return this.messages.failed(user, clientId);
   }
 
   @Get('scheduled')
-  scheduled(@CurrentUser() user: AuthUser) {
-    return this.messages.scheduled(user);
+  scheduled(@CurrentUser() user: AuthUser, @Query('clientId') clientId?: string) {
+    return this.messages.scheduled(user, clientId);
   }
 
   @Get('drafts')
-  drafts(@CurrentUser() user: AuthUser) {
-    return this.messages.drafts(user);
+  drafts(@CurrentUser() user: AuthUser, @Query('clientId') clientId?: string) {
+    return this.messages.drafts(user, clientId);
   }
 
   @Get('inbox')
-  inbox(@CurrentUser() user: AuthUser) {
-    return this.messages.inbox(user);
+  inbox(@CurrentUser() user: AuthUser, @Query('clientId') clientId?: string) {
+    return this.messages.inbox(user, clientId);
   }
 }
