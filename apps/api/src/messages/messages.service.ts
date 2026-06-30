@@ -65,7 +65,18 @@ export class MessagesService {
     );
   }
 
-  inbox(user: AuthUser, clientId?: string) {
-    return this.base(user, { direction: MessageDirection.INBOUND }, clientId);
+  async inbox(user: AuthUser, clientId?: string) {
+    const rows = await this.base(
+      user,
+      { direction: MessageDirection.INBOUND },
+      clientId,
+    );
+    // Newest-received first, by the real email date (sentAt) when we captured
+    // it, else by when we stored it.
+    return rows.sort((a, b) => {
+      const at = (a.sentAt ?? a.createdAt).getTime();
+      const bt = (b.sentAt ?? b.createdAt).getTime();
+      return bt - at;
+    });
   }
 }

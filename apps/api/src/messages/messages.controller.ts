@@ -1,5 +1,6 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, HttpCode, Post, Query } from '@nestjs/common';
 import { MessagesService } from './messages.service';
+import { InboundMailService } from './inbound-mail.service';
 import {
   CurrentUser,
   AuthUser,
@@ -7,7 +8,18 @@ import {
 
 @Controller('mailbox')
 export class MessagesController {
-  constructor(private readonly messages: MessagesService) {}
+  constructor(
+    private readonly messages: MessagesService,
+    private readonly inbound: InboundMailService,
+  ) {}
+
+  /** On-demand pull from IMAP — fetches new replies right now (no waiting for
+   *  the background poll), optionally scoped to one client's mailboxes. */
+  @HttpCode(200)
+  @Post('sync')
+  sync(@CurrentUser() user: AuthUser, @Query('clientId') clientId?: string) {
+    return this.inbound.syncTenant(user.tenantId, clientId);
+  }
 
   @Get('sent')
   sent(@CurrentUser() user: AuthUser, @Query('clientId') clientId?: string) {

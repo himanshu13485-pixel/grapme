@@ -34,7 +34,11 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [open, setOpen] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  const [syncNote, setSyncNote] = useState('');
+
+  const isInbox = tab === 'inbox';
 
   async function load() {
     const q = clientId ? `?clientId=${clientId}` : '';
@@ -54,7 +58,36 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, clientId]);
 
-  const isInbox = tab === 'inbox';
+  // Pulls new mail straight from IMAP now (instead of waiting for the ~5-min
+  // background poll), then reloads the list.
+  async function syncNow() {
+    const q = clientId ? `?clientId=${clientId}` : '';
+    setSyncing(true);
+    setSyncNote('');
+    try {
+      const res = await api.post<{
+        scanned: number;
+        stored: number;
+        errors: string[];
+      }>(`/mailbox/sync${q}`);
+      if (res.errors?.length) {
+        setSyncNote(`Error: ${res.errors[0]}`);
+      } else if (res.scanned === 0) {
+        setSyncNote('No active IMAP mailbox to pull from.');
+      } else {
+        setSyncNote(
+          res.stored > 0
+            ? `${res.stored} new message(s) pulled.`
+            : 'No new mail since last sync.',
+        );
+      }
+      await load();
+    } catch (err) {
+      setSyncNote(err instanceof Error ? err.message : 'Sync failed.');
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   const header = (
     <div className="mb-5 flex items-center justify-between">
@@ -77,10 +110,22 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
         ))}
       </div>
       <div className="flex items-center gap-3">
+        {syncNote && <span className="text-xs text-slate-400">{syncNote}</span>}
         {updatedAt && (
           <span className="text-xs text-slate-400">
             Updated {updatedAt.toLocaleTimeString()}
           </span>
+        )}
+        {isInbox && (
+          <button
+            className="btn-primary text-xs"
+            onClick={syncNow}
+            disabled={syncing}
+            title="Pull new replies from the mail server now"
+          >
+            <span className={syncing ? 'inline-block animate-spin' : ''}>⟳</span>{' '}
+            {syncing ? 'Syncing…' : 'Sync now'}
+          </button>
         )}
         <button
           className="btn-ghost text-xs"
@@ -169,9 +214,10 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
 
       {isInbox && (
         <p className="mt-3 text-xs text-slate-400">
-          Replies are pulled from each mailbox over IMAP. Click a row to read the
-          full message. A reply also auto-stops that contact&apos;s follow-up
-          sequence.
+          Replies are pulled from each mailbox over IMAP automatically every few
+          minutes — hit <strong>Sync now</strong> to pull immediately. Click a row
+          to read the full message. A reply also auto-stops that contact&apos;s
+          follow-up sequence.
         </p>
       )}
     </div>
