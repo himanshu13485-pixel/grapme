@@ -631,13 +631,39 @@ function ReportSettings({ client, onChanged }: { client: Client; onChanged: () =
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState('');
   const [fromAddr, setFromAddr] = useState<string | null | undefined>(undefined);
+  const [senderId, setSenderId] = useState<string>('');
+  const [senderOptions, setSenderOptions] = useState<
+    { id: string; label: string; emailAddress: string; clientId?: string | null }[]
+  >([]);
 
-  useEffect(() => {
+  function loadSender() {
     api
-      .get<{ from: string | null }>('/reports/sender')
-      .then((r) => setFromAddr(r.from))
+      .get<{ from: string | null; mailboxId: string | null }>('/reports/sender')
+      .then((r) => {
+        setFromAddr(r.from);
+        setSenderId(r.mailboxId ?? '');
+      })
       .catch(() => setFromAddr(null));
+  }
+  useEffect(() => {
+    loadSender();
+    api
+      .get<{ id: string; label: string; emailAddress: string; clientId?: string | null }[]>(
+        '/reports/sender-options',
+      )
+      .then(setSenderOptions)
+      .catch(() => {});
   }, []);
+
+  async function pickSender(mailboxId: string) {
+    setSenderId(mailboxId);
+    try {
+      await api.post('/reports/sender', { mailboxId: mailboxId || null });
+      loadSender();
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : 'Failed to set sender');
+    }
+  }
 
   async function save() {
     setBusy(true);
@@ -692,27 +718,46 @@ function ReportSettings({ client, onChanged }: { client: Client; onChanged: () =
         bounces) is emailed <strong>from the admin address</strong> to the client&apos;s
         contact email at the chosen time.
       </p>
-      <div className="flex flex-wrap items-center gap-4 rounded-lg bg-slate-50 px-3 py-2 text-xs">
-        <span>
-          <span className="text-slate-400">Sends from: </span>
-          {fromAddr === undefined ? (
-            <span className="text-slate-400">checking…</span>
-          ) : fromAddr ? (
-            <span className="font-medium text-slate-700">{fromAddr}</span>
-          ) : (
-            <span className="font-medium text-rose-600">
-              no admin mailbox — add one under Mailboxes
-            </span>
+      <div className="space-y-2 rounded-lg bg-slate-50 px-3 py-2 text-xs">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-slate-400">Report sender:</span>
+          <select
+            className="input w-72 py-1"
+            value={senderId}
+            onChange={(e) => pickSender(e.target.value)}
+          >
+            <option value="">Auto (admin / first available)</option>
+            {senderOptions.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.emailAddress}
+                {m.clientId ? ` · ${m.label}` : ' · (admin/shared)'}
+              </option>
+            ))}
+          </select>
+          {senderOptions.length === 0 && (
+            <span className="text-rose-600">no active mailbox — add one under Mailboxes</span>
           )}
-        </span>
-        <span>
-          <span className="text-slate-400">Sends to: </span>
-          {client.email ? (
-            <span className="font-medium text-slate-700">{client.email}</span>
-          ) : (
-            <span className="font-medium text-rose-600">no contact email set</span>
-          )}
-        </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-4">
+          <span>
+            <span className="text-slate-400">Sends from: </span>
+            {fromAddr === undefined ? (
+              <span className="text-slate-400">checking…</span>
+            ) : fromAddr ? (
+              <span className="font-medium text-slate-700">{fromAddr}</span>
+            ) : (
+              <span className="font-medium text-rose-600">none resolved</span>
+            )}
+          </span>
+          <span>
+            <span className="text-slate-400">Sends to: </span>
+            {client.email ? (
+              <span className="font-medium text-slate-700">{client.email}</span>
+            ) : (
+              <span className="font-medium text-rose-600">no contact email set</span>
+            )}
+          </span>
+        </div>
       </div>
       <div className="flex flex-wrap items-center gap-4">
         <label className="flex items-center gap-2 text-sm text-slate-700">

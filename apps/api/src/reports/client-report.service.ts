@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import {
   EventType,
   MailboxStatus,
@@ -280,21 +280,71 @@ export class ClientReportService {
     }
   }
 
-  /** The address client reports will be sent FROM (for UI confirmation). */
-  async senderAddress(tenantId: string): Promise<{ from: string | null }> {
+  /** The address client reports will be sent FROM, plus the explicit pick. */
+  async senderAddress(
+    tenantId: string,
+  ): Promise<{ from: string | null; mailboxId: string | null; explicit: boolean }> {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { reportMailboxId: true },
+    });
     const admin = await this.prisma.user.findFirst({
       where: { tenantId, role: Role.SUPER_ADMIN },
       select: { email: true },
     });
     const mailbox = await this.resolveAdminMailbox(tenantId, admin?.email);
-    return { from: mailbox?.emailAddress ?? null };
+    return {
+      from: mailbox?.emailAddress ?? null,
+      mailboxId: tenant?.reportMailboxId ?? null,
+      explicit: !!tenant?.reportMailboxId,
+    };
+  }
+
+  /** Active mailboxes that can be chosen as the report sender. */
+  async senderOptions(tenantId: string) {
+    return this.prisma.emailAccount.findMany({
+      where: { tenantId, status: MailboxStatus.ACTIVE },
+      select: { id: true, label: true, emailAddress: true, clientId: true },
+      orderBy: [{ clientId: 'asc' }, { emailAddress: 'asc' }],
+    });
+  }
+
+  /** Set (or clear with null) the explicit report-sender mailbox. */
+  async setSender(tenantId: string, mailboxId: string | null) {
+    if (mailboxId) {
+      const ok = await this.prisma.emailAccount.findFirst({
+        where: { id: mailboxId, tenantId },
+        select: { id: true },
+      });
+      if (!ok) throw new NotFoundException('Mailbox not found');
+    }
+    await this.prisma.tenant.update({
+      where: { id: tenantId },
+      data: { reportMailboxId: mailboxId },
+    });
+    return this.senderAddress(tenantId);
   }
 
   /**
-   * The mailbox reports are sent from: prefer one matching the admin's email,
-   * then any tenant-level (unassigned) mailbox, then any active mailbox.
+   * The mailbox reports are sent from: the explicitly chosen one (if still
+   * active), else one matching the admin's email, else any tenant-level
+   * (unassigned) mailbox, else any active mailbox.
    */
   private async resolveAdminMailbox(tenantId: string, adminEmail?: string) {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { reportMailboxId: true },
+    });
+    if (tenant?.reportMailboxId) {
+      const picked = await this.prisma.emailAccount.findFirst({
+        where: {
+          id: tenant.reportMailboxId,
+          tenantId,
+          status: MailboxStatus.ACTIVE,
+        },
+      });
+      if (picked) return picked;
+    }
     if (adminEmail) {
       const byEmail = await this.prisma.emailAccount.findFirst({
         where: {

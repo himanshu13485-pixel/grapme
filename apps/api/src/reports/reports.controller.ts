@@ -43,6 +43,23 @@ export class ReportsController {
     return this.clientReports.senderAddress(user.tenantId);
   }
 
+  /** Mailboxes selectable as the report sender. */
+  @Roles(Role.SUPER_ADMIN, Role.SUB_ADMIN)
+  @Get('reports/sender-options')
+  reportSenderOptions(@CurrentUser() user: AuthUser) {
+    return this.clientReports.senderOptions(user.tenantId);
+  }
+
+  /** Pick (or clear) the mailbox client reports send from. */
+  @Roles(Role.SUPER_ADMIN, Role.SUB_ADMIN)
+  @Post('reports/sender')
+  setReportSender(
+    @CurrentUser() user: AuthUser,
+    @Body('mailboxId') mailboxId: string | null,
+  ) {
+    return this.clientReports.setSender(user.tenantId, mailboxId || null);
+  }
+
   /** Send a client report now (test / on-demand). */
   @HttpCode(200)
   @Roles(Role.SUPER_ADMIN, Role.SUB_ADMIN)
