@@ -19,6 +19,7 @@ import { MailerService } from '../sending/mailer.service';
 import { renderTemplate } from '../templates/templates.service';
 import { instrumentHtml } from '../sending/tracking.util';
 import { AuthUser } from '../common/decorators/current-user.decorator';
+import { ActivityService } from '../common/services/activity.service';
 import {
   AssignMailboxDto,
   CreateClientDto,
@@ -65,13 +66,23 @@ export class ProgramsService {
     private prisma: PrismaService,
     private mailer: MailerService,
     private config: ConfigService,
+    private activity: ActivityService,
   ) {}
 
   // ── Clients ───────────────────────────────────────────────
-  createClient(user: AuthUser, dto: CreateClientDto) {
-    return this.prisma.client.create({
+  async createClient(user: AuthUser, dto: CreateClientDto) {
+    const client = await this.prisma.client.create({
       data: { tenantId: user.tenantId, ...dto },
     });
+    await this.activity.log({
+      tenantId: user.tenantId,
+      actorId: user.userId,
+      action: 'CREATE_CLIENT',
+      entityType: 'Client',
+      entityId: client.id,
+      after: { name: client.name, plan: client.plan },
+    });
+    return client;
   }
 
   listClients(user: AuthUser) {
@@ -110,8 +121,27 @@ export class ProgramsService {
   }
 
   async updateClient(user: AuthUser, id: string, dto: UpdateClientDto) {
-    await this.assertClient(user, id);
-    return this.prisma.client.update({ where: { id }, data: dto });
+    const before = await this.assertClient(user, id);
+    const updated = await this.prisma.client.update({ where: { id }, data: dto });
+    // Record only the fields that actually changed, so the audit trail is clear.
+    const changedBefore: Record<string, unknown> = { name: before.name };
+    const changedAfter: Record<string, unknown> = { name: updated.name };
+    for (const k of Object.keys(dto) as (keyof UpdateClientDto)[]) {
+      if ((before as Record<string, unknown>)[k] !== (updated as Record<string, unknown>)[k]) {
+        changedBefore[k] = (before as Record<string, unknown>)[k];
+        changedAfter[k] = (updated as Record<string, unknown>)[k];
+      }
+    }
+    await this.activity.log({
+      tenantId: user.tenantId,
+      actorId: user.userId,
+      action: 'UPDATE_CLIENT',
+      entityType: 'Client',
+      entityId: id,
+      before: changedBefore,
+      after: changedAfter,
+    });
+    return updated;
   }
 
   // ── Mailbox group ─────────────────────────────────────────
@@ -253,7 +283,22 @@ export class ProgramsService {
       label = list?.name;
     }
     const startDate = dto.startDate ? new Date(dto.startDate) : undefined;
-    return this.createAndEnroll(client, fresh, label, dto.monthIndex, startDate);
+    const cohort = await this.createAndEnroll(
+      client,
+      fresh,
+      label,
+      dto.monthIndex,
+      startDate,
+    );
+    await this.activity.log({
+      tenantId: user.tenantId,
+      actorId: user.userId,
+      action: 'CREATE_COHORT',
+      entityType: 'Cohort',
+      entityId: cohort.cohortId,
+      after: { label: label ?? null, contacts: fresh.length, client: client.name },
+    });
+    return cohort;
   }
 
   /** Manual or auto: create the next cohort from the client's source list,
@@ -676,27 +721,44 @@ export class ProgramsService {
   }
 
   // ── Cohort lifecycle: pause / resume / stop ───────────────
+  private logCohort(
+    user: AuthUser,
+    action: string,
+    cohort: { id: string; label: string; monthIndex: number },
+  ) {
+    return this.activity.log({
+      tenantId: user.tenantId,
+      actorId: user.userId,
+      action,
+      entityType: 'Cohort',
+      entityId: cohort.id,
+      after: { label: cohort.label, month: cohort.monthIndex },
+    });
+  }
+
   async pauseCohort(user: AuthUser, cohortId: string) {
-    await this.assertCohort(user, cohortId);
+    const cohort = await this.assertCohort(user, cohortId);
     await this.prisma.cohort.update({
       where: { id: cohortId },
       data: { status: 'PAUSED' },
     });
+    await this.logCohort(user, 'PAUSE_COHORT', cohort);
     return { ok: true };
   }
 
   async resumeCohort(user: AuthUser, cohortId: string) {
-    await this.assertCohort(user, cohortId);
+    const cohort = await this.assertCohort(user, cohortId);
     await this.prisma.cohort.update({
       where: { id: cohortId },
       data: { status: 'RUNNING' },
     });
+    await this.logCohort(user, 'RESUME_COHORT', cohort);
     return { ok: true };
   }
 
   /** Stop permanently: halt the cohort and end every still-active contact. */
   async stopCohort(user: AuthUser, cohortId: string) {
-    await this.assertCohort(user, cohortId);
+    const cohort = await this.assertCohort(user, cohortId);
     await this.prisma.cohort.update({
       where: { id: cohortId },
       data: { status: 'STOPPED', endedAt: new Date() },
@@ -705,13 +767,15 @@ export class ProgramsService {
       where: { cohortId, status: EnrollmentStatus.ACTIVE },
       data: { status: EnrollmentStatus.STOPPED },
     });
+    await this.logCohort(user, 'STOP_COHORT', cohort);
     return { ok: true };
   }
 
   /** Delete a cohort and all its enrollments (cascade). */
   async deleteCohort(user: AuthUser, cohortId: string) {
-    await this.assertCohort(user, cohortId);
+    const cohort = await this.assertCohort(user, cohortId);
     await this.prisma.cohort.delete({ where: { id: cohortId } });
+    await this.logCohort(user, 'DELETE_COHORT', cohort);
     return { ok: true };
   }
 

@@ -68,12 +68,12 @@ export class ReportsService {
     };
   }
 
-  activityLogs(user: AuthUser, take = 100) {
+  activityLogs(user: AuthUser, take = 250) {
     return this.prisma.activityLog.findMany({
       where: { tenantId: user.tenantId },
       orderBy: { occurredAt: 'desc' },
       take,
-      include: { actor: { select: { name: true, email: true } } },
+      include: { actor: { select: { name: true, email: true, role: true } } },
     });
   }
 

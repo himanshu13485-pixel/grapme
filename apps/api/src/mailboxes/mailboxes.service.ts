@@ -108,7 +108,7 @@ export class MailboxesService {
 
   /** Edit a mailbox's details. Password is only replaced when provided. */
   async update(user: AuthUser, id: string, dto: UpdateMailboxDto) {
-    await this.getOwned(user, id);
+    const before = await this.getOwned(user, id);
 
     const data: Record<string, unknown> = {
       label: dto.label,
@@ -138,12 +138,32 @@ export class MailboxesService {
       data,
       select: SAFE,
     });
+    // Capture only changed, non-secret fields for a clear audit diff.
+    const tracked = [
+      'label', 'emailAddress', 'protocol', 'smtpHost', 'smtpPort', 'smtpUsername',
+      'imapHost', 'imapPort', 'imapUsername', 'imapAllowSelfSigned', 'dailyLimit',
+      'sendSpeedSeconds', 'warmupEnabled',
+    ] as const;
+    const changedBefore: Record<string, unknown> = { label: before.label };
+    const changedAfter: Record<string, unknown> = { label: account.label };
+    for (const k of tracked) {
+      const b = (before as Record<string, unknown>)[k];
+      const a = (account as Record<string, unknown>)[k];
+      if (dto[k as keyof UpdateMailboxDto] !== undefined && b !== a) {
+        changedBefore[k] = b;
+        changedAfter[k] = a;
+      }
+    }
+    if (dto.password) changedAfter.password = '(changed)';
+    if (dto.imapPassword) changedAfter.imapPassword = '(changed)';
     await this.activity.log({
       tenantId: user.tenantId,
       actorId: user.userId,
       action: 'UPDATE_MAILBOX',
       entityType: 'EmailAccount',
       entityId: id,
+      before: changedBefore,
+      after: changedAfter,
     });
     return account;
   }
