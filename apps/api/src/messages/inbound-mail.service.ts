@@ -171,8 +171,8 @@ export class InboundMailService {
         status: MessageStatus.DELIVERED,
         messageId: dedupeId,
         fromAddress: from,
-        subject,
-        body: body ? body.slice(0, 20000) : null,
+        subject: this.sanitizeForDb(subject),
+        body: this.sanitizeForDb(body?.slice(0, 20000)),
         // Real received time so the Inbox "When" column reflects the email, not
         // the moment we happened to poll it.
         sentAt: receivedAt ?? null,
@@ -180,6 +180,39 @@ export class InboundMailService {
     });
     this.logger.log(`Inbound stored from ${from}`);
     return true;
+  }
+
+  /**
+   * Makes arbitrary inbound text safe to store so one odd email can never crash
+   * the poller. Maps common smart punctuation to ASCII, then drops characters
+   * the database can't encode. The dev DB cluster is WIN1252 (the Windows initdb
+   * default), which rejects emoji / CJK / etc.; this keeps Latin text (incl.
+   * accents) and strips the rest. Also strips NUL + control chars, which even a
+   * UTF-8 database rejects. Once the cluster is recreated as UTF8 the > 0xFF
+   * drop can be removed to keep full Unicode.
+   */
+  private sanitizeForDb(s?: string): string | undefined {
+    if (s == null) return s;
+    // Smart punctuation -> ASCII (escapes only; no literal high chars in source).
+    const mapped = s
+      .replace(/[‘’‚‛]/g, "'")
+      .replace(/[“”„‟]/g, '"')
+      .replace(/[–—]/g, '-')
+      .replace(/…/g, '...');
+    let out = '';
+    for (const ch of mapped) {
+      const c = ch.codePointAt(0)!;
+      if (c === 0x09 || c === 0x0a || c === 0x0d) {
+        out += ch; // keep tab / newline / carriage return
+      } else if (c < 0x20 || (c >= 0x7f && c <= 0x9f)) {
+        continue; // drop C0 / C1 control chars
+      } else if (c > 0xff) {
+        continue; // drop chars the WIN1252 cluster can't store (emoji, CJK, …)
+      } else {
+        out += ch;
+      }
+    }
+    return out;
   }
 
   /** Best-effort, dependency-free extraction of a readable text body from raw

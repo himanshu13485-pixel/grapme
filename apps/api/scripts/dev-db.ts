@@ -22,6 +22,10 @@ async function main() {
     password: 'aeo_password',
     port: 5432,
     persistent: true,
+    // Force UTF-8 so the cluster can store any inbound mail (emoji, CJK, …).
+    // Without this, initdb on Windows picks the WIN1252 system locale and
+    // inserts of non-Latin characters fail. Only applied on first init.
+    initdbFlags: ['--encoding=UTF8', '--locale=C'],
   });
 
   if (firstRun) {
