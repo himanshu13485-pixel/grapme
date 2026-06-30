@@ -644,6 +644,9 @@ model Client {
   invoiceNo         String?  // company invoice / account reference
   contactPerson     String?  // client-side point of contact (name)
   email             String?  // client contact email — also the report recipient
+  mobile            String?  // client mobile incl. country code
+  productCategory   String?  // product / category being exported/imported
+  serviceType       String?  // EXPORT | IMPORT | BOTH
   status            String   @default("active")
   plan              String   @default("GROWTH")
   reportDaily       Boolean  @default(false) // email a daily performance report

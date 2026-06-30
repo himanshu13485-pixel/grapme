@@ -11,6 +11,9 @@ interface Client {
   invoiceNo?: string;
   contactPerson?: string;
   email?: string;
+  mobile?: string;
+  productCategory?: string;
+  serviceType?: string;
   plan: string;
   status: string;
   monthlyQuota: number;
@@ -29,6 +32,7 @@ export default function ClientsPage() {
   const [clients, setClients] = useState<Client[]>([]);
   const [show, setShow] = useState(false);
   const [viewing, setViewing] = useState<Client | null>(null);
+  const [editing, setEditing] = useState<Client | null>(null);
   const [q, setQ] = useState('');
   const [invoiceQ, setInvoiceQ] = useState('');
 
@@ -103,16 +107,28 @@ export default function ClientsPage() {
               </div>
               <div className="mt-3 flex items-center justify-between text-xs text-slate-400">
                 <span>{c.dailyBatchSize}/day · {c.followUpCount} follow-ups · {c.monthlyQuota}/mo</span>
-                <button
-                  type="button"
-                  className="text-brand-600 hover:underline"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    setViewing(c);
-                  }}
-                >
-                  View
-                </button>
+                <span className="flex gap-3">
+                  <button
+                    type="button"
+                    className="text-brand-600 hover:underline"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setViewing(c);
+                    }}
+                  >
+                    View
+                  </button>
+                  <button
+                    type="button"
+                    className="text-brand-600 hover:underline"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setEditing(c);
+                    }}
+                  >
+                    Edit
+                  </button>
+                </span>
               </div>
             </Link>
           ))}
@@ -137,8 +153,33 @@ export default function ClientsPage() {
       >
         {viewing && <ClientDetailView client={viewing} />}
       </Modal>
+
+      <Modal
+        open={!!editing}
+        onClose={() => setEditing(null)}
+        title={editing ? `Edit · ${editing.name}` : 'Edit client'}
+        disableBackdropClose
+        wide
+      >
+        {editing && (
+          <EditClientForm
+            client={editing}
+            onDone={() => {
+              setEditing(null);
+              load();
+            }}
+          />
+        )}
+      </Modal>
     </div>
   );
+}
+
+function serviceLabel(s?: string): string {
+  if (s === 'EXPORT') return 'Export';
+  if (s === 'IMPORT') return 'Import';
+  if (s === 'BOTH') return 'Both';
+  return '—';
 }
 
 function ClientDetailView({ client }: { client: Client }) {
@@ -147,6 +188,9 @@ function ClientDetailView({ client }: { client: Client }) {
     { label: 'Invoice no.', value: client.invoiceNo || '—' },
     { label: 'Contact person', value: client.contactPerson || '—' },
     { label: 'Contact email', value: client.email || '—' },
+    { label: 'Mobile no.', value: client.mobile || '—' },
+    { label: 'Product / Category', value: client.productCategory || '—' },
+    { label: 'Service type', value: serviceLabel(client.serviceType) },
     { label: 'Plan', value: client.plan },
     { label: 'Status', value: client.status },
     { label: 'Contacts / month', value: String(client.monthlyQuota) },
@@ -189,6 +233,9 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
     invoiceNo: '',
     contactPerson: '',
     email: '',
+    mobile: '',
+    productCategory: '',
+    serviceType: 'EXPORT',
     plan: 'GROWTH',
     monthlyQuota: 100,
     dailyBatchSize: 10,
@@ -213,6 +260,9 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
         invoiceNo: form.invoiceNo || undefined,
         contactPerson: form.contactPerson || undefined,
         email: form.email || undefined,
+        mobile: form.mobile || undefined,
+        productCategory: form.productCategory || undefined,
+        serviceType: form.serviceType || undefined,
         monthlyQuota: Number(form.monthlyQuota),
         dailyBatchSize: Number(form.dailyBatchSize),
         batchWindowDays: Number(form.batchWindowDays),
@@ -271,6 +321,36 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
           />
         </div>
         <div>
+          <label className="label">Client mobile no. (with country code)</label>
+          <input
+            className="input"
+            value={form.mobile}
+            onChange={(e) => setForm({ ...form, mobile: e.target.value })}
+            placeholder="+91 98765 43210"
+          />
+        </div>
+        <div>
+          <label className="label">Product / Category</label>
+          <input
+            className="input"
+            value={form.productCategory}
+            onChange={(e) => setForm({ ...form, productCategory: e.target.value })}
+            placeholder="e.g. Handicrafts, Spices"
+          />
+        </div>
+        <div>
+          <label className="label">Service type</label>
+          <select
+            className="input"
+            value={form.serviceType}
+            onChange={(e) => setForm({ ...form, serviceType: e.target.value })}
+          >
+            <option value="EXPORT">Export</option>
+            <option value="IMPORT">Import</option>
+            <option value="BOTH">Both</option>
+          </select>
+        </div>
+        <div>
           <label className="label">Plan</label>
           <select
             className="input"
@@ -304,6 +384,154 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
       {error && <p className="text-sm text-rose-600">{error}</p>}
       <button className="btn-primary w-full" disabled={busy}>
         {busy ? 'Creating…' : 'Create client'}
+      </button>
+    </form>
+  );
+}
+
+function EditClientForm({ client, onDone }: { client: Client; onDone: () => void }) {
+  const [form, setForm] = useState({
+    name: client.name,
+    invoiceNo: client.invoiceNo ?? '',
+    contactPerson: client.contactPerson ?? '',
+    email: client.email ?? '',
+    mobile: client.mobile ?? '',
+    productCategory: client.productCategory ?? '',
+    serviceType: client.serviceType ?? 'EXPORT',
+    plan: client.plan,
+    monthlyQuota: client.monthlyQuota,
+    dailyBatchSize: client.dailyBatchSize,
+    batchWindowDays: client.batchWindowDays,
+    stageIntervalDays: client.stageIntervalDays,
+    followUpCount: client.followUpCount,
+    weekdaysOnly: client.weekdaysOnly,
+    sendWindowStart: client.sendWindowStart,
+    sendWindowEnd: client.sendWindowEnd,
+    stageIntervalJitterDays: client.stageIntervalJitterDays,
+  });
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setError('');
+    setBusy(true);
+    try {
+      await api.patch(`/clients/${client.id}`, {
+        name: form.name,
+        invoiceNo: form.invoiceNo || undefined,
+        contactPerson: form.contactPerson || undefined,
+        email: form.email || undefined,
+        mobile: form.mobile || undefined,
+        productCategory: form.productCategory || undefined,
+        serviceType: form.serviceType || undefined,
+        plan: form.plan,
+        monthlyQuota: Number(form.monthlyQuota),
+        dailyBatchSize: Number(form.dailyBatchSize),
+        batchWindowDays: Number(form.batchWindowDays),
+        stageIntervalDays: Number(form.stageIntervalDays),
+        followUpCount: Number(form.followUpCount),
+        weekdaysOnly: form.weekdaysOnly,
+        sendWindowStart: Number(form.sendWindowStart),
+        sendWindowEnd: Number(form.sendWindowEnd),
+        stageIntervalJitterDays: Number(form.stageIntervalJitterDays),
+      });
+      onDone();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-4">
+      <div>
+        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+          Client details
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="label">Company name *</label>
+            <input className="input" value={form.name} required
+              onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          </div>
+          <div>
+            <label className="label">Invoice no.</label>
+            <input className="input" value={form.invoiceNo}
+              onChange={(e) => setForm({ ...form, invoiceNo: e.target.value })} />
+          </div>
+          <div>
+            <label className="label">Contact person</label>
+            <input className="input" value={form.contactPerson}
+              onChange={(e) => setForm({ ...form, contactPerson: e.target.value })} />
+          </div>
+          <div>
+            <label className="label">Contact email (report recipient)</label>
+            <input type="email" className="input" value={form.email}
+              onChange={(e) => setForm({ ...form, email: e.target.value })} />
+          </div>
+          <div>
+            <label className="label">Client mobile no. (with country code)</label>
+            <input className="input" value={form.mobile} placeholder="+91 98765 43210"
+              onChange={(e) => setForm({ ...form, mobile: e.target.value })} />
+          </div>
+          <div>
+            <label className="label">Product / Category</label>
+            <input className="input" value={form.productCategory}
+              onChange={(e) => setForm({ ...form, productCategory: e.target.value })} />
+          </div>
+          <div>
+            <label className="label">Service type</label>
+            <select className="input" value={form.serviceType}
+              onChange={(e) => setForm({ ...form, serviceType: e.target.value })}>
+              <option value="EXPORT">Export</option>
+              <option value="IMPORT">Import</option>
+              <option value="BOTH">Both</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+          Outreach settings
+        </div>
+        <p className="mb-2 text-xs text-amber-600">
+          ⚠ Changes apply to future scheduling only — running cohorts keep their
+          already-scheduled sends.
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="label">Plan</label>
+            <select className="input" value={form.plan}
+              onChange={(e) => setForm({ ...form, plan: e.target.value })}>
+              <option value="GROWTH">Growth</option>
+              <option value="GROWTH_PLUS">Growth Plus</option>
+              <option value="ENTERPRISE">Enterprise</option>
+            </select>
+          </div>
+          <NumberField label="Contacts / month" value={form.monthlyQuota} onChange={(v) => setForm({ ...form, monthlyQuota: v })} />
+          <NumberField label="Sends / day" value={form.dailyBatchSize} onChange={(v) => setForm({ ...form, dailyBatchSize: v })} />
+          <NumberField label="Batch window (days)" value={form.batchWindowDays} onChange={(v) => setForm({ ...form, batchWindowDays: v })} />
+          <NumberField label="Gap between stages (days)" value={form.stageIntervalDays} onChange={(v) => setForm({ ...form, stageIntervalDays: v })} />
+          <NumberField label="Follow-ups (after initial)" value={form.followUpCount} onChange={(v) => setForm({ ...form, followUpCount: v })} />
+          <HourField label="Send window start" value={form.sendWindowStart} onChange={(v) => setForm({ ...form, sendWindowStart: v })} />
+          <HourField label="Send window end" value={form.sendWindowEnd} onChange={(v) => setForm({ ...form, sendWindowEnd: v })} />
+          <NumberField label="Interval jitter (± days)" value={form.stageIntervalJitterDays} onChange={(v) => setForm({ ...form, stageIntervalJitterDays: v })} />
+          <div className="flex items-end">
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input type="checkbox" checked={form.weekdaysOnly}
+                onChange={(e) => setForm({ ...form, weekdaysOnly: e.target.checked })} />
+              Weekdays only
+            </label>
+          </div>
+        </div>
+      </div>
+
+      {error && <p className="text-sm text-rose-600">{error}</p>}
+      <button className="btn-primary w-full" disabled={busy}>
+        {busy ? 'Saving…' : 'Save changes'}
       </button>
     </form>
   );

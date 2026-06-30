@@ -15,6 +15,9 @@ export class CreateClientDto {
   @IsOptional() @IsString() invoiceNo?: string;
   @IsOptional() @IsString() contactPerson?: string;
   @IsOptional() @IsString() email?: string;
+  @IsOptional() @IsString() mobile?: string;
+  @IsOptional() @IsString() productCategory?: string;
+  @IsOptional() @IsString() serviceType?: string;
   @IsOptional() @IsString() plan?: string;
   @IsOptional() @IsInt() @Min(1) monthlyQuota?: number;
   @IsOptional() @IsInt() @Min(1) dailyBatchSize?: number;
@@ -32,6 +35,9 @@ export class UpdateClientDto {
   @IsOptional() @IsString() invoiceNo?: string;
   @IsOptional() @IsString() contactPerson?: string;
   @IsOptional() @IsString() email?: string;
+  @IsOptional() @IsString() mobile?: string;
+  @IsOptional() @IsString() productCategory?: string;
+  @IsOptional() @IsString() serviceType?: string;
   @IsOptional() @IsString() status?: string;
   @IsOptional() @IsString() plan?: string;
   @IsOptional() @IsInt() @Min(1) monthlyQuota?: number;
