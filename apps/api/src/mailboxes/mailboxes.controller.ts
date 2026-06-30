@@ -55,6 +55,12 @@ export class MailboxesController {
   }
 
   @HttpCode(200)
+  @Post(':id/test-imap')
+  testImap(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.mailboxes.testImap(user, id);
+  }
+
+  @HttpCode(200)
   @Post(':id/test-email')
   sendTest(
     @CurrentUser() user: AuthUser,

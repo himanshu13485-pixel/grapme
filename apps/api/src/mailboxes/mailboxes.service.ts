@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { ImapFlow } from 'imapflow';
 import { ApprovalEntity, MailboxStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApprovalsService } from '../approvals/approvals.service';
@@ -224,6 +225,100 @@ export class MailboxesService {
         sent: false,
         detail: `Send failed: ${err instanceof Error ? err.message : String(err)}`,
       };
+    }
+  }
+
+  /**
+   * Real IMAP receiving test: connects to the mailbox's IMAP server with the
+   * stored credentials, opens INBOX, and reports how many recent messages it
+   * can see (last 7 days) plus the latest few. Surfaces the exact error on
+   * failure so misconfiguration is obvious. Read-only — does not store anything.
+   */
+  async testImap(user: AuthUser, id: string) {
+    const account = await this.getOwned(user, id);
+
+    const pollerEligible =
+      account.status === MailboxStatus.ACTIVE && !!account.imapHost;
+
+    if (!account.imapHost) {
+      return {
+        ok: false,
+        pollerEligible,
+        detail:
+          'No IMAP host configured for this mailbox — the reply poller skips it. Add IMAP host/port/username/password in the mailbox settings.',
+      };
+    }
+
+    const user_ = account.imapUsername || account.emailAddress;
+    let client: ImapFlow | null = null;
+    try {
+      client = new ImapFlow({
+        host: account.imapHost,
+        port: account.imapPort ?? 993,
+        secure: true,
+        auth: {
+          user: user_,
+          pass: decryptCredential(
+            account.imapCredentialsEncrypted ?? account.credentialsEncrypted,
+          ),
+        },
+        logger: false,
+      });
+      await client.connect();
+      const lock = await client.getMailboxLock('INBOX');
+      try {
+        const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        const found = await client.search({ since }, { uid: true });
+        const uids = Array.isArray(found) ? found : [];
+        const recent = uids.slice(-10).reverse();
+        const latest: { from?: string; subject?: string; date?: string }[] = [];
+        if (recent.length) {
+          for await (const msg of client.fetch(
+            recent,
+            { envelope: true },
+            { uid: true },
+          )) {
+            latest.push({
+              from: msg.envelope?.from?.[0]?.address,
+              subject: msg.envelope?.subject ?? undefined,
+              date: msg.envelope?.date
+                ? new Date(msg.envelope.date).toISOString()
+                : undefined,
+            });
+          }
+        }
+        return {
+          ok: true,
+          pollerEligible,
+          host: account.imapHost,
+          port: account.imapPort ?? 993,
+          username: user_,
+          recentCount: uids.length,
+          latest,
+          detail: pollerEligible
+            ? `Connected. ${uids.length} message(s) in the last 7 days. The reply poller checks this mailbox every few minutes.`
+            : `Connected, but the mailbox status is "${account.status}" — the reply poller only polls ACTIVE mailboxes, so set it Active to capture replies automatically.`,
+        };
+      } finally {
+        lock.release();
+      }
+    } catch (err) {
+      return {
+        ok: false,
+        pollerEligible,
+        host: account.imapHost,
+        port: account.imapPort ?? 993,
+        username: user_,
+        detail: `IMAP connection failed: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    } finally {
+      if (client) {
+        try {
+          await client.logout();
+        } catch {
+          /* ignore */
+        }
+      }
     }
   }
 

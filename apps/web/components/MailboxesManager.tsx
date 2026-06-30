@@ -131,6 +131,32 @@ export function MailboxesManager({ clientId }: { clientId?: string }) {
     }
   }
 
+  async function runImapTest(id: string) {
+    setTest({ ...test, [id]: 'checking inbox (IMAP)…' });
+    try {
+      const res = await api.post<{
+        ok: boolean;
+        detail: string;
+        recentCount?: number;
+        latest?: { from?: string; subject?: string; date?: string }[];
+      }>(`/email-accounts/${id}/test-imap`);
+      const lines = (res.latest ?? [])
+        .map(
+          (m) =>
+            `• ${m.from ?? '?'} — ${m.subject ?? '(no subject)'}${
+              m.date ? ` (${new Date(m.date).toLocaleString()})` : ''
+            }`,
+        )
+        .join('\n');
+      setTest({
+        ...test,
+        [id]: res.detail + (lines ? `\n${lines}` : ''),
+      });
+    } catch (err) {
+      setTest({ ...test, [id]: err instanceof Error ? err.message : 'Failed' });
+    }
+  }
+
   return (
     <div>
       {clientId ? (
@@ -301,7 +327,7 @@ export function MailboxesManager({ clientId }: { clientId?: string }) {
                   {m.emailAddress} · {m.protocol} · cap {m.dailyLimit}/day
                 </div>
                 {test[m.id] && (
-                  <div className="mt-1 text-xs text-slate-400">{test[m.id]}</div>
+                  <div className="mt-1 whitespace-pre-wrap text-xs text-slate-400">{test[m.id]}</div>
                 )}
                 {auth[m.id] && <AuthStatus result={auth[m.id]} />}
               </div>
@@ -324,6 +350,12 @@ export function MailboxesManager({ clientId }: { clientId?: string }) {
                   onClick={() => runTest(m.id)}
                 >
                   Test connection
+                </button>
+                <button
+                  className="btn-ghost px-3 py-1 text-xs"
+                  onClick={() => runImapTest(m.id)}
+                >
+                  Test inbox (IMAP)
                 </button>
                 <button
                   className="btn-ghost px-3 py-1 text-xs"
