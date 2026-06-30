@@ -740,15 +740,20 @@ function ReportSettings({ client, onChanged }: { client: Client; onChanged: () =
           Save schedule
         </button>
         <button
-          className="btn-ghost text-xs"
+          className="btn-primary text-xs"
           onClick={() => sendNow('daily')}
           disabled={busy || !client.email}
           title="Send a report right now to test"
         >
-          Send test now
+          <span className={busy ? 'inline-block animate-spin' : ''}>{busy ? '⟳' : '📤'}</span>{' '}
+          {busy ? 'Sending…' : 'Send test now'}
         </button>
       </div>
-      {note && <p className="text-xs text-slate-500">{note}</p>}
+      {note && (
+        <p className={`text-xs ${note.toLowerCase().includes('fail') ? 'text-rose-600' : 'text-emerald-600'}`}>
+          {note}
+        </p>
+      )}
     </div>
   );
 }
@@ -770,6 +775,7 @@ function Cohorts({
   const [startDate, setStartDate] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const [sendingId, setSendingId] = useState<string | null>(null);
 
   // Auto-cohort settings (local edit state)
   const [autoEnabled, setAutoEnabled] = useState(client.autoCohortEnabled);
@@ -837,12 +843,15 @@ function Cohorts({
 
   async function sendNow(cohortId: string) {
     if (!confirm('Send the current step to all active contacts in this cohort now? (Daily mailbox caps still apply.)')) return;
+    setSendingId(cohortId);
     try {
       const r = await api.post<{ sent: number; skipped: number }>(`/cohorts/${cohortId}/send-now`);
       onChanged();
       alert(`Sent ${r.sent}, skipped ${r.skipped} (capped/await).`);
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed');
+    } finally {
+      setSendingId(null);
     }
   }
 
@@ -1095,7 +1104,17 @@ function Cohorts({
                   <td className="px-4 py-3 text-right whitespace-nowrap">
                     {c.status === 'RUNNING' && (
                       <>
-                        <button className="btn-ghost text-xs text-brand-600" onClick={() => sendNow(c.id)}>Send now</button>
+                        <button
+                          className="btn-ghost text-xs text-brand-600 disabled:opacity-50"
+                          onClick={() => sendNow(c.id)}
+                          disabled={sendingId === c.id}
+                        >
+                          {sendingId === c.id ? (
+                            <><span className="inline-block animate-spin">⟳</span> Sending…</>
+                          ) : (
+                            'Send now'
+                          )}
+                        </button>
                         <button className="btn-ghost text-xs" onClick={() => lifecycle(c.id, 'pause')}>Pause</button>
                       </>
                     )}

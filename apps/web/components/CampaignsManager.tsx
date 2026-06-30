@@ -3,7 +3,7 @@
 import { useEffect, useState, FormEvent } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
-import { PageHeader, StatusBadge, EmptyState } from '@/components/ui';
+import { PageHeader, StatusBadge, EmptyState, Pagination } from '@/components/ui';
 
 interface Campaign {
   id: string;
@@ -39,6 +39,9 @@ export function CampaignsManager({ clientId }: { clientId?: string }) {
     templateId: '',
   });
   const [error, setError] = useState('');
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 25;
+  const paged = campaigns.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const scope = clientId ? `?clientId=${clientId}` : '';
 
@@ -172,6 +175,8 @@ export function CampaignsManager({ clientId }: { clientId?: string }) {
       {campaigns.length === 0 ? (
         <EmptyState message="No campaigns yet. Create your first draft above." />
       ) : (
+        <>
+        <div className="mb-3 text-sm text-slate-400">{campaigns.length} campaign{campaigns.length === 1 ? '' : 's'}</div>
         <div className="card overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase text-slate-400">
@@ -184,7 +189,7 @@ export function CampaignsManager({ clientId }: { clientId?: string }) {
               </tr>
             </thead>
             <tbody>
-              {campaigns.map((c) => (
+              {paged.map((c) => (
                 <tr key={c.id} className="border-t border-slate-100">
                   <td className="px-5 py-3 font-medium">{c.name}</td>
                   {!clientId && (
@@ -221,6 +226,8 @@ export function CampaignsManager({ clientId }: { clientId?: string }) {
             </tbody>
           </table>
         </div>
+        <Pagination page={page} pageSize={PAGE_SIZE} total={campaigns.length} onPage={setPage} />
+        </>
       )}
     </div>
   );

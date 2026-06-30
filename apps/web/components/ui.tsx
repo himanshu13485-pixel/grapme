@@ -97,6 +97,49 @@ export function Modal({
   );
 }
 
+/** Shared pager: shows "X-Y of N" + Prev/Next. Renders nothing if it all fits. */
+export function Pagination({
+  page,
+  pageSize,
+  total,
+  onPage,
+}: {
+  page: number;
+  pageSize: number;
+  total: number;
+  onPage: (p: number) => void;
+}) {
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  if (total <= pageSize) return null;
+  const safe = Math.min(Math.max(1, page), pageCount);
+  return (
+    <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
+      <span>
+        Showing {(safe - 1) * pageSize + 1}–{Math.min(safe * pageSize, total)} of {total}
+      </span>
+      <div className="flex items-center gap-2">
+        <button
+          className="btn-ghost px-3 py-1 disabled:opacity-40"
+          disabled={safe <= 1}
+          onClick={() => onPage(safe - 1)}
+        >
+          ← Prev
+        </button>
+        <span>
+          Page {safe} / {pageCount}
+        </span>
+        <button
+          className="btn-ghost px-3 py-1 disabled:opacity-40"
+          disabled={safe >= pageCount}
+          onClick={() => onPage(safe + 1)}
+        >
+          Next →
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function Tabs({
   tabs,
   active,

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, FormEvent } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
-import { PageHeader, EmptyState, Modal, StatusBadge } from '@/components/ui';
+import { PageHeader, EmptyState, Modal, StatusBadge, Pagination } from '@/components/ui';
 
 interface Client {
   id: string;
@@ -35,6 +35,8 @@ export default function ClientsPage() {
   const [editing, setEditing] = useState<Client | null>(null);
   const [q, setQ] = useState('');
   const [invoiceQ, setInvoiceQ] = useState('');
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 12;
 
   function load() {
     api.get<Client[]>('/clients').then(setClients).catch(() => {});
@@ -52,6 +54,9 @@ export default function ClientsPage() {
         .some((v) => v!.toLowerCase().includes(s));
     });
   }, [clients, q, invoiceQ]);
+
+  useEffect(() => setPage(1), [q, invoiceQ]);
+  const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <div>
@@ -90,7 +95,7 @@ export default function ClientsPage() {
           <EmptyState message="No clients match your search." />
         ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((c) => (
+          {paged.map((c) => (
             <Link key={c.id} href={`/clients/${c.id}`} className="card p-5 transition hover:border-brand-300 hover:shadow-sm">
               <div className="flex items-center justify-between">
                 <div className="font-medium text-slate-800">{c.name}</div>
@@ -134,6 +139,7 @@ export default function ClientsPage() {
           ))}
         </div>
         )}
+        <Pagination page={page} pageSize={PAGE_SIZE} total={filtered.length} onPage={setPage} />
         </>
       )}
 

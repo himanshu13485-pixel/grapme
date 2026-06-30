@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/api';
-import { PageHeader, EmptyState } from '@/components/ui';
+import { PageHeader, EmptyState, Pagination } from '@/components/ui';
 
 interface AgendaRow {
   clientName: string;
@@ -31,6 +31,8 @@ export default function CohortSchedulePage() {
   const [clientFilter, setClientFilter] = useState('ALL');
   const [stageFilter, setStageFilter] = useState<'ALL' | 'INITIAL' | 'FU'>('ALL');
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 50;
 
   useEffect(() => {
     api.get<AgendaRow[]>('/programs/agenda').then(setRows).catch(() => setRows([]));
@@ -68,17 +70,25 @@ export default function CohortSchedulePage() {
     });
   }, [rows, range, customFrom, customTo, clientFilter, stageFilter, search]);
 
-  // Group by day for a clean "line-up for the day" view.
+  // Paginate the flat (date-sorted) list, then group the current page by day.
+  const sorted = useMemo(
+    () => [...filtered].sort((a, b) => +new Date(a.estStart) - +new Date(b.estStart)),
+    [filtered],
+  );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => setPage(1), [range, customFrom, customTo, clientFilter, stageFilter, search]);
+  const paged = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
   const groups = useMemo(() => {
     const map = new Map<string, { date: Date; items: AgendaRow[] }>();
-    for (const r of filtered) {
+    for (const r of paged) {
       const d = new Date(r.estStart);
       const k = dayKey(d);
       if (!map.has(k)) map.set(k, { date: d, items: [] });
       map.get(k)!.items.push(r);
     }
     return [...map.values()].sort((a, b) => a.date.getTime() - b.date.getTime());
-  }, [filtered]);
+  }, [paged]);
 
   const today = new Date();
 
@@ -188,6 +198,8 @@ export default function CohortSchedulePage() {
           ))}
         </div>
       )}
+
+      <Pagination page={page} pageSize={PAGE_SIZE} total={filtered.length} onPage={setPage} />
 
       <p className="mt-4 text-xs text-slate-400">
         Estimated from each cohort&apos;s start date and its sequence (±jitter). Dates are the

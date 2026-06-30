@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ImapFlow } from 'imapflow';
 import {
+  EnrollmentStatus,
   EventType,
   MailboxStatus,
   MessageDirection,
@@ -326,6 +327,13 @@ export class InboundMailService {
 
     const existing = await this.prisma.emailEvent.findFirst({
       where: { messageId: lastOutbound.id, eventType: EventType.REPLY },
+    });
+    // Always flip the contact's active enrollments to REPLIED (stop the
+    // sequence + reflect it in the cohort "Replied" count), even if the REPLY
+    // event was already recorded.
+    await this.prisma.enrollment.updateMany({
+      where: { contactId: contact.id, status: EnrollmentStatus.ACTIVE },
+      data: { status: EnrollmentStatus.REPLIED },
     });
     if (existing) return;
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, FormEvent } from 'react';
 import { api } from '@/lib/api';
-import { PageHeader, EmptyState } from '@/components/ui';
+import { PageHeader, EmptyState, Pagination } from '@/components/ui';
 
 interface Template {
   id: string;
@@ -35,6 +35,9 @@ function renderPreview(html: string): string {
 export function TemplatesManager({ clientId }: { clientId?: string }) {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [editing, setEditing] = useState<Template | 'new' | null>(null);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 20;
+  const paged = templates.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   function load() {
     const q = clientId ? `?clientId=${clientId}` : '';
@@ -91,8 +94,10 @@ export function TemplatesManager({ clientId }: { clientId?: string }) {
       ) : templates.length === 0 ? (
         <EmptyState message="No templates yet. Create one with the editor." />
       ) : (
+        <>
+        <div className="mb-3 text-sm text-slate-400">{templates.length} template{templates.length === 1 ? '' : 's'}</div>
         <div className="card divide-y divide-slate-100">
-          {templates.map((t) => (
+          {paged.map((t) => (
             <div key={t.id} className="flex items-center justify-between p-4">
               <div>
                 <div className="flex items-center gap-2">
@@ -119,6 +124,8 @@ export function TemplatesManager({ clientId }: { clientId?: string }) {
             </div>
           ))}
         </div>
+        <Pagination page={page} pageSize={PAGE_SIZE} total={templates.length} onPage={setPage} />
+        </>
       )}
     </div>
   );

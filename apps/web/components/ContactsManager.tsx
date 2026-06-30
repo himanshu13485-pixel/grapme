@@ -8,6 +8,7 @@ import {
   StatusBadge,
   Modal,
   Tabs,
+  Pagination,
 } from '@/components/ui';
 import { ImportWizard } from '@/components/ImportWizard';
 
@@ -52,6 +53,8 @@ export function ContactsManager({ clientId }: { clientId?: string }) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [clientFilter, setClientFilter] = useState('ALL');
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 25;
 
   const [showAdd, setShowAdd] = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -92,6 +95,9 @@ export function ContactsManager({ clientId }: { clientId?: string }) {
         .some((v) => v!.toLowerCase().includes(q));
     });
   }, [contacts, search, statusFilter, clientFilter]);
+
+  useEffect(() => setPage(1), [search, statusFilter, clientFilter]);
+  const pagedContacts = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const filteredLists = useMemo(() => {
     if (clientFilter === 'ALL') return lists;
@@ -187,7 +193,7 @@ export function ContactsManager({ clientId }: { clientId?: string }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map((c) => (
+                  {pagedContacts.map((c) => (
                     <tr key={c.id} className="border-t border-slate-100">
                       <td className="px-5 py-3 font-medium">{c.email}</td>
                       <td className="px-5 py-3 text-slate-500">
@@ -220,6 +226,7 @@ export function ContactsManager({ clientId }: { clientId?: string }) {
               </table>
             </div>
           )}
+          <Pagination page={page} pageSize={PAGE_SIZE} total={filtered.length} onPage={setPage} />
         </>
       )}
 

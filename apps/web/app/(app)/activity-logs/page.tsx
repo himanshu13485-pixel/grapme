@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/api';
-import { PageHeader, EmptyState } from '@/components/ui';
+import { PageHeader, EmptyState, Pagination } from '@/components/ui';
 
 interface Log {
   id: string;
@@ -92,6 +92,8 @@ export default function ActivityLogsPage() {
   const [search, setSearch] = useState('');
   const [actionFilter, setActionFilter] = useState('ALL');
   const [roleFilter, setRoleFilter] = useState('ALL');
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 30;
 
   useEffect(() => {
     api.get<Log[]>('/activity-logs').then(setLogs).catch(() => {});
@@ -120,6 +122,9 @@ export default function ActivityLogsPage() {
         .some((v) => v!.toString().toLowerCase().includes(q));
     });
   }, [logs, search, actionFilter, roleFilter]);
+
+  useEffect(() => setPage(1), [search, actionFilter, roleFilter]);
+  const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
     <div>
@@ -175,7 +180,7 @@ export default function ActivityLogsPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((l) => {
+              {paged.map((l) => {
                 const diffs = diffRows(l);
                 const expandable = diffs.length > 0;
                 return (
@@ -254,6 +259,7 @@ export default function ActivityLogsPage() {
           </table>
         </div>
       )}
+      <Pagination page={page} pageSize={PAGE_SIZE} total={filtered.length} onPage={setPage} />
     </div>
   );
 }
