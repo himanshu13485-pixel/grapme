@@ -500,6 +500,7 @@ model EmailMessage {
   id             String           @id @default(uuid())
   tenantId       String
   campaignId     String?
+  cohortId       String?          // GRAPOUT cohort this outbound belongs to (for cohort reports)
   stepId         String?
   contactId      String?
   emailAccountId String?
@@ -524,6 +525,7 @@ model EmailMessage {
 
   @@index([tenantId])
   @@index([campaignId])
+  @@index([cohortId])
   @@index([status])
 }
 

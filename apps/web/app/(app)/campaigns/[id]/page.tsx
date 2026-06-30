@@ -23,13 +23,16 @@ interface Campaign {
 }
 interface Analytics {
   sent: number;
+  delivered: number;
   opens: number;
   clicks: number;
   replies: number;
   bounces: number;
+  unsubscribes: number;
   openRate: number;
   clickRate: number;
   replyRate: number;
+  bounceRate: number;
 }
 
 export default function CampaignDetailPage() {
@@ -116,14 +119,19 @@ export default function CampaignDetailPage() {
 
       {/* Analytics */}
       <div className="mb-6 grid grid-cols-3 gap-4 lg:grid-cols-6">
-        {[
+        {([
           ['Sent', analytics?.sent ?? 0],
+          ['Inbox', analytics?.delivered ?? 0],
           ['Opens', analytics?.opens ?? 0],
+          ['Open %', `${analytics?.openRate ?? 0}%`],
           ['Clicks', analytics?.clicks ?? 0],
+          ['Click %', `${analytics?.clickRate ?? 0}%`],
           ['Replies', analytics?.replies ?? 0],
-          ['Open %', analytics?.openRate ?? 0],
-          ['Reply %', analytics?.replyRate ?? 0],
-        ].map(([label, value]) => (
+          ['Reply %', `${analytics?.replyRate ?? 0}%`],
+          ['Bounces', analytics?.bounces ?? 0],
+          ['Bounce %', `${analytics?.bounceRate ?? 0}%`],
+          ['Unsub', analytics?.unsubscribes ?? 0],
+        ] as [string, string | number][]).map(([label, value]) => (
           <div key={label} className="card p-4">
             <div className="text-xs text-slate-500">{label}</div>
             <div className="mt-1 text-2xl font-semibold">{value}</div>

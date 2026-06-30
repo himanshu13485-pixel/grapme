@@ -482,6 +482,79 @@ export class ProgramsService {
       cohorts.map((c) => c.id),
     );
 
+    // ── Delivery + engagement metrics per cohort ──
+    const cohortIds = cohorts.map((c) => c.id);
+    const msgGroups = await this.prisma.emailMessage.groupBy({
+      by: ['cohortId', 'status'],
+      where: { cohortId: { in: cohortIds }, direction: MessageDirection.OUTBOUND },
+      _count: { _all: true },
+    });
+    const sentMsgs = new Map<string, number>();
+    const bouncedMsgs = new Map<string, number>();
+    for (const g of msgGroups) {
+      if (!g.cohortId) continue;
+      if (g.status === MessageStatus.SENT || g.status === MessageStatus.DELIVERED)
+        sentMsgs.set(g.cohortId, (sentMsgs.get(g.cohortId) ?? 0) + g._count._all);
+      if (g.status === MessageStatus.BOUNCED)
+        bouncedMsgs.set(g.cohortId, (bouncedMsgs.get(g.cohortId) ?? 0) + g._count._all);
+    }
+    // Unique opens/clicks/replies (distinct message), and unsubscribe counts.
+    const evs = await this.prisma.emailEvent.findMany({
+      where: {
+        message: { cohortId: { in: cohortIds } },
+        eventType: {
+          in: [
+            EventType.OPEN,
+            EventType.CLICK,
+            EventType.REPLY,
+            EventType.UNSUBSCRIBE,
+          ],
+        },
+      },
+      select: {
+        eventType: true,
+        messageId: true,
+        message: { select: { cohortId: true } },
+      },
+    });
+    const openSet = new Map<string, Set<string>>();
+    const clickSet = new Map<string, Set<string>>();
+    const replySet = new Map<string, Set<string>>();
+    const unsubN = new Map<string, number>();
+    const add = (m: Map<string, Set<string>>, cid: string, msg: string) => {
+      if (!m.has(cid)) m.set(cid, new Set());
+      m.get(cid)!.add(msg);
+    };
+    for (const e of evs) {
+      const cid = e.message?.cohortId;
+      if (!cid) continue;
+      if (e.eventType === EventType.OPEN) add(openSet, cid, e.messageId);
+      else if (e.eventType === EventType.CLICK) add(clickSet, cid, e.messageId);
+      else if (e.eventType === EventType.REPLY) add(replySet, cid, e.messageId);
+      else if (e.eventType === EventType.UNSUBSCRIBE)
+        unsubN.set(cid, (unsubN.get(cid) ?? 0) + 1);
+    }
+    const metricsFor = (cid: string) => {
+      const s = sentMsgs.get(cid) ?? 0;
+      const opens = openSet.get(cid)?.size ?? 0;
+      const clicks = clickSet.get(cid)?.size ?? 0;
+      const replies = replySet.get(cid)?.size ?? 0;
+      const bounces = bouncedMsgs.get(cid) ?? 0;
+      const pct = (n: number) => (s ? Math.round((n / s) * 1000) / 10 : 0);
+      return {
+        sent: s,
+        opens,
+        clicks,
+        replies,
+        bounces,
+        unsubscribes: unsubN.get(cid) ?? 0,
+        openRate: pct(opens),
+        clickRate: pct(clicks),
+        replyRate: pct(replies),
+        bounceRate: pct(bounces),
+      };
+    };
+
     return cohorts.map((co) => {
       const schedule = this.projectStages(
         co.startDate,
@@ -519,6 +592,7 @@ export class ProgramsService {
         completed: byStatus['COMPLETED'] ?? 0,
         stopped: byStatus['STOPPED'] ?? 0,
         sent,
+        metrics: metricsFor(co.id),
       };
     });
   }
@@ -927,6 +1001,7 @@ export class ProgramsService {
     const message = await this.prisma.emailMessage.create({
       data: {
         tenantId: enr.tenantId,
+        cohortId: enr.cohortId,
         contactId: contact.id,
         emailAccountId: account.id,
         direction: MessageDirection.OUTBOUND,

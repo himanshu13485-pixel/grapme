@@ -87,6 +87,19 @@ interface CohortStat {
   completed: number;
   stopped: number;
   sent: number;
+  metrics: CohortMetrics;
+}
+interface CohortMetrics {
+  sent: number;
+  opens: number;
+  clicks: number;
+  replies: number;
+  bounces: number;
+  unsubscribes: number;
+  openRate: number;
+  clickRate: number;
+  replyRate: number;
+  bounceRate: number;
 }
 
 export default function ClientCockpit() {
@@ -866,6 +879,28 @@ function Cohorts({
                 {openCohort === c.id && (
                   <tr className="bg-slate-50">
                     <td colSpan={12} className="px-6 py-4">
+                      <div className="mb-2 text-xs font-medium text-slate-500">
+                        Sending report
+                      </div>
+                      <div className="mb-5 grid grid-cols-3 gap-2 sm:grid-cols-5 lg:grid-cols-10">
+                        {([
+                          ['Sent', c.metrics.sent],
+                          ['Opens', c.metrics.opens],
+                          ['Open %', `${c.metrics.openRate}%`],
+                          ['Clicks', c.metrics.clicks],
+                          ['Click %', `${c.metrics.clickRate}%`],
+                          ['Replies', c.metrics.replies],
+                          ['Reply %', `${c.metrics.replyRate}%`],
+                          ['Bounces', c.metrics.bounces],
+                          ['Bounce %', `${c.metrics.bounceRate}%`],
+                          ['Unsub', c.metrics.unsubscribes],
+                        ] as [string, string | number][]).map(([label, value]) => (
+                          <div key={label} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                            <div className="text-[10px] uppercase tracking-wide text-slate-400">{label}</div>
+                            <div className="mt-0.5 text-base font-semibold text-slate-800">{value}</div>
+                          </div>
+                        ))}
+                      </div>
                       <div className="mb-2 text-xs font-medium text-slate-500">
                         Projected follow-up schedule (estimated — actual times jitter ±{client.stageIntervalJitterDays} days)
                       </div>
