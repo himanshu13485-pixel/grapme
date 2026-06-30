@@ -10,6 +10,16 @@ echo.
 echo [1/2] Stopping anything already on the dev ports...
 powershell -NoProfile -Command "foreach ($p in 3000,4000,5432,6379,2525) { $c = Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue; if ($c) { taskkill /T /F /PID $c[0].OwningProcess > $null 2>&1 } }"
 
+echo     ...clearing any stray Postgres + stale lock (self-heal a crashed DB)...
+rem A previous embedded Postgres that exited uncleanly can leave an orphaned
+rem postgres.exe holding port 5432, plus a stale postmaster.pid that blocks
+rem startup. The port-owner kill above misses zombie listeners, so also clear
+rem Postgres by image name (this box has no system Postgres service).
+taskkill /F /IM postgres.exe >nul 2>&1
+if exist "%~dp0apps\api\.pgdata\postmaster.pid" del /f /q "%~dp0apps\api\.pgdata\postmaster.pid" >nul 2>&1
+rem Give the OS a moment to release the socket before we rebind it.
+timeout /t 2 /nobreak >nul
+
 echo [2/2] Launching services (each in its own window)...
 
 start "AEO DB (Postgres)"  cmd /k "npm run db:embedded"

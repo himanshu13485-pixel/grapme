@@ -1,0 +1,920 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Verified Global Buyers &amp; Suppliers | Trusted Trade Contacts</title>
+  <meta name="description"
+    content="Connect with verified global buyers and suppliers. Leave your details and our team will call you back." />
+
+  <link rel="shortcut icon" href="https://www.grapout.com/images/favicon.png">
+
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap"
+    rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <style>
+    :root {
+      --bg-base: #0a0a0f;
+      --bg-subtle: #14141c;
+      --bg-card: rgba(255, 255, 255, 0.03);
+      --border-light: rgba(255, 255, 255, 0.08);
+      --text-main: #f5f5f7;
+      --text-muted: #8a8a99;
+      --brand-gold: #fbbf24;
+      --brand-gold-2: #f59e0b;
+      --brand-violet: #7c3aed;
+      --success: #10b981;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      background: var(--bg-base);
+      color: var(--text-main);
+      line-height: 1.6;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 1240px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* ===== AMBIENT BLOOMS ===== */
+    .ambient-bloom {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(120px);
+      opacity: 0.35;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .bloom-gold {
+      background: radial-gradient(circle, var(--brand-gold) 0%, transparent 70%);
+    }
+
+    .bloom-violet {
+      background: radial-gradient(circle, var(--brand-violet) 0%, transparent 70%);
+    }
+
+    .bloom-dark-purple {
+      background: radial-gradient(circle, #4c1d95 0%, transparent 70%);
+      opacity: 0.25;
+    }
+
+    /* ===== HEADER ===== */
+    .header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      transition: background .3s ease, border-color .3s ease, backdrop-filter .3s ease;
+      border-bottom: 1px solid transparent;
+    }
+
+    .header.scrolled {
+      background: rgba(10, 10, 15, 0.8);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border-light);
+    }
+
+    .nav-container {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 76px;
+    }
+
+    .nav-left {
+      display: flex;
+      align-items: center;
+      gap: 40px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 900;
+      font-size: 24px;
+      letter-spacing: -.5px;
+    }
+
+    .brand .logo-mark {
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, var(--brand-gold), var(--brand-gold-2));
+      display: grid;
+      place-items: center;
+      color: #000;
+      font-weight: 900;
+      font-size: 20px;
+    }
+
+    .menu-right {
+      display: flex;
+      align-items: center;
+      gap: 22px;
+    }
+
+    .header-contact {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      font-size: 15px;
+      color: var(--text-main);
+      transition: color .2s;
+    }
+
+    .header-contact:hover {
+      color: var(--brand-gold);
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-family: inherit;
+      font-weight: 700;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: transform .15s ease, box-shadow .2s ease, background .2s;
+      white-space: nowrap;
+    }
+
+    .btn:active {
+      transform: translateY(1px);
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--brand-gold), var(--brand-gold-2));
+      color: #1a1205;
+      padding: 11px 20px;
+      font-size: 15px;
+      box-shadow: 0 6px 20px rgba(251, 191, 36, .25);
+    }
+
+    .btn-primary:hover {
+      box-shadow: 0 8px 26px rgba(251, 191, 36, .4);
+    }
+
+    .btn-outline {
+      background: transparent;
+      color: var(--text-main);
+      border: 1px solid var(--border-light);
+      padding: 11px 20px;
+      font-size: 15px;
+    }
+
+    .btn-outline:hover {
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .hamburger {
+      display: none;
+      flex-direction: column;
+      gap: 5px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 6px;
+    }
+
+    .hamburger .bar {
+      width: 24px;
+      height: 2px;
+      background: var(--text-main);
+      border-radius: 2px;
+    }
+
+    /* ===== HERO ===== */
+    .hero {
+      position: relative;
+      padding: 70px 0 90px;
+      text-align: center;
+      overflow: hidden;
+    }
+
+    .hero .container {
+      position: relative;
+      z-index: 10;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 18px;
+      border: 1px solid rgba(251, 191, 36, .3);
+      background: rgba(251, 191, 36, .06);
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: var(--brand-gold);
+      margin-bottom: 30px;
+    }
+
+    .heading-xl {
+      font-size: clamp(2.6rem, 6.5vw, 5rem);
+      font-weight: 800;
+      line-height: 1.05;
+      letter-spacing: -.03em;
+      margin-bottom: 26px;
+    }
+
+    .text-gold {
+      background: linear-gradient(100deg, var(--brand-gold), var(--brand-gold-2));
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero-subtitle {
+      max-width: 720px;
+      margin: 0 auto 44px;
+      font-size: clamp(1rem, 1.5vw, 1.2rem);
+      color: var(--text-muted);
+    }
+
+    /* ===== LEAD FORM CARD ===== */
+    .lead-card {
+      position: relative;
+      z-index: 10;
+      max-width: 980px;
+      margin: 0 auto;
+      background: linear-gradient(160deg, #efefef 0%, #dadada 100%);
+      border: 1px solid rgba(0, 0, 0, 0.06);
+      border-radius: 22px;
+      padding: 34px 32px;
+      backdrop-filter: blur(14px);
+      box-shadow: 0 30px 80px rgba(0, 0, 0, .5);
+      text-align: left;
+    }
+
+    .lead-card h3 {
+      font-size: 1.35rem;
+      font-weight: 800;
+      margin-bottom: 4px;
+      text-align: center;
+      color: #15151c;
+    }
+
+    .lead-card .lead-sub {
+      text-align: center;
+      color: #5c5c6b;
+      font-size: 14px;
+      margin-bottom: 26px;
+    }
+
+    /* Horizontal row: fields + button side by side */
+    .form-row {
+      display: flex;
+      align-items: flex-end;
+      gap: 14px;
+    }
+
+    .form-row .field {
+      flex: 1;
+      min-width: 0;
+      margin-bottom: 0;
+    }
+
+    .field {
+      margin-bottom: 16px;
+    }
+
+    .field label {
+      display: block;
+      font-size: 13px;
+      font-weight: 700;
+      color: #4a4a55;
+      margin-bottom: 7px;
+    }
+
+    .input-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .input-wrap i,
+    .input-wrap svg {
+      position: absolute;
+      left: 15px;
+      color: var(--brand-gold-2);
+      pointer-events: none;
+    }
+
+    .input-wrap input {
+      width: 100%;
+      padding: 14px 16px 14px 44px;
+      font-family: inherit;
+      font-size: 15px;
+      color: #15151c;
+      background: #ffffff;
+      border: 1px solid #d6d6dc;
+      border-radius: 11px;
+      outline: none;
+      transition: border-color .2s, box-shadow .2s;
+    }
+
+    .input-wrap input::placeholder {
+      color: #9a9aa5;
+    }
+
+    .input-wrap input:focus {
+      border-color: var(--brand-gold);
+      box-shadow: 0 0 0 3px rgba(251, 191, 36, .15);
+    }
+
+    .field-error {
+      display: none;
+      color: var(--danger);
+      font-size: 12px;
+      margin-top: 6px;
+      font-weight: 600;
+    }
+
+    .field.invalid .field-error {
+      display: block;
+    }
+
+    .field.invalid input {
+      border-color: var(--danger);
+    }
+
+    .btn-callme {
+      flex: 0 0 auto;
+      justify-content: center;
+      padding: 15px 30px;
+      font-size: 16px;
+      height: 50px;
+      white-space: nowrap;
+    }
+
+    /* Keep error text from shifting the row height */
+    .form-row .field-error {
+      position: absolute;
+      margin-top: 2px;
+    }
+
+    .form-note {
+      text-align: center;
+      font-size: 12px;
+      color: #6b6b78;
+      margin-top: 16px;
+    }
+
+    .form-success {
+      display: none;
+      text-align: center;
+      padding: 18px 0 6px;
+    }
+
+    .form-success i {
+      color: var(--success);
+    }
+
+    .form-success h4 {
+      font-size: 1.2rem;
+      margin: 12px 0 6px;
+      color: #15151c;
+    }
+
+    .form-success p {
+      color: #5c5c6b;
+      font-size: 14px;
+    }
+
+    /* ===== FLOATING CARDS ===== */
+    .float-card {
+      position: absolute;
+      z-index: 5;
+      width: 270px;
+      padding: 16px;
+      background: rgba(20, 20, 28, 0.7);
+      border: 1px solid var(--border-light);
+      border-radius: 16px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 20px 50px rgba(0, 0, 0, .45);
+      transform: rotate(var(--rot, 0deg));
+      animation: floatY 6s ease-in-out infinite;
+    }
+
+    @keyframes floatY {
+
+      0%,
+      100% {
+        transform: translateY(0) rotate(var(--rot, 0deg));
+      }
+
+      50% {
+        transform: translateY(-14px) rotate(var(--rot, 0deg));
+      }
+    }
+
+    .float-card.pos-1 {
+      top: 16%;
+      left: 2%;
+      animation-delay: 0s;
+    }
+
+    .float-card.pos-2 {
+      bottom: 14%;
+      left: 5%;
+      animation-delay: 1.5s;
+    }
+
+    .float-card.pos-3 {
+      top: 30%;
+      right: 2%;
+      animation-delay: .8s;
+    }
+
+    .fc-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .fc-av {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+      font-size: 14px;
+    }
+
+    .fc-info h4 {
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .fc-info p {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .fc-data {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--text-muted);
+      background: rgba(0, 0, 0, .25);
+      border: 1px solid var(--border-light);
+      border-radius: 9px;
+      padding: 9px 12px;
+    }
+
+    /* ===== HERO METRICS ===== */
+    .hero-metrics {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 30px;
+      margin-top: 48px;
+      position: relative;
+      z-index: 10;
+    }
+
+    .hero-metrics div {
+      font-size: 15px;
+      color: var(--text-muted);
+    }
+
+    .hero-metrics span {
+      color: var(--text-main);
+      font-weight: 800;
+    }
+
+    /* ===== TRUST TICKER ===== */
+    .logo-ticker {
+      border-top: 1px solid var(--border-light);
+      border-bottom: 1px solid var(--border-light);
+      padding: 34px 0;
+      overflow: hidden;
+    }
+
+    .ticker-title {
+      text-align: center;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 26px;
+    }
+
+    .ticker-mask {
+      position: relative;
+      overflow: hidden;
+      -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+      mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+    }
+
+    .ticker-track {
+      display: flex;
+      gap: 60px;
+      width: max-content;
+      animation: scrollX 28s linear infinite;
+    }
+
+    @keyframes scrollX {
+      from {
+        transform: translateX(0);
+      }
+
+      to {
+        transform: translateX(-50%);
+      }
+    }
+
+    .ticker-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 800;
+      font-size: 18px;
+      color: #6b6b7a;
+      white-space: nowrap;
+    }
+
+    /* ===== FOOTER ===== */
+    .footer {
+      position: relative;
+      border-top: 1px solid var(--border-light);
+      padding: 50px 0 30px;
+      overflow: hidden;
+    }
+
+    .footer-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      gap: 30px;
+      position: relative;
+      z-index: 10;
+    }
+
+    .footer p {
+      color: var(--text-muted);
+      max-width: 280px;
+      font-size: 14px;
+    }
+
+    .footer-bottom {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+      margin-top: 40px;
+      padding-top: 24px;
+      border-top: 1px solid var(--border-light);
+      position: relative;
+      z-index: 10;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .footer-social {
+      display: flex;
+      gap: 20px;
+    }
+
+    /* ===== RESPONSIVE ===== */
+    @media (max-width: 1100px) {
+      .float-card {
+        display: none;
+      }
+    }
+
+    @media (max-width: 820px) {
+      .header-contact {
+        display: none;
+      }
+
+      .hamburger {
+        display: flex;
+      }
+
+      .hero {
+        padding: 50px 0 70px;
+      }
+
+      .lead-card {
+        padding: 28px 22px;
+      }
+
+      .form-row {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 16px;
+      }
+
+      .form-row .field {
+        margin-bottom: 0;
+      }
+
+      .form-row .field-error {
+        position: static;
+      }
+
+      .btn-callme {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- HEADER -->
+  <header class="header" id="header">
+    <div class="container nav-container">
+      <div class="nav-left">
+        <a href="#" class="brand">
+          <span class="logo-mark">G</span>
+          <span class="logo-text">GrapOut</span>
+        </a>
+      </div>
+      <div class="menu-right">
+        <a href="https://wa.me/919891797878" class="header-contact" target="_blank" rel="noopener">
+          <i data-lucide="message-circle" size="18"></i> WhatsApp
+        </a>
+        <a href="tel:+919891797878" class="header-contact">
+          <i data-lucide="phone" size="18"></i> +91-9891797878
+        </a>
+        <button class="btn btn-primary" onclick="document.getElementById('lead-name').focus()">
+          Join Free Demo
+        </button>
+        <button class="hamburger" aria-label="Toggle menu">
+          <span class="bar"></span><span class="bar"></span><span class="bar"></span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="ambient-bloom bloom-gold" style="top:-20%;left:-5%;width:55vw;height:55vw;"></div>
+    <div class="ambient-bloom bloom-violet" style="top:10%;right:-15%;width:55vw;height:55vw;"></div>
+    <div class="ambient-bloom bloom-dark-purple" style="top:45%;left:20%;width:65vw;height:65vw;"></div>
+
+    <!-- Floating cards -->
+    <div class="float-card pos-1" style="--rot:-5deg;">
+      <div class="fc-header">
+        <div class="fc-av" style="background:var(--bg-subtle);color:var(--brand-gold);">DE</div>
+        <div class="fc-info">
+          <h4>Verified Importer</h4>
+          <p>Germany · Food Products</p>
+        </div>
+      </div>
+      <div class="fc-data"><i data-lucide="check-circle" size="14"></i> purchasing@importer...</div>
+    </div>
+    <div class="float-card pos-2" style="--rot:3deg;">
+      <div class="fc-header">
+        <div class="fc-av" style="background:rgba(255,255,255,0.05);color:#fff;border:1px solid var(--border-light);">US
+        </div>
+        <div class="fc-info">
+          <h4>Global Buyer</h4>
+          <p>USA · Agriculture</p>
+        </div>
+      </div>
+      <div class="fc-data"><i data-lucide="phone" size="14"></i> +1 212 555...</div>
+    </div>
+    <div class="float-card pos-3" style="--rot:5deg;">
+      <div class="fc-header">
+        <div class="fc-av" style="background:rgba(251,191,36,0.1);color:var(--brand-gold);">AE</div>
+        <div class="fc-info">
+          <h4>Active Distributor</h4>
+          <p>UAE · Trading Company</p>
+        </div>
+      </div>
+      <div class="fc-data"><i data-lucide="mail" size="14"></i> sourcing@buyer...</div>
+    </div>
+
+    <div class="container">
+      <div class="hero-badge">
+        <i data-lucide="shield-check" size="14"></i>
+        World's First Trade Contact Intelligence Platform
+      </div>
+      <h1 class="heading-xl">Find Real Global Buyers.<br><span class="text-gold">Contact Them Directly.</span></h1>
+      <p class="hero-subtitle">GrapOut delivers Global Buyer &amp; Supplier Intelligence for exporters and importers —
+        verified official contact details of companies relevant to your product and global trade requirement.</p>
+
+      <!-- LEAD CAPTURE FORM -->
+      <div class="lead-card">
+        <form id="lead-form" novalidate>
+          <h3>Request a Call Back</h3>
+          <p class="lead-sub">Leave your details and our team will call you.</p>
+
+          <div class="form-row">
+            <div class="field" id="field-name">
+              <label for="lead-name">Name</label>
+              <div class="input-wrap">
+                <i data-lucide="user" size="18"></i>
+                <input type="text" id="lead-name" name="name" placeholder="Your full name" autocomplete="name">
+              </div>
+              <span class="field-error">Please enter your name.</span>
+            </div>
+
+            <div class="field" id="field-phone">
+              <label for="lead-phone">Contact No.</label>
+              <div class="input-wrap">
+                <i data-lucide="phone" size="18"></i>
+                <input type="tel" id="lead-phone" name="phone" placeholder="e.g. +91 98765 43210"
+                  autocomplete="tel" inputmode="tel">
+              </div>
+              <span class="field-error">Please enter a valid contact number.</span>
+            </div>
+
+            <div class="field" id="field-email">
+              <label for="lead-email">Email</label>
+              <div class="input-wrap">
+                <i data-lucide="mail" size="18"></i>
+                <input type="email" id="lead-email" name="email" placeholder="you@company.com" autocomplete="email">
+              </div>
+              <span class="field-error">Please enter a valid email address.</span>
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-callme">
+              <i data-lucide="phone-call" size="18"></i> Call Me
+            </button>
+          </div>
+          <p class="form-note">By submitting you agree to be contacted about GrapOut services.</p>
+        </form>
+
+        <div class="form-success" id="form-success">
+          <i data-lucide="check-circle-2" size="44"></i>
+          <h4>Thank you!</h4>
+          <p>We've received your details. Our team will call you back shortly.</p>
+        </div>
+      </div>
+
+      <div class="hero-metrics">
+        <div><span>Exporters</span> find buyers</div>
+        <div><span>Importers</span> find suppliers</div>
+        <div><span>AI + Human</span> verified contacts</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- TRUST TICKER -->
+  <div class="logo-ticker">
+    <div class="container">
+      <div class="ticker-title">Trusted By Top Global Trade &amp; Supply Chain Teams</div>
+    </div>
+    <div class="ticker-mask">
+      <div class="ticker-track">
+        <div class="ticker-item"><i data-lucide="box"></i> Toyota</div>
+        <div class="ticker-item"><i data-lucide="cpu"></i> Bajaj</div>
+        <div class="ticker-item"><i data-lucide="globe"></i> Tata</div>
+        <div class="ticker-item"><i data-lucide="database"></i> POLMANN</div>
+        <div class="ticker-item"><i data-lucide="monitor"></i> DCM SHRIRAM</div>
+        <div class="ticker-item"><i data-lucide="box"></i> HITACHI</div>
+        <div class="ticker-item"><i data-lucide="cpu"></i> HERO</div>
+        <div class="ticker-item"><i data-lucide="globe"></i> ELECON</div>
+        <div class="ticker-item"><i data-lucide="shopping-bag"></i> BATU</div>
+        <div class="ticker-item"><i data-lucide="database"></i> SRS</div>
+        <div class="ticker-item"><i data-lucide="box"></i> Toyota</div>
+        <div class="ticker-item"><i data-lucide="cpu"></i> Bajaj</div>
+        <div class="ticker-item"><i data-lucide="globe"></i> Tata</div>
+        <div class="ticker-item"><i data-lucide="database"></i> POLMANN</div>
+        <div class="ticker-item"><i data-lucide="monitor"></i> DCM SHRIRAM</div>
+        <div class="ticker-item"><i data-lucide="box"></i> HITACHI</div>
+        <div class="ticker-item"><i data-lucide="cpu"></i> HERO</div>
+        <div class="ticker-item"><i data-lucide="globe"></i> ELECON</div>
+        <div class="ticker-item"><i data-lucide="shopping-bag"></i> BATU</div>
+        <div class="ticker-item"><i data-lucide="database"></i> SRS</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <footer class="footer">
+    <div class="ambient-bloom bloom-gold" style="bottom:-40%;right:5%;width:45vw;height:45vw;"></div>
+    <div class="container">
+      <div class="footer-top">
+        <div>
+          <a href="#" class="brand" style="margin-bottom:14px;">
+            <span class="logo-mark">G</span>
+            <span class="logo-text">GrapOut</span>
+          </a>
+          <p>World's First Trade Contact Intelligence Platform for exporters and importers.</p>
+        </div>
+        <div>
+          <button class="btn btn-primary" onclick="document.getElementById('lead-name').focus()">
+            <i data-lucide="phone-call" size="16"></i> Request a Call Back
+          </button>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        <p style="margin:0;">© 2026 GrapOut.com. All rights reserved.</p>
+        <div class="footer-social">
+          <a href="#"><i data-lucide="linkedin" size="20"></i></a>
+          <a href="#"><i data-lucide="twitter" size="20"></i></a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    lucide.createIcons();
+
+    // Sticky header shadow on scroll
+    const header = document.getElementById('header');
+    window.addEventListener('scroll', () => {
+      header.classList.toggle('scrolled', window.scrollY > 10);
+    });
+
+    // ===== Form validation + submit =====
+    const form = document.getElementById('lead-form');
+    const successBox = document.getElementById('form-success');
+
+    function setInvalid(fieldId, isInvalid) {
+      document.getElementById(fieldId).classList.toggle('invalid', isInvalid);
+    }
+
+    function isValidEmail(v) {
+      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+    }
+
+    function isValidPhone(v) {
+      // 7–15 digits, allowing +, spaces, dashes and parentheses
+      const digits = v.replace(/[^\d]/g, '');
+      return /^[+\d][\d\s\-()]{6,}$/.test(v.trim()) && digits.length >= 7 && digits.length <= 15;
+    }
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+
+      const name = document.getElementById('lead-name').value.trim();
+      const phone = document.getElementById('lead-phone').value.trim();
+      const email = document.getElementById('lead-email').value.trim();
+
+      const nameBad = name.length < 2;
+      const phoneBad = !isValidPhone(phone);
+      const emailBad = !isValidEmail(email);
+
+      setInvalid('field-name', nameBad);
+      setInvalid('field-phone', phoneBad);
+      setInvalid('field-email', emailBad);
+
+      if (nameBad || phoneBad || emailBad) {
+        const firstBad = nameBad ? 'lead-name' : phoneBad ? 'lead-phone' : 'lead-email';
+        document.getElementById(firstBad).focus();
+        return;
+      }
+
+      const lead = { name, phone, email, submittedAt: new Date().toISOString() };
+
+      // TODO: POST `lead` to your backend / CRM endpoint here.
+      // Example:
+      // fetch('/api/leads', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(lead) });
+      console.log('Lead captured:', lead);
+
+      form.style.display = 'none';
+      successBox.style.display = 'block';
+    });
+
+    // Clear error state as the user types
+    ['name', 'phone', 'email'].forEach(key => {
+      const input = document.getElementById('lead-' + key);
+      input.addEventListener('input', () => setInvalid('field-' + key, false));
+    });
+  </script>
+</body>
+
+</html>
