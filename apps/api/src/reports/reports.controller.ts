@@ -31,6 +31,11 @@ export class ReportsController {
     return this.reports.summary(user);
   }
 
+  @Get('dashboard/recent-cohorts')
+  recentCohorts(@CurrentUser() user: AuthUser) {
+    return this.reports.recentCohorts(user);
+  }
+
   @Roles(Role.SUPER_ADMIN, Role.SUB_ADMIN)
   @Get('activity-logs')
   activityLogs(@CurrentUser() user: AuthUser) {

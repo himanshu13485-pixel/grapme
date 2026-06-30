@@ -1,5 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { CampaignStatus, EventType, Role } from '@prisma/client';
+import {
+  CampaignStatus,
+  EnrollmentStatus,
+  EventType,
+  MessageStatus,
+  Role,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 
@@ -97,6 +103,53 @@ export class ReportsService {
       replyRate: rate(ev[EventType.REPLY] ?? 0),
       bounceRate: rate(ev[EventType.BOUNCE] ?? 0),
     };
+  }
+
+  /** Recent cohorts across the tenant with live send/reply stats (dashboard). */
+  async recentCohorts(user: AuthUser, take = 8) {
+    if (user.role === Role.USER) return [];
+    const cohorts = await this.prisma.cohort.findMany({
+      where: { tenantId: user.tenantId },
+      orderBy: { createdAt: 'desc' },
+      take,
+      include: { client: { select: { id: true, name: true } } },
+    });
+    const ids = cohorts.map((c) => c.id);
+    const [enrolls, sentMsgs, replied] = await Promise.all([
+      this.prisma.enrollment.groupBy({
+        by: ['cohortId'],
+        where: { cohortId: { in: ids } },
+        _count: { _all: true },
+      }),
+      this.prisma.emailMessage.groupBy({
+        by: ['cohortId'],
+        where: {
+          cohortId: { in: ids },
+          status: { in: [MessageStatus.SENT, MessageStatus.DELIVERED] },
+        },
+        _count: { _all: true },
+      }),
+      this.prisma.enrollment.groupBy({
+        by: ['cohortId'],
+        where: { cohortId: { in: ids }, status: EnrollmentStatus.REPLIED },
+        _count: { _all: true },
+      }),
+    ]);
+    const total = new Map(enrolls.map((e) => [e.cohortId, e._count._all]));
+    const sent = new Map(sentMsgs.map((m) => [m.cohortId, m._count._all]));
+    const reps = new Map(replied.map((r) => [r.cohortId, r._count._all]));
+    return cohorts.map((c) => ({
+      id: c.id,
+      label: c.label,
+      monthIndex: c.monthIndex,
+      status: c.status,
+      startDate: c.startDate,
+      clientId: c.clientId,
+      clientName: c.client?.name ?? null,
+      contacts: total.get(c.id) ?? 0,
+      sent: sent.get(c.id) ?? 0,
+      replies: reps.get(c.id) ?? 0,
+    }));
   }
 
   activityLogs(user: AuthUser, take = 250) {

@@ -6,12 +6,17 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { PageHeader, StatusBadge } from '@/components/ui';
 
-interface Campaign {
+interface RecentCohort {
   id: string;
-  name: string;
+  label: string;
+  monthIndex: number;
   status: string;
-  clientLabel?: string;
-  _count?: { messages: number; steps: number };
+  startDate: string;
+  clientId: string;
+  clientName?: string | null;
+  contacts: number;
+  sent: number;
+  replies: number;
 }
 
 interface Summary {
@@ -30,11 +35,11 @@ interface Summary {
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [cohorts, setCohorts] = useState<RecentCohort[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
 
   useEffect(() => {
-    api.get<Campaign[]>('/campaigns').then(setCampaigns).catch(() => {});
+    api.get<RecentCohort[]>('/dashboard/recent-cohorts').then(setCohorts).catch(() => {});
     api.get<Summary>('/dashboard/summary').then(setSummary).catch(() => {});
   }, [user]);
 
@@ -81,45 +86,49 @@ export default function DashboardPage() {
       )}
 
       <div className="card overflow-hidden">
-        <div className="border-b border-slate-100 px-5 py-4 font-medium">
-          Recent campaigns
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+          <span className="font-medium">Recent cohorts</span>
+          <Link href="/cohort-schedule" className="text-xs text-brand-600 hover:underline">
+            View schedule →
+          </Link>
         </div>
-        {campaigns.length === 0 ? (
+        {cohorts.length === 0 ? (
           <div className="p-8 text-center text-sm text-slate-400">
-            No campaigns yet —{' '}
-            <Link href="/campaigns" className="text-brand-600 hover:underline">
-              create one
+            No cohorts yet —{' '}
+            <Link href="/clients" className="text-brand-600 hover:underline">
+              set up a client and upload a cohort
             </Link>
           </div>
         ) : (
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase text-slate-400">
               <tr>
-                <th className="px-5 py-3">Name</th>
+                <th className="px-5 py-3">Cohort</th>
                 <th className="px-5 py-3">Client</th>
                 <th className="px-5 py-3">Status</th>
-                <th className="px-5 py-3">Steps</th>
+                <th className="px-5 py-3">Contacts</th>
+                <th className="px-5 py-3">Sent</th>
+                <th className="px-5 py-3">Replies</th>
+                <th className="px-5 py-3">Started</th>
               </tr>
             </thead>
             <tbody>
-              {campaigns.slice(0, 8).map((c) => (
+              {cohorts.map((c) => (
                 <tr key={c.id} className="border-t border-slate-100">
                   <td className="px-5 py-3 font-medium">
-                    <Link
-                      href={`/campaigns/${c.id}`}
-                      className="hover:text-brand-600"
-                    >
-                      {c.name}
+                    <Link href={`/clients/${c.clientId}`} className="hover:text-brand-600">
+                      #{c.monthIndex} {c.label}
                     </Link>
                   </td>
-                  <td className="px-5 py-3 text-slate-500">
-                    {c.clientLabel ?? '—'}
-                  </td>
+                  <td className="px-5 py-3 text-slate-500">{c.clientName ?? '—'}</td>
                   <td className="px-5 py-3">
                     <StatusBadge status={c.status} />
                   </td>
-                  <td className="px-5 py-3 text-slate-500">
-                    {c._count?.steps ?? 0}
+                  <td className="px-5 py-3 text-slate-500">{c.contacts}</td>
+                  <td className="px-5 py-3 text-slate-600">{c.sent}</td>
+                  <td className="px-5 py-3 text-emerald-600">{c.replies}</td>
+                  <td className="px-5 py-3 text-slate-400">
+                    {new Date(c.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                   </td>
                 </tr>
               ))}
