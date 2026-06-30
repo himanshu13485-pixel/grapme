@@ -33,15 +33,26 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
   const [tab, setTab] = useState<TabKey>('inbox');
   const [messages, setMessages] = useState<Message[]>([]);
   const [open, setOpen] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
 
-  function load() {
+  async function load() {
     const q = clientId ? `?clientId=${clientId}` : '';
-    api
-      .get<Message[]>(`/mailbox/${tab}${q}`)
-      .then(setMessages)
-      .catch(() => setMessages([]));
+    setRefreshing(true);
+    try {
+      const data = await api.get<Message[]>(`/mailbox/${tab}${q}`);
+      setMessages(data);
+    } catch {
+      setMessages([]);
+    } finally {
+      setRefreshing(false);
+      setUpdatedAt(new Date());
+    }
   }
-  useEffect(load, [tab, clientId]);
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, clientId]);
 
   const isInbox = tab === 'inbox';
 
@@ -65,9 +76,21 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
           </button>
         ))}
       </div>
-      <button className="btn-ghost text-xs" onClick={load}>
-        ↻ Refresh
-      </button>
+      <div className="flex items-center gap-3">
+        {updatedAt && (
+          <span className="text-xs text-slate-400">
+            Updated {updatedAt.toLocaleTimeString()}
+          </span>
+        )}
+        <button
+          className="btn-ghost text-xs"
+          onClick={load}
+          disabled={refreshing}
+        >
+          <span className={refreshing ? 'inline-block animate-spin' : ''}>↻</span>{' '}
+          {refreshing ? 'Refreshing…' : 'Refresh'}
+        </button>
+      </div>
     </div>
   );
 
