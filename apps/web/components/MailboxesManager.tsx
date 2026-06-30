@@ -345,7 +345,11 @@ export function MailboxesManager({ clientId }: { clientId?: string }) {
         <EmptyState message="No mailboxes connected yet." />
       ) : (
         <div className="space-y-3">
-          {mailboxes.map((m) => (
+          {[...mailboxes]
+            .sort((a, b) =>
+              a.id === reportSenderId ? -1 : b.id === reportSenderId ? 1 : 0,
+            )
+            .map((m) => (
             <div
               key={m.id}
               className="card flex items-center justify-between p-5"
