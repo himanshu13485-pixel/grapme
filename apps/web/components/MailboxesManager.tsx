@@ -62,6 +62,8 @@ export function MailboxesManager({ clientId }: { clientId?: string }) {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [auth, setAuth] = useState<Record<string, AuthResult>>({});
+  // Tenant-wide report-sender mailbox (only managed on the global page).
+  const [reportSenderId, setReportSenderId] = useState<string | null>(null);
 
   async function checkAuth(m: Mailbox) {
     const domain = m.emailAddress.split('@')[1];
@@ -85,8 +87,23 @@ export function MailboxesManager({ clientId }: { clientId?: string }) {
   function load() {
     const q = clientId ? `?clientId=${clientId}` : '';
     api.get<Mailbox[]>(`/email-accounts${q}`).then(setMailboxes).catch(() => {});
+    if (!clientId)
+      api
+        .get<{ mailboxId: string | null }>('/reports/sender')
+        .then((r) => setReportSenderId(r.mailboxId))
+        .catch(() => {});
   }
   useEffect(load, [clientId]);
+
+  async function setReportSender(m: Mailbox) {
+    try {
+      await api.post('/reports/sender', { mailboxId: m.id });
+      setReportSenderId(m.id);
+      flash(`Client reports now send from ${m.emailAddress}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to set report sender');
+    }
+  }
 
   async function removeMailbox(m: Mailbox) {
     if (!confirm(`Delete mailbox "${m.label}" (${m.emailAddress})?`)) return;
@@ -334,7 +351,14 @@ export function MailboxesManager({ clientId }: { clientId?: string }) {
               className="card flex items-center justify-between p-5"
             >
               <div>
-                <div className="font-medium">{m.label}</div>
+                <div className="flex items-center gap-2">
+                  <div className="font-medium">{m.label}</div>
+                  {!clientId && reportSenderId === m.id && (
+                    <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-700">
+                      ★ Admin / report sender
+                    </span>
+                  )}
+                </div>
                 <div className="text-sm text-slate-500">
                   {m.emailAddress} · {m.protocol} · cap {m.dailyLimit}/day
                 </div>
@@ -345,6 +369,20 @@ export function MailboxesManager({ clientId }: { clientId?: string }) {
               </div>
               <div className="flex items-center gap-3">
                 <StatusBadge status={m.status} />
+                {!clientId &&
+                  (reportSenderId === m.id ? (
+                    <span className="px-3 py-1 text-xs font-medium text-violet-600">
+                      Report sender
+                    </span>
+                  ) : (
+                    <button
+                      className="btn-ghost px-3 py-1 text-xs"
+                      onClick={() => setReportSender(m)}
+                      title="Use this mailbox as the admin address for client reports"
+                    >
+                      Use as report sender
+                    </button>
+                  ))}
                 <button
                   className="btn-ghost px-3 py-1 text-xs"
                   onClick={() => setEditMailbox(m)}
