@@ -138,7 +138,16 @@ export default function ApprovalsPage() {
                     <StatusBadge status={a.status} />
                   </td>
                   <td className="px-5 py-3 text-slate-500">
-                    {a.reviewer?.name ?? (a.status === 'PENDING' ? '—' : 'system')}
+                    {a.status === 'PENDING' ? (
+                      '—'
+                    ) : (
+                      <div>
+                        <div>{a.reviewer?.name ?? 'system'}</div>
+                        {a.reviewer?.email && (
+                          <div className="text-xs text-slate-400">{a.reviewer.email}</div>
+                        )}
+                      </div>
+                    )}
                   </td>
                   <td className="px-5 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                     {a.status === 'PENDING' && (
