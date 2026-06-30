@@ -13,6 +13,8 @@ import {
 export class CreateClientDto {
   @IsString() name: string;
   @IsOptional() @IsString() invoiceNo?: string;
+  @IsOptional() @IsString() contactPerson?: string;
+  @IsOptional() @IsString() email?: string;
   @IsOptional() @IsString() plan?: string;
   @IsOptional() @IsInt() @Min(1) monthlyQuota?: number;
   @IsOptional() @IsInt() @Min(1) dailyBatchSize?: number;
@@ -28,6 +30,8 @@ export class CreateClientDto {
 export class UpdateClientDto {
   @IsOptional() @IsString() name?: string;
   @IsOptional() @IsString() invoiceNo?: string;
+  @IsOptional() @IsString() contactPerson?: string;
+  @IsOptional() @IsString() email?: string;
   @IsOptional() @IsString() status?: string;
   @IsOptional() @IsString() plan?: string;
   @IsOptional() @IsInt() @Min(1) monthlyQuota?: number;
@@ -42,6 +46,10 @@ export class UpdateClientDto {
   @IsOptional() @IsInt() @Min(0) sendWindowStart?: number;
   @IsOptional() @IsInt() @Min(1) sendWindowEnd?: number;
   @IsOptional() @IsInt() @Min(0) stageIntervalJitterDays?: number;
+  @IsOptional() @IsBoolean() reportDaily?: boolean;
+  @IsOptional() @IsBoolean() reportWeekly?: boolean;
+  @IsOptional() @IsBoolean() reportMonthly?: boolean;
+  @IsOptional() @IsInt() @Min(0) reportHour?: number;
 }
 
 export class AssignMailboxDto {

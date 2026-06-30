@@ -52,6 +52,12 @@ interface Client {
   autoCohortEnabled: boolean;
   autoCohortListId?: string;
   autoCohortDay: number;
+  contactPerson?: string;
+  email?: string;
+  reportDaily: boolean;
+  reportWeekly: boolean;
+  reportMonthly: boolean;
+  reportHour: number;
   mailboxes: Mailbox[];
   sequenceSteps: SeqStep[];
   _count?: {
@@ -617,6 +623,105 @@ function SequenceEditor({
   );
 }
 
+function ReportSettings({ client, onChanged }: { client: Client; onChanged: () => void }) {
+  const [daily, setDaily] = useState(client.reportDaily);
+  const [weekly, setWeekly] = useState(client.reportWeekly);
+  const [monthly, setMonthly] = useState(client.reportMonthly);
+  const [hour, setHour] = useState(client.reportHour);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState('');
+
+  async function save() {
+    setBusy(true);
+    setNote('');
+    try {
+      await api.patch(`/clients/${client.id}`, {
+        reportDaily: daily,
+        reportWeekly: weekly,
+        reportMonthly: monthly,
+        reportHour: Number(hour),
+      });
+      setNote('Report schedule saved.');
+      onChanged();
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : 'Failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function sendNow(period: 'daily' | 'weekly' | 'monthly') {
+    setBusy(true);
+    setNote('');
+    try {
+      const r = await api.post<{ sent: boolean; detail: string }>(
+        `/clients/${client.id}/report?period=${period}`,
+      );
+      setNote(r.detail);
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : 'Failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const hr = (h: number) => {
+    const ap = h < 12 ? 'AM' : 'PM';
+    const x = h % 12 === 0 ? 12 : h % 12;
+    return `${x}:00 ${ap}`;
+  };
+
+  return (
+    <div className="card space-y-3 p-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-slate-700">📧 Email reports to client</h3>
+        <span className="text-xs text-slate-400">
+          {client.email ? `Recipient: ${client.email}` : 'No client email set — add it on the client to enable.'}
+        </span>
+      </div>
+      <p className="text-xs text-slate-400">
+        A professional performance report (emails sent, opens, clicks, replies received,
+        bounces) is emailed to the client at the chosen time, with a copy to the admin.
+        Sent from this client&apos;s first active mailbox.
+      </p>
+      <div className="flex flex-wrap items-center gap-4">
+        <label className="flex items-center gap-2 text-sm text-slate-700">
+          <input type="checkbox" checked={daily} onChange={(e) => setDaily(e.target.checked)} />
+          Daily
+        </label>
+        <label className="flex items-center gap-2 text-sm text-slate-700">
+          <input type="checkbox" checked={weekly} onChange={(e) => setWeekly(e.target.checked)} />
+          Weekly (Mon)
+        </label>
+        <label className="flex items-center gap-2 text-sm text-slate-700">
+          <input type="checkbox" checked={monthly} onChange={(e) => setMonthly(e.target.checked)} />
+          Monthly (1st)
+        </label>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-slate-400">Send at</span>
+          <select className="input w-28 py-1" value={hour} onChange={(e) => setHour(Number(e.target.value))}>
+            {Array.from({ length: 24 }, (_, h) => (
+              <option key={h} value={h}>{hr(h)}</option>
+            ))}
+          </select>
+        </div>
+        <button className="btn-primary text-xs" onClick={save} disabled={busy}>
+          Save schedule
+        </button>
+        <button
+          className="btn-ghost text-xs"
+          onClick={() => sendNow('daily')}
+          disabled={busy || !client.email}
+          title="Send a report right now to test"
+        >
+          Send test now
+        </button>
+      </div>
+      {note && <p className="text-xs text-slate-500">{note}</p>}
+    </div>
+  );
+}
+
 function Cohorts({
   client,
   cohorts,
@@ -809,6 +914,8 @@ function Cohorts({
           </button>
         </div>
       </div>
+
+      <ReportSettings client={client} onChanged={onChanged} />
 
       {err && <p className="text-sm text-rose-600">{err}</p>}
 

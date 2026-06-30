@@ -9,6 +9,8 @@ interface Client {
   id: string;
   name: string;
   invoiceNo?: string;
+  contactPerson?: string;
+  email?: string;
   plan: string;
   status: string;
   monthlyQuota: number;
@@ -143,6 +145,8 @@ function ClientDetailView({ client }: { client: Client }) {
   const rows: { label: string; value: string }[] = [
     { label: 'Company name', value: client.name },
     { label: 'Invoice no.', value: client.invoiceNo || '—' },
+    { label: 'Contact person', value: client.contactPerson || '—' },
+    { label: 'Contact email', value: client.email || '—' },
     { label: 'Plan', value: client.plan },
     { label: 'Status', value: client.status },
     { label: 'Contacts / month', value: String(client.monthlyQuota) },
@@ -183,6 +187,8 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
   const [form, setForm] = useState({
     name: '',
     invoiceNo: '',
+    contactPerson: '',
+    email: '',
     plan: 'GROWTH',
     monthlyQuota: 100,
     dailyBatchSize: 10,
@@ -205,6 +211,8 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
       await api.post('/clients', {
         ...form,
         invoiceNo: form.invoiceNo || undefined,
+        contactPerson: form.contactPerson || undefined,
+        email: form.email || undefined,
         monthlyQuota: Number(form.monthlyQuota),
         dailyBatchSize: Number(form.dailyBatchSize),
         batchWindowDays: Number(form.batchWindowDays),
@@ -241,6 +249,25 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
             value={form.invoiceNo}
             onChange={(e) => setForm({ ...form, invoiceNo: e.target.value })}
             placeholder="e.g. INV-2026-014"
+          />
+        </div>
+        <div>
+          <label className="label">Contact person</label>
+          <input
+            className="input"
+            value={form.contactPerson}
+            onChange={(e) => setForm({ ...form, contactPerson: e.target.value })}
+            placeholder="e.g. Himanshu Sharma"
+          />
+        </div>
+        <div>
+          <label className="label">Contact email (report recipient)</label>
+          <input
+            type="email"
+            className="input"
+            value={form.email}
+            onChange={(e) => setForm({ ...form, email: e.target.value })}
+            placeholder="client@company.com"
           />
         </div>
         <div>

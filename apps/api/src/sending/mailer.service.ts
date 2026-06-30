@@ -26,6 +26,7 @@ export class MailerService {
   async send(params: {
     account: EmailAccount;
     to: string;
+    cc?: string;
     subject: string;
     html: string;
     headers?: Record<string, string>;
@@ -34,6 +35,7 @@ export class MailerService {
     const info = await transport.sendMail({
       from: params.account.emailAddress,
       to: params.to,
+      cc: params.cc,
       subject: params.subject,
       html: params.html,
       headers: params.headers,

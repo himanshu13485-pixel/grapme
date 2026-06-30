@@ -1,6 +1,18 @@
-import { Controller, Get } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Param,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { ReportsService } from './reports.service';
+import {
+  ClientReportService,
+  ReportPeriod,
+} from './client-report.service';
 import { Roles } from '../common/decorators/roles.decorator';
 import {
   CurrentUser,
@@ -9,7 +21,10 @@ import {
 
 @Controller()
 export class ReportsController {
-  constructor(private readonly reports: ReportsService) {}
+  constructor(
+    private readonly reports: ReportsService,
+    private readonly clientReports: ClientReportService,
+  ) {}
 
   @Get('dashboard/summary')
   summary(@CurrentUser() user: AuthUser) {
@@ -20,5 +35,24 @@ export class ReportsController {
   @Get('activity-logs')
   activityLogs(@CurrentUser() user: AuthUser) {
     return this.reports.activityLogs(user);
+  }
+
+  /** Send a client report now (test / on-demand). */
+  @HttpCode(200)
+  @Roles(Role.SUPER_ADMIN, Role.SUB_ADMIN)
+  @Post('clients/:id/report')
+  sendReport(
+    @Param('id') id: string,
+    @Query('period') period: ReportPeriod = 'daily',
+  ) {
+    return this.clientReports.sendReport(id, period);
+  }
+
+  /** Manual trigger of the due-report sweep across all clients. */
+  @HttpCode(200)
+  @Roles(Role.SUPER_ADMIN)
+  @Post('reports/run-due')
+  runDue() {
+    return this.clientReports.runDueReports();
   }
 }

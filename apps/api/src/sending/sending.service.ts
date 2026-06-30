@@ -12,6 +12,7 @@ import {
   JOB_SEND_EMAIL,
   JOB_RUN_ENROLL,
   JOB_RUN_AUTO_COHORT,
+  JOB_SEND_REPORTS,
 } from '../queue/queue.constants';
 
 export interface SendEmailJob {
@@ -62,8 +63,15 @@ export class SendingService implements OnModuleInit {
       {},
       { repeat: { every: autoCohortEvery } },
     );
+    // Client email reports: sweep hourly; the service decides what's due.
+    const reportEvery = this.config.get<number>('REPORT_SCAN_MS', 3_600_000);
+    await this.enrollQueue.add(
+      JOB_SEND_REPORTS,
+      {},
+      { repeat: { every: reportEvery } },
+    );
     this.logger.log(
-      `Dispatcher every ${scanEvery}ms, reply poll every ${pollEvery}ms, cohort engine every ${enrollEvery}ms, auto-cohort every ${autoCohortEvery}ms`,
+      `Dispatcher every ${scanEvery}ms, reply poll every ${pollEvery}ms, cohort engine every ${enrollEvery}ms, auto-cohort every ${autoCohortEvery}ms, reports every ${reportEvery}ms`,
     );
   }
 

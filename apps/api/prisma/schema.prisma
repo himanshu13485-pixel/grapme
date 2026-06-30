@@ -642,8 +642,17 @@ model Client {
   tenantId          String
   name              String
   invoiceNo         String?  // company invoice / account reference
+  contactPerson     String?  // client-side point of contact (name)
+  email             String?  // client contact email — also the report recipient
   status            String   @default("active")
   plan              String   @default("GROWTH")
+  reportDaily       Boolean  @default(false) // email a daily performance report
+  reportWeekly      Boolean  @default(false) // email a weekly report (Mondays)
+  reportMonthly     Boolean  @default(false) // email a monthly report (1st)
+  reportHour        Int      @default(8)     // hour-of-day to send the report
+  reportLastDailyAt   DateTime?              // guards (one send per period)
+  reportLastWeeklyAt  DateTime?
+  reportLastMonthlyAt DateTime?
   termStartedAt     DateTime @default(now())
   monthlyQuota      Int      @default(100) // fresh contacts per month
   dailyBatchSize    Int      @default(10)  // fresh sends per day

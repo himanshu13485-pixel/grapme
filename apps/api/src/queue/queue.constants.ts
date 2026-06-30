@@ -9,6 +9,7 @@ export const JOB_SEND_EMAIL = 'send-email';
 export const JOB_POLL_REPLIES = 'poll-replies';
 export const JOB_RUN_ENROLL = 'run-enrollments';
 export const JOB_RUN_AUTO_COHORT = 'run-auto-cohorts';
+export const JOB_SEND_REPORTS = 'send-client-reports';
 
 export interface SendEmailJob {
   messageId: string;
