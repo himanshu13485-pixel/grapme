@@ -208,12 +208,17 @@ export default function ActivityLogsPage() {
                         <span className="ml-2 text-xs text-slate-400">{l.entityType}</span>
                       </td>
                       <td className="px-5 py-3">
-                        <span className="text-slate-700">{l.actor?.name ?? 'System'}</span>
-                        <span
-                          className={`ml-2 rounded-full px-2 py-0.5 text-[10px] font-semibold ${roleBadgeClass(l.actor?.role)}`}
-                        >
-                          {l.actor ? (ROLE_LABEL[l.actor.role] ?? l.actor.role) : 'System'}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-slate-700">{l.actor?.name ?? 'System'}</span>
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${roleBadgeClass(l.actor?.role)}`}
+                          >
+                            {l.actor ? (ROLE_LABEL[l.actor.role] ?? l.actor.role) : 'System'}
+                          </span>
+                        </div>
+                        {l.actor?.email && (
+                          <div className="text-xs text-slate-400">{l.actor.email}</div>
+                        )}
                       </td>
                       <td className="px-5 py-3 text-slate-400">
                         {new Date(l.occurredAt).toLocaleString()}
