@@ -512,6 +512,7 @@ model EmailMessage {
   status         MessageStatus    @default(QUEUED)
   sentAt         DateTime?
   error          String?
+  readAt         DateTime?        // when an INBOUND reply was marked read (null = unread)
   createdAt      DateTime         @default(now())
 
   tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)

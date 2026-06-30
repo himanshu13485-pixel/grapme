@@ -51,6 +51,12 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
     try {
       const data = await api.get<Message[]>(`/mailbox/${tab}${q}`);
       setMessages(data);
+      // Viewing the Inbox marks its replies read, clearing the badge/alert.
+      if (tab === 'inbox') {
+        await api.post(`/mailbox/mark-read${q}`).catch(() => {});
+        if (typeof window !== 'undefined')
+          window.dispatchEvent(new Event('inbox-read'));
+      }
     } catch {
       setMessages([]);
     } finally {

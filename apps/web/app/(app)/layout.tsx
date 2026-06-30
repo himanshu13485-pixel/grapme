@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
+import { api } from '@/lib/api';
 
 const NAV = [
   { href: '/dashboard', label: 'Dashboard', icon: '▦' },
@@ -12,7 +13,7 @@ const NAV = [
   { href: '/campaigns', label: 'Campaigns', icon: '✈' },
   { href: '/contacts', label: 'Contacts', icon: '☰' },
   { href: '/templates', label: 'Templates', icon: '❏' },
-  { href: '/mailbox', label: 'Inbox & Sent', icon: '📥' },
+  { href: '/mailbox', label: 'Inbox & Sent', icon: '📥', inboxBadge: true },
   { href: '/mailboxes', label: 'Mailboxes', icon: '✉' },
   { href: '/deliverability', label: 'Deliverability', icon: '◎' },
   { href: '/credits', label: 'Credits', icon: '◈' },
@@ -27,9 +28,57 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
 
+  const [unread, setUnread] = useState(0);
+  const [toast, setToast] = useState('');
+  const prevUnread = useRef<number | null>(null);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     if (!loading && !user) router.replace('/login');
   }, [user, loading, router]);
+
+  // Poll the unread-reply count so the Inbox badge stays live and we can alert
+  // when a new reply lands — anywhere in the app, not just on the Inbox page.
+  useEffect(() => {
+    if (!user) return;
+    let stop = false;
+
+    async function check() {
+      try {
+        const { count } = await api.get<{ count: number }>('/mailbox/unread');
+        if (stop) return;
+        const prev = prevUnread.current;
+        if (prev !== null && count > prev) {
+          const delta = count - prev;
+          setToast(`📬 ${delta} new repl${delta === 1 ? 'y' : 'ies'} received`);
+          if (toastTimer.current) clearTimeout(toastTimer.current);
+          toastTimer.current = setTimeout(() => setToast(''), 8000);
+          // Optional desktop notification if the user granted permission.
+          if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+            new Notification('New reply received', {
+              body: `${delta} new message(s) in your Inbox`,
+            });
+          }
+        }
+        prevUnread.current = count;
+        setUnread(count);
+      } catch {
+        /* ignore transient errors */
+      }
+    }
+
+    check();
+    const id = setInterval(check, 60_000);
+    // Let the Inbox view tell us it just marked things read, so the badge clears
+    // immediately instead of waiting for the next poll.
+    const onRead = () => check();
+    window.addEventListener('inbox-read', onRead);
+    return () => {
+      stop = true;
+      clearInterval(id);
+      window.removeEventListener('inbox-read', onRead);
+    };
+  }, [user]);
 
   if (loading || !user) {
     return (
@@ -66,7 +115,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 }`}
               >
                 <span className="w-4 text-center">{item.icon}</span>
-                {item.label}
+                <span className="flex-1">{item.label}</span>
+                {item.inboxBadge && unread > 0 && (
+                  <span className="rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white">
+                    {unread}
+                  </span>
+                )}
               </Link>
             );
           })}
@@ -84,6 +138,20 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       {/* Content */}
       <main className="flex-1 overflow-auto px-8 py-8">{children}</main>
+
+      {/* New-mail alert toast */}
+      {toast && (
+        <button
+          onClick={() => {
+            setToast('');
+            router.push('/mailbox');
+          }}
+          className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-3 text-sm font-medium text-white shadow-lg transition hover:bg-slate-800"
+        >
+          {toast}
+          <span className="text-xs text-slate-300">— view</span>
+        </button>
+      )}
     </div>
   );
 }

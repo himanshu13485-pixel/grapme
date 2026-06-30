@@ -98,16 +98,29 @@ export default function ClientCockpit() {
   const [cohorts, setCohorts] = useState<CohortStat[]>([]);
   const [tab, setTab] = useState('mailboxes');
   const [notice, setNotice] = useState('');
+  const [inboxUnread, setInboxUnread] = useState(0);
 
   function flash(m: string) {
     setNotice(m);
     setTimeout(() => setNotice(''), 4000);
   }
 
+  function loadUnread() {
+    api
+      .get<{ count: number }>(`/mailbox/unread?clientId=${id}`)
+      .then((r) => setInboxUnread(r.count))
+      .catch(() => {});
+  }
+
   function load() {
     api.get<Client>(`/clients/${id}`).then(setClient).catch(() => {});
     api.get<CohortStat[]>(`/clients/${id}/cohorts/stats`).then(setCohorts).catch(() => {});
+    loadUnread();
   }
+  useEffect(() => {
+    // Opening the Inbox marks its replies read, so clear the tab badge.
+    if (tab === 'inbox') setInboxUnread(0);
+  }, [tab]);
   useEffect(() => {
     if (!id) return;
     load();
@@ -182,7 +195,7 @@ export default function ClientCockpit() {
           { key: 'contacts', label: 'Contacts & Lists', count: client._count?.contacts ?? 0 },
           { key: 'templates', label: 'Templates', count: client._count?.templates ?? 0 },
           { key: 'campaigns', label: 'Campaigns', count: client._count?.campaigns ?? 0 },
-          { key: 'inbox', label: 'Inbox & Sent' },
+          { key: 'inbox', label: 'Inbox & Sent', count: inboxUnread || undefined },
         ]}
       />
 

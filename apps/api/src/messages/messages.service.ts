@@ -65,6 +65,39 @@ export class MessagesService {
     );
   }
 
+  private clientScope(clientId?: string) {
+    return clientId
+      ? { OR: [{ emailAccount: { clientId } }, { contact: { clientId } }] }
+      : {};
+  }
+
+  /** Count of unread inbound replies (optionally for one client) — Inbox badge. */
+  async unreadCount(user: AuthUser, clientId?: string) {
+    const count = await this.prisma.emailMessage.count({
+      where: {
+        tenantId: user.tenantId,
+        direction: MessageDirection.INBOUND,
+        readAt: null,
+        ...this.clientScope(clientId),
+      },
+    });
+    return { count };
+  }
+
+  /** Mark inbound replies read (optionally for one client) — clears the badge. */
+  async markRead(user: AuthUser, clientId?: string) {
+    const res = await this.prisma.emailMessage.updateMany({
+      where: {
+        tenantId: user.tenantId,
+        direction: MessageDirection.INBOUND,
+        readAt: null,
+        ...this.clientScope(clientId),
+      },
+      data: { readAt: new Date() },
+    });
+    return { marked: res.count };
+  }
+
   async inbox(user: AuthUser, clientId?: string) {
     const rows = await this.base(
       user,

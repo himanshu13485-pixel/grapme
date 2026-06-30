@@ -21,6 +21,19 @@ export class MessagesController {
     return this.inbound.syncTenant(user.tenantId, clientId);
   }
 
+  /** Unread inbound count for the Inbox badge / new-mail alert. */
+  @Get('unread')
+  unread(@CurrentUser() user: AuthUser, @Query('clientId') clientId?: string) {
+    return this.messages.unreadCount(user, clientId);
+  }
+
+  /** Mark inbound replies read (clears the badge once the Inbox is viewed). */
+  @HttpCode(200)
+  @Post('mark-read')
+  markRead(@CurrentUser() user: AuthUser, @Query('clientId') clientId?: string) {
+    return this.messages.markRead(user, clientId);
+  }
+
   @Get('sent')
   sent(@CurrentUser() user: AuthUser, @Query('clientId') clientId?: string) {
     return this.messages.sent(user, clientId);
