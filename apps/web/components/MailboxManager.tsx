@@ -37,8 +37,13 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
   const [syncing, setSyncing] = useState(false);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [syncNote, setSyncNote] = useState('');
+  const [page, setPage] = useState(1);
 
   const isInbox = tab === 'inbox';
+  const PAGE_SIZE = 25;
+  const pageCount = Math.max(1, Math.ceil(messages.length / PAGE_SIZE));
+  const pageSafe = Math.min(page, pageCount);
+  const paged = messages.slice((pageSafe - 1) * PAGE_SIZE, pageSafe * PAGE_SIZE);
 
   async function load() {
     const q = clientId ? `?clientId=${clientId}` : '';
@@ -54,6 +59,7 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
     }
   }
   useEffect(() => {
+    setPage(1);
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, clientId]);
@@ -167,7 +173,7 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
               </tr>
             </thead>
             <tbody>
-              {messages.map((m) => (
+              {paged.map((m) => (
                 <Fragment key={m.id}>
                   <tr
                     className={`border-t border-slate-100 ${isInbox ? 'cursor-pointer hover:bg-slate-50' : ''}`}
@@ -209,6 +215,39 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
               ))}
             </tbody>
           </table>
+          {messages.length > PAGE_SIZE && (
+            <div className="flex items-center justify-between border-t border-slate-100 px-5 py-3 text-xs text-slate-500">
+              <span>
+                Showing {(pageSafe - 1) * PAGE_SIZE + 1}–
+                {Math.min(pageSafe * PAGE_SIZE, messages.length)} of {messages.length}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  className="btn-ghost px-3 py-1 disabled:opacity-40"
+                  onClick={() => {
+                    setOpen(null);
+                    setPage((p) => Math.max(1, p - 1));
+                  }}
+                  disabled={pageSafe <= 1}
+                >
+                  ← Prev
+                </button>
+                <span>
+                  Page {pageSafe} / {pageCount}
+                </span>
+                <button
+                  className="btn-ghost px-3 py-1 disabled:opacity-40"
+                  onClick={() => {
+                    setOpen(null);
+                    setPage((p) => Math.min(pageCount, p + 1));
+                  }}
+                  disabled={pageSafe >= pageCount}
+                >
+                  Next →
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

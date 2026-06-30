@@ -153,7 +153,21 @@ export class InboundMailService {
         messageId: dedupeId,
       },
     });
-    if (existing) return false;
+    if (existing) {
+      // Self-heal a body stored by an older parser that left raw MIME (boundary
+      // markers / undecoded transfer encoding) — re-extract on the next sync.
+      const fresh = this.sanitizeForDb(body?.slice(0, 20000));
+      const looksRaw =
+        existing.body == null ||
+        /content-transfer-encoding:|^--[-\w]/im.test(existing.body);
+      if (fresh && looksRaw && fresh !== existing.body) {
+        await this.prisma.emailMessage.update({
+          where: { id: existing.id },
+          data: { body: fresh },
+        });
+      }
+      return false;
+    }
 
     const contact = await this.prisma.contact.findFirst({
       where: {
@@ -216,63 +230,85 @@ export class InboundMailService {
   }
 
   /** Best-effort, dependency-free extraction of a readable text body from raw
-   *  RFC822 source. Handles single-part and multipart/alternative, plus
-   *  quoted-printable / base64 transfer encodings; falls back to stripped HTML. */
+   *  RFC822 source. Walks nested multipart trees (mixed/alternative/related),
+   *  decodes quoted-printable / base64, and prefers text/plain, falling back to
+   *  stripped HTML. */
   private extractTextBody(raw: string): string {
-    const splitHeaders = (s: string): [string, string] => {
-      const i = s.indexOf('\r\n\r\n') >= 0 ? s.indexOf('\r\n\r\n') : s.indexOf('\n\n');
-      if (i < 0) return ['', s];
-      return [s.slice(0, i), s.slice(i).replace(/^\r?\n\r?\n/, '')];
-    };
-    const decode = (lowerHeaders: string, b: string): string => {
-      if (/content-transfer-encoding:\s*base64/.test(lowerHeaders)) {
-        try {
-          return Buffer.from(b.replace(/\s+/g, ''), 'base64').toString('utf8');
-        } catch {
-          return b;
-        }
-      }
-      if (/content-transfer-encoding:\s*quoted-printable/.test(lowerHeaders)) {
-        return b
-          .replace(/=\r?\n/g, '')
-          .replace(/=([0-9A-Fa-f]{2})/g, (_, h) =>
-            String.fromCharCode(parseInt(h, 16)),
-          );
-      }
-      return b;
-    };
-    const stripHtml = (html: string): string =>
-      html
-        .replace(/<style[\s\S]*?<\/style>/gi, '')
-        .replace(/<script[\s\S]*?<\/script>/gi, '')
-        .replace(/<br\s*\/?>/gi, '\n')
-        .replace(/<\/p>/gi, '\n')
-        .replace(/<[^>]+>/g, '')
-        .replace(/&nbsp;/g, ' ')
-        .replace(/&amp;/g, '&')
-        .replace(/[ \t]{2,}/g, ' ')
-        .trim();
+    const { plain, html } = this.collectText(raw, 0);
+    return (plain ?? html ?? '').trim();
+  }
 
-    const [headers, body] = splitHeaders(raw);
+  /** Splits a MIME section into [headers, body] at the first blank line. */
+  private splitHeaders(s: string): [string, string] {
+    const i = s.indexOf('\r\n\r\n') >= 0 ? s.indexOf('\r\n\r\n') : s.indexOf('\n\n');
+    if (i < 0) return ['', s];
+    return [s.slice(0, i), s.slice(i).replace(/^\r?\n\r?\n/, '')];
+  }
+
+  private decodeTransfer(lowerHeaders: string, b: string): string {
+    if (/content-transfer-encoding:\s*base64/.test(lowerHeaders)) {
+      try {
+        return Buffer.from(b.replace(/\s+/g, ''), 'base64').toString('utf8');
+      } catch {
+        return b;
+      }
+    }
+    if (/content-transfer-encoding:\s*quoted-printable/.test(lowerHeaders)) {
+      return b
+        .replace(/=\r?\n/g, '')
+        .replace(/=([0-9A-Fa-f]{2})/g, (_, h) =>
+          String.fromCharCode(parseInt(h, 16)),
+        );
+    }
+    return b;
+  }
+
+  private stripHtml(html: string): string {
+    return html
+      .replace(/<style[\s\S]*?<\/style>/gi, '')
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/p>/gi, '\n')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/[ \t]{2,}/g, ' ')
+      .trim();
+  }
+
+  /** Recursively pulls the best text/plain (and html fallback) out of a MIME
+   *  section, descending into nested multipart parts. */
+  private collectText(
+    section: string,
+    depth: number,
+  ): { plain?: string; html?: string } {
+    if (depth > 8) return {};
+    const [headers, body] = this.splitHeaders(section);
     const lower = headers.toLowerCase();
-    const ct = /content-type:\s*([^;\r\n]+)/i.exec(headers)?.[1]?.toLowerCase() ?? 'text/plain';
+    const ct =
+      /content-type:\s*([^;\r\n]+)/i.exec(headers)?.[1]?.toLowerCase() ??
+      'text/plain';
     const boundary = /boundary="?([^";\r\n]+)"?/i.exec(headers)?.[1];
 
     if (ct.startsWith('multipart/') && boundary) {
-      let plain: string | null = null;
-      let html: string | null = null;
-      for (const part of body.split(`--${boundary}`)) {
-        const [ph, pb] = splitHeaders(part);
-        const pl = ph.toLowerCase();
-        if (!pl.includes('text/')) continue;
-        const decoded = decode(pl, pb);
-        if (pl.includes('text/plain') && plain == null) plain = decoded;
-        else if (pl.includes('text/html') && html == null) html = decoded;
+      let plain: string | undefined;
+      let html: string | undefined;
+      // Skip the preamble (segment 0) and the closing "--boundary--" segment.
+      const segments = body.split(`--${boundary}`).slice(1);
+      for (const seg of segments) {
+        const s = seg.replace(/^\r?\n/, '');
+        if (!s || s.startsWith('--')) continue;
+        const r = this.collectText(s, depth + 1);
+        if (plain === undefined && r.plain !== undefined) plain = r.plain;
+        if (html === undefined && r.html !== undefined) html = r.html;
       }
-      return (plain ?? (html ? stripHtml(html) : '')).trim();
+      return { plain, html };
     }
-    const decoded = decode(lower, body);
-    return (ct.includes('html') ? stripHtml(decoded) : decoded).trim();
+
+    const decoded = this.decodeTransfer(lower, body);
+    if (ct.includes('html')) return { html: this.stripHtml(decoded) };
+    if (ct.includes('text/')) return { plain: decoded.trim() };
+    return {}; // non-text leaf (attachment, image, …)
   }
 
   /** Logs a REPLY event against the contact's latest outbound (stops sequence). */
