@@ -71,25 +71,30 @@ export class ApprovalsService {
       },
     });
     const targets = await this.resolveTargets(approvals);
-    return approvals.map((a) => ({ ...a, target: targets.get(a.id) ?? null }));
+    const meta = await this.resolveTargets(approvals);
+    return approvals.map((a) => ({
+      ...a,
+      target: meta.get(a.id)?.target ?? null,
+      clientName: meta.get(a.id)?.clientName ?? null,
+    }));
   }
 
-  /** Human "what was submitted" label per approval (mailbox, import file, … ). */
+  /** Human "what" label + owning client name per approval. */
   private async resolveTargets(
     approvals: { id: string; entityType: ApprovalEntity; entityId: string }[],
-  ): Promise<Map<string, string>> {
-    const out = new Map<string, string>();
+  ): Promise<Map<string, { target?: string; clientName?: string }>> {
+    const out = new Map<string, { target?: string; clientName?: string }>();
     const idsOf = (t: ApprovalEntity) =>
       approvals.filter((a) => a.entityType === t).map((a) => a.entityId);
 
     const [mailboxes, imports, campaigns, schedules] = await Promise.all([
       this.prisma.emailAccount.findMany({
         where: { id: { in: idsOf(ApprovalEntity.SMTP) } },
-        select: { id: true, label: true, emailAddress: true },
+        select: { id: true, label: true, emailAddress: true, clientId: true },
       }),
       this.prisma.importJob.findMany({
         where: { id: { in: idsOf(ApprovalEntity.IMPORT) } },
-        select: { id: true, filename: true, validRows: true },
+        select: { id: true, filename: true, validRows: true, clientId: true },
       }),
       this.prisma.campaign.findMany({
         where: {
@@ -100,48 +105,87 @@ export class ApprovalsService {
             ],
           },
         },
-        select: { id: true, name: true },
+        select: { id: true, name: true, clientId: true },
       }),
       this.prisma.schedule.findMany({
         where: { id: { in: idsOf(ApprovalEntity.SCHEDULE) } },
-        select: { id: true, campaign: { select: { name: true } } },
+        select: {
+          id: true,
+          campaign: { select: { name: true, clientId: true } },
+        },
       }),
     ]);
+
+    // Resolve every referenced clientId to a name in one query.
+    const clientIds = new Set<string>();
+    mailboxes.forEach((m) => m.clientId && clientIds.add(m.clientId));
+    imports.forEach((j) => j.clientId && clientIds.add(j.clientId));
+    campaigns.forEach((c) => c.clientId && clientIds.add(c.clientId));
+    schedules.forEach((s) => s.campaign?.clientId && clientIds.add(s.campaign.clientId));
+    const clientRows = await this.prisma.client.findMany({
+      where: { id: { in: [...clientIds] } },
+      select: { id: true, name: true },
+    });
+    const clientName = new Map(clientRows.map((c) => [c.id, c.name]));
 
     const mb = new Map(
       mailboxes.map((m) => [
         m.id,
-        m.label ? `${m.label} (${m.emailAddress})` : m.emailAddress,
+        {
+          target: m.label ? `${m.label} (${m.emailAddress})` : m.emailAddress,
+          clientName: m.clientId ? clientName.get(m.clientId) : undefined,
+        },
       ]),
     );
-    const im = new Map(imports.map((j) => [j.id, `${j.filename} · ${j.validRows} rows`]));
-    const cp = new Map(campaigns.map((c) => [c.id, c.name]));
-    const sc = new Map(schedules.map((s) => [s.id, s.campaign?.name ?? 'campaign']));
+    const im = new Map(
+      imports.map((j) => [
+        j.id,
+        {
+          target: `${j.filename} · ${j.validRows} rows`,
+          clientName: j.clientId ? clientName.get(j.clientId) : undefined,
+        },
+      ]),
+    );
+    const cp = new Map(
+      campaigns.map((c) => [
+        c.id,
+        { name: c.name, clientName: c.clientId ? clientName.get(c.clientId) : undefined },
+      ]),
+    );
+    const sc = new Map(
+      schedules.map((s) => [
+        s.id,
+        {
+          name: s.campaign?.name ?? 'campaign',
+          clientName: s.campaign?.clientId ? clientName.get(s.campaign.clientId) : undefined,
+        },
+      ]),
+    );
 
     for (const a of approvals) {
-      let label: string | undefined;
       switch (a.entityType) {
         case ApprovalEntity.SMTP:
-          label = mb.get(a.entityId);
+          if (mb.has(a.entityId)) out.set(a.id, mb.get(a.entityId)!);
           break;
         case ApprovalEntity.IMPORT:
-          label = im.get(a.entityId);
+          if (im.has(a.entityId)) out.set(a.id, im.get(a.entityId)!);
           break;
-        case ApprovalEntity.CAMPAIGN:
-          label = cp.get(a.entityId);
+        case ApprovalEntity.CAMPAIGN: {
+          const c = cp.get(a.entityId);
+          if (c) out.set(a.id, { target: c.name, clientName: c.clientName });
           break;
+        }
         case ApprovalEntity.SEQUENCE: {
-          const n = cp.get(a.entityId);
-          label = n ? `Sequence · ${n}` : undefined;
+          const c = cp.get(a.entityId);
+          if (c) out.set(a.id, { target: `Sequence · ${c.name}`, clientName: c.clientName });
           break;
         }
         case ApprovalEntity.SCHEDULE: {
-          const n = sc.get(a.entityId);
-          label = n ? `Schedule · ${n}` : undefined;
+          const s = sc.get(a.entityId);
+          if (s) out.set(a.id, { target: `Schedule · ${s.name}`, clientName: s.clientName });
           break;
         }
       }
-      if (label) out.set(a.id, label);
     }
     return out;
   }

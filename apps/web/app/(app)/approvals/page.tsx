@@ -11,6 +11,7 @@ interface Approval {
   status: string;
   createdAt: string;
   target?: string | null;
+  clientName?: string | null;
   decisionReason?: string | null;
   decidedAt?: string | null;
   submittedBy?: { name: string; email: string };
@@ -97,6 +98,7 @@ export default function ApprovalsPage() {
             <thead className="bg-slate-50 text-left text-xs uppercase text-slate-400">
               <tr>
                 <th className="px-5 py-3">Type</th>
+                <th className="px-5 py-3">Client</th>
                 <th className="px-5 py-3">What</th>
                 <th className="px-5 py-3">Submitted by</th>
                 <th className="px-5 py-3">When</th>
@@ -115,6 +117,15 @@ export default function ApprovalsPage() {
                   <td className="px-5 py-3 font-medium">
                     <span className="mr-1 text-slate-400">{open === a.id ? '▾' : '▸'}</span>
                     {typeLabel(a.entityType)}
+                  </td>
+                  <td className="px-5 py-3">
+                    {a.clientName ? (
+                      <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
+                        {a.clientName}
+                      </span>
+                    ) : (
+                      <span className="text-slate-400">—</span>
+                    )}
                   </td>
                   <td className="px-5 py-3 text-slate-700">{a.target ?? '—'}</td>
                   <td className="px-5 py-3 text-slate-500">
@@ -150,9 +161,10 @@ export default function ApprovalsPage() {
                 </tr>
                 {open === a.id && (
                   <tr className="bg-slate-50">
-                    <td colSpan={7} className="px-6 py-4 text-xs text-slate-600">
+                    <td colSpan={8} className="px-6 py-4 text-xs text-slate-600">
                       <div className="grid grid-cols-2 gap-x-8 gap-y-1 sm:grid-cols-3">
                         <div><span className="text-slate-400">Type: </span>{typeLabel(a.entityType)} ({a.entityType})</div>
+                        <div><span className="text-slate-400">Client: </span>{a.clientName ?? '—'}</div>
                         <div><span className="text-slate-400">What: </span>{a.target ?? a.entityId}</div>
                         <div><span className="text-slate-400">Submitted by: </span>{a.submittedBy?.name ?? '—'}{a.submittedBy?.email ? ` · ${a.submittedBy.email}` : ''}</div>
                         <div><span className="text-slate-400">Submitted: </span>{new Date(a.createdAt).toLocaleString()}</div>
