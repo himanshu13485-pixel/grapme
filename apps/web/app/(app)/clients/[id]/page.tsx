@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, FormEvent, Fragment } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
+import { downloadCsv } from '@/lib/csv';
 import { PageHeader, EmptyState, StatusBadge, Tabs, Modal } from '@/components/ui';
 import { ContactsManager } from '@/components/ContactsManager';
 import { TemplatesManager } from '@/components/TemplatesManager';
@@ -809,6 +810,74 @@ function Cohorts({
       </div>
 
       {err && <p className="text-sm text-rose-600">{err}</p>}
+
+      {cohorts.length > 0 && (() => {
+        // Client-wide rollup across every cohort (rates recomputed from totals).
+        const t = cohorts.reduce(
+          (a, c) => ({
+            sent: a.sent + c.metrics.sent,
+            opens: a.opens + c.metrics.opens,
+            clicks: a.clicks + c.metrics.clicks,
+            replies: a.replies + c.metrics.replies,
+            bounces: a.bounces + c.metrics.bounces,
+            unsubscribes: a.unsubscribes + c.metrics.unsubscribes,
+          }),
+          { sent: 0, opens: 0, clicks: 0, replies: 0, bounces: 0, unsubscribes: 0 },
+        );
+        const pct = (n: number) => (t.sent ? Math.round((n / t.sent) * 1000) / 10 : 0);
+
+        function exportCsv() {
+          const headers = [
+            'Cohort', 'Month', 'Status', 'Sent', 'Opens', 'Open %', 'Clicks',
+            'Click %', 'Replies', 'Reply %', 'Bounces', 'Bounce %', 'Unsub',
+          ];
+          const rows = cohorts.map((c) => [
+            c.label, c.monthIndex, c.status, c.metrics.sent, c.metrics.opens,
+            c.metrics.openRate, c.metrics.clicks, c.metrics.clickRate,
+            c.metrics.replies, c.metrics.replyRate, c.metrics.bounces,
+            c.metrics.bounceRate, c.metrics.unsubscribes,
+          ]);
+          rows.push([
+            'ALL COHORTS', '', '', t.sent, t.opens, pct(t.opens), t.clicks,
+            pct(t.clicks), t.replies, pct(t.replies), t.bounces, pct(t.bounces),
+            t.unsubscribes,
+          ]);
+          const safe = client.name.replace(/[^\w-]+/g, '_');
+          downloadCsv(`${safe}_cohort_report`, headers, rows);
+        }
+
+        return (
+          <div className="card p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-slate-700">
+                Client report — all cohorts
+              </h3>
+              <button className="btn-ghost text-xs" onClick={exportCsv}>
+                ⭳ Export CSV
+              </button>
+            </div>
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-5 lg:grid-cols-10">
+              {([
+                ['Sent', t.sent],
+                ['Opens', t.opens],
+                ['Open %', `${pct(t.opens)}%`],
+                ['Clicks', t.clicks],
+                ['Click %', `${pct(t.clicks)}%`],
+                ['Replies', t.replies],
+                ['Reply %', `${pct(t.replies)}%`],
+                ['Bounces', t.bounces],
+                ['Bounce %', `${pct(t.bounces)}%`],
+                ['Unsub', t.unsubscribes],
+              ] as [string, string | number][]).map(([label, value]) => (
+                <div key={label} className="rounded-lg bg-slate-50 px-3 py-2">
+                  <div className="text-[10px] uppercase tracking-wide text-slate-400">{label}</div>
+                  <div className="mt-0.5 text-base font-semibold text-brand-700">{value}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {cohorts.length === 0 ? (
         <EmptyState message="No cohorts yet. Upload a list, or enable auto-cohort above." />
