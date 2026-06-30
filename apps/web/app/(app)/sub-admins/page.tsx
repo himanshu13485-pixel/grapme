@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
-import { PageHeader, EmptyState } from '@/components/ui';
+import { PageHeader, EmptyState, Pagination } from '@/components/ui';
 
 interface SubAdmin {
   id: string;
@@ -30,6 +30,9 @@ export default function SubAdminsPage() {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [assignUser, setAssignUser] = useState('');
   const [error, setError] = useState('');
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 15;
+  const pagedSubAdmins = subAdmins.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   function load() {
     api.get<SubAdmin[]>('/sub-admins').then(setSubAdmins).catch((e) => setError(e.message));
@@ -79,7 +82,7 @@ export default function SubAdminsPage() {
             <EmptyState message="No sub-admins. Create a user with the SUB_ADMIN role." />
           ) : (
             <ul>
-              {subAdmins.map((sa) => (
+              {pagedSubAdmins.map((sa) => (
                 <li
                   key={sa.id}
                   onClick={() => openSubAdmin(sa.id)}
@@ -98,6 +101,9 @@ export default function SubAdminsPage() {
               ))}
             </ul>
           )}
+          <div className="px-5">
+            <Pagination page={page} pageSize={PAGE_SIZE} total={subAdmins.length} onPage={setPage} />
+          </div>
         </div>
 
         <div className="card p-5">

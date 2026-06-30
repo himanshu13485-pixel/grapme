@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
-import { PageHeader, StatusBadge, EmptyState } from '@/components/ui';
+import { PageHeader, StatusBadge, EmptyState, Pagination } from '@/components/ui';
 
 interface Approval {
   id: string;
@@ -17,6 +17,9 @@ export default function ApprovalsPage() {
   const [items, setItems] = useState<Approval[]>([]);
   const [filter, setFilter] = useState('PENDING');
   const [error, setError] = useState('');
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 20;
+  const paged = items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   function load() {
     api
@@ -26,6 +29,7 @@ export default function ApprovalsPage() {
   }
 
   useEffect(load, [filter]);
+  useEffect(() => setPage(1), [filter]);
 
   async function decide(id: string, decision: 'approve' | 'reject') {
     setError('');
@@ -69,6 +73,8 @@ export default function ApprovalsPage() {
       {items.length === 0 ? (
         <EmptyState message={`No ${filter.toLowerCase()} items.`} />
       ) : (
+        <>
+        <div className="mb-3 text-sm text-slate-400">{items.length} item{items.length === 1 ? '' : 's'}</div>
         <div className="card overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase text-slate-400">
@@ -81,7 +87,7 @@ export default function ApprovalsPage() {
               </tr>
             </thead>
             <tbody>
-              {items.map((a) => (
+              {paged.map((a) => (
                 <tr key={a.id} className="border-t border-slate-100">
                   <td className="px-5 py-3 font-medium">{a.entityType}</td>
                   <td className="px-5 py-3 text-slate-500">
@@ -116,6 +122,8 @@ export default function ApprovalsPage() {
             </tbody>
           </table>
         </div>
+        <Pagination page={page} pageSize={PAGE_SIZE} total={items.length} onPage={setPage} />
+        </>
       )}
     </div>
   );

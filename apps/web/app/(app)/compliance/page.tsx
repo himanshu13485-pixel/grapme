@@ -2,7 +2,7 @@
 
 import { useEffect, useState, FormEvent } from 'react';
 import { api } from '@/lib/api';
-import { PageHeader, EmptyState } from '@/components/ui';
+import { PageHeader, EmptyState, Pagination } from '@/components/ui';
 
 interface Suppression {
   id: string;
@@ -15,6 +15,9 @@ export default function CompliancePage() {
   const [items, setItems] = useState<Suppression[]>([]);
   const [email, setEmail] = useState('');
   const [error, setError] = useState('');
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 25;
+  const paged = items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   function load() {
     api.get<Suppression[]>('/suppression').then(setItems).catch(() => {});
@@ -69,6 +72,8 @@ export default function CompliancePage() {
       {items.length === 0 ? (
         <EmptyState message="Suppression list is empty." />
       ) : (
+        <>
+        <div className="mb-3 text-sm text-slate-400">{items.length} suppressed address{items.length === 1 ? '' : 'es'}</div>
         <div className="card overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase text-slate-400">
@@ -79,7 +84,7 @@ export default function CompliancePage() {
               </tr>
             </thead>
             <tbody>
-              {items.map((s) => (
+              {paged.map((s) => (
                 <tr key={s.id} className="border-t border-slate-100">
                   <td className="px-5 py-3 font-medium">{s.email}</td>
                   <td className="px-5 py-3 text-slate-500">{s.reason}</td>
@@ -91,6 +96,8 @@ export default function CompliancePage() {
             </tbody>
           </table>
         </div>
+        <Pagination page={page} pageSize={PAGE_SIZE} total={items.length} onPage={setPage} />
+        </>
       )}
     </div>
   );

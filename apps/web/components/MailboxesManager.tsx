@@ -2,7 +2,7 @@
 
 import { useEffect, useState, FormEvent } from 'react';
 import { api } from '@/lib/api';
-import { PageHeader, StatusBadge, EmptyState, Modal } from '@/components/ui';
+import { PageHeader, StatusBadge, EmptyState, Modal, Pagination } from '@/components/ui';
 
 interface AuthResult {
   domain?: string;
@@ -64,6 +64,8 @@ export function MailboxesManager({ clientId }: { clientId?: string }) {
   const [auth, setAuth] = useState<Record<string, AuthResult>>({});
   // Tenant-wide report-sender mailbox (only managed on the global page).
   const [reportSenderId, setReportSenderId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 15;
 
   async function checkAuth(m: Mailbox) {
     const domain = m.emailAddress.split('@')[1];
@@ -344,11 +346,14 @@ export function MailboxesManager({ clientId }: { clientId?: string }) {
       {mailboxes.length === 0 ? (
         <EmptyState message="No mailboxes connected yet." />
       ) : (
+        <>
+        <div className="mb-3 text-sm text-slate-400">{mailboxes.length} mailbox{mailboxes.length === 1 ? '' : 'es'}</div>
         <div className="space-y-3">
           {[...mailboxes]
             .sort((a, b) =>
               a.id === reportSenderId ? -1 : b.id === reportSenderId ? 1 : 0,
             )
+            .slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
             .map((m) => (
             <div
               key={m.id}
@@ -427,6 +432,8 @@ export function MailboxesManager({ clientId }: { clientId?: string }) {
             </div>
           ))}
         </div>
+        <Pagination page={page} pageSize={PAGE_SIZE} total={mailboxes.length} onPage={setPage} />
+        </>
       )}
 
       <Modal
