@@ -57,7 +57,7 @@ export class ApprovalsService {
       });
       submitterFilter = { submittedById: { in: rows.map((r) => r.assignedUserId!) } };
     }
-    return this.prisma.approval.findMany({
+    const approvals = await this.prisma.approval.findMany({
       where: {
         tenantId: reviewer.tenantId,
         status: query.status,
@@ -67,8 +67,83 @@ export class ApprovalsService {
       orderBy: { createdAt: 'desc' },
       include: {
         submittedBy: { select: { id: true, name: true, email: true } },
+        reviewer: { select: { name: true, email: true } },
       },
     });
+    const targets = await this.resolveTargets(approvals);
+    return approvals.map((a) => ({ ...a, target: targets.get(a.id) ?? null }));
+  }
+
+  /** Human "what was submitted" label per approval (mailbox, import file, … ). */
+  private async resolveTargets(
+    approvals: { id: string; entityType: ApprovalEntity; entityId: string }[],
+  ): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    const idsOf = (t: ApprovalEntity) =>
+      approvals.filter((a) => a.entityType === t).map((a) => a.entityId);
+
+    const [mailboxes, imports, campaigns, schedules] = await Promise.all([
+      this.prisma.emailAccount.findMany({
+        where: { id: { in: idsOf(ApprovalEntity.SMTP) } },
+        select: { id: true, label: true, emailAddress: true },
+      }),
+      this.prisma.importJob.findMany({
+        where: { id: { in: idsOf(ApprovalEntity.IMPORT) } },
+        select: { id: true, filename: true, validRows: true },
+      }),
+      this.prisma.campaign.findMany({
+        where: {
+          id: {
+            in: [
+              ...idsOf(ApprovalEntity.CAMPAIGN),
+              ...idsOf(ApprovalEntity.SEQUENCE),
+            ],
+          },
+        },
+        select: { id: true, name: true },
+      }),
+      this.prisma.schedule.findMany({
+        where: { id: { in: idsOf(ApprovalEntity.SCHEDULE) } },
+        select: { id: true, campaign: { select: { name: true } } },
+      }),
+    ]);
+
+    const mb = new Map(
+      mailboxes.map((m) => [
+        m.id,
+        m.label ? `${m.label} (${m.emailAddress})` : m.emailAddress,
+      ]),
+    );
+    const im = new Map(imports.map((j) => [j.id, `${j.filename} · ${j.validRows} rows`]));
+    const cp = new Map(campaigns.map((c) => [c.id, c.name]));
+    const sc = new Map(schedules.map((s) => [s.id, s.campaign?.name ?? 'campaign']));
+
+    for (const a of approvals) {
+      let label: string | undefined;
+      switch (a.entityType) {
+        case ApprovalEntity.SMTP:
+          label = mb.get(a.entityId);
+          break;
+        case ApprovalEntity.IMPORT:
+          label = im.get(a.entityId);
+          break;
+        case ApprovalEntity.CAMPAIGN:
+          label = cp.get(a.entityId);
+          break;
+        case ApprovalEntity.SEQUENCE: {
+          const n = cp.get(a.entityId);
+          label = n ? `Sequence · ${n}` : undefined;
+          break;
+        }
+        case ApprovalEntity.SCHEDULE: {
+          const n = sc.get(a.entityId);
+          label = n ? `Schedule · ${n}` : undefined;
+          break;
+        }
+      }
+      if (label) out.set(a.id, label);
+    }
+    return out;
   }
 
   async approve(reviewer: AuthUser, approvalId: string) {

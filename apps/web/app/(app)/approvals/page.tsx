@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { PageHeader, StatusBadge, EmptyState, Pagination } from '@/components/ui';
 
@@ -10,13 +10,30 @@ interface Approval {
   entityId: string;
   status: string;
   createdAt: string;
+  target?: string | null;
+  decisionReason?: string | null;
+  decidedAt?: string | null;
   submittedBy?: { name: string; email: string };
+  reviewer?: { name: string; email: string } | null;
+}
+
+// What each approval type means, in plain language.
+const TYPE_LABEL: Record<string, string> = {
+  SMTP: 'New mailbox',
+  IMPORT: 'Contact import',
+  CAMPAIGN: 'Campaign',
+  SCHEDULE: 'Campaign schedule',
+  SEQUENCE: 'Follow-up sequence',
+};
+function typeLabel(t: string) {
+  return TYPE_LABEL[t] ?? t;
 }
 
 export default function ApprovalsPage() {
   const [items, setItems] = useState<Approval[]>([]);
   const [filter, setFilter] = useState('PENDING');
   const [error, setError] = useState('');
+  const [open, setOpen] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 20;
   const paged = items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -80,16 +97,26 @@ export default function ApprovalsPage() {
             <thead className="bg-slate-50 text-left text-xs uppercase text-slate-400">
               <tr>
                 <th className="px-5 py-3">Type</th>
+                <th className="px-5 py-3">What</th>
                 <th className="px-5 py-3">Submitted by</th>
                 <th className="px-5 py-3">When</th>
                 <th className="px-5 py-3">Status</th>
+                <th className="px-5 py-3">Reviewed by</th>
                 <th className="px-5 py-3"></th>
               </tr>
             </thead>
             <tbody>
               {paged.map((a) => (
-                <tr key={a.id} className="border-t border-slate-100">
-                  <td className="px-5 py-3 font-medium">{a.entityType}</td>
+                <Fragment key={a.id}>
+                <tr
+                  className="cursor-pointer border-t border-slate-100 hover:bg-slate-50"
+                  onClick={() => setOpen(open === a.id ? null : a.id)}
+                >
+                  <td className="px-5 py-3 font-medium">
+                    <span className="mr-1 text-slate-400">{open === a.id ? '▾' : '▸'}</span>
+                    {typeLabel(a.entityType)}
+                  </td>
+                  <td className="px-5 py-3 text-slate-700">{a.target ?? '—'}</td>
                   <td className="px-5 py-3 text-slate-500">
                     {a.submittedBy?.name ?? '—'}
                   </td>
@@ -99,7 +126,10 @@ export default function ApprovalsPage() {
                   <td className="px-5 py-3">
                     <StatusBadge status={a.status} />
                   </td>
-                  <td className="px-5 py-3 text-right">
+                  <td className="px-5 py-3 text-slate-500">
+                    {a.reviewer?.name ?? (a.status === 'PENDING' ? '—' : 'system')}
+                  </td>
+                  <td className="px-5 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                     {a.status === 'PENDING' && (
                       <div className="flex justify-end gap-2">
                         <button
@@ -118,6 +148,31 @@ export default function ApprovalsPage() {
                     )}
                   </td>
                 </tr>
+                {open === a.id && (
+                  <tr className="bg-slate-50">
+                    <td colSpan={7} className="px-6 py-4 text-xs text-slate-600">
+                      <div className="grid grid-cols-2 gap-x-8 gap-y-1 sm:grid-cols-3">
+                        <div><span className="text-slate-400">Type: </span>{typeLabel(a.entityType)} ({a.entityType})</div>
+                        <div><span className="text-slate-400">What: </span>{a.target ?? a.entityId}</div>
+                        <div><span className="text-slate-400">Submitted by: </span>{a.submittedBy?.name ?? '—'}{a.submittedBy?.email ? ` · ${a.submittedBy.email}` : ''}</div>
+                        <div><span className="text-slate-400">Submitted: </span>{new Date(a.createdAt).toLocaleString()}</div>
+                        {a.status !== 'PENDING' && (
+                          <>
+                            <div><span className="text-slate-400">Reviewed by: </span>{a.reviewer?.name ?? 'system'}{a.reviewer?.email ? ` · ${a.reviewer.email}` : ''}</div>
+                            <div><span className="text-slate-400">Decided: </span>{a.decidedAt ? new Date(a.decidedAt).toLocaleString() : '—'}</div>
+                          </>
+                        )}
+                        {a.status === 'REJECTED' && (
+                          <div className="col-span-full text-rose-600">
+                            <span className="text-slate-400">Reason: </span>{a.decisionReason ?? '—'}
+                          </div>
+                        )}
+                        <div className="col-span-full text-slate-300">Ref: {a.entityId}</div>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
           </table>
