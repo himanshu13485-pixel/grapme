@@ -280,6 +280,16 @@ export class ClientReportService {
     }
   }
 
+  /** The address client reports will be sent FROM (for UI confirmation). */
+  async senderAddress(tenantId: string): Promise<{ from: string | null }> {
+    const admin = await this.prisma.user.findFirst({
+      where: { tenantId, role: Role.SUPER_ADMIN },
+      select: { email: true },
+    });
+    const mailbox = await this.resolveAdminMailbox(tenantId, admin?.email);
+    return { from: mailbox?.emailAddress ?? null };
+  }
+
   /**
    * The mailbox reports are sent from: prefer one matching the admin's email,
    * then any tenant-level (unassigned) mailbox, then any active mailbox.

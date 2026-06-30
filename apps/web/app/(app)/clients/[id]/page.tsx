@@ -630,6 +630,14 @@ function ReportSettings({ client, onChanged }: { client: Client; onChanged: () =
   const [hour, setHour] = useState(client.reportHour);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState('');
+  const [fromAddr, setFromAddr] = useState<string | null | undefined>(undefined);
+
+  useEffect(() => {
+    api
+      .get<{ from: string | null }>('/reports/sender')
+      .then((r) => setFromAddr(r.from))
+      .catch(() => setFromAddr(null));
+  }, []);
 
   async function save() {
     setBusy(true);
@@ -684,6 +692,28 @@ function ReportSettings({ client, onChanged }: { client: Client; onChanged: () =
         bounces) is emailed <strong>from the admin address</strong> to the client&apos;s
         contact email at the chosen time.
       </p>
+      <div className="flex flex-wrap items-center gap-4 rounded-lg bg-slate-50 px-3 py-2 text-xs">
+        <span>
+          <span className="text-slate-400">Sends from: </span>
+          {fromAddr === undefined ? (
+            <span className="text-slate-400">checking…</span>
+          ) : fromAddr ? (
+            <span className="font-medium text-slate-700">{fromAddr}</span>
+          ) : (
+            <span className="font-medium text-rose-600">
+              no admin mailbox — add one under Mailboxes
+            </span>
+          )}
+        </span>
+        <span>
+          <span className="text-slate-400">Sends to: </span>
+          {client.email ? (
+            <span className="font-medium text-slate-700">{client.email}</span>
+          ) : (
+            <span className="font-medium text-rose-600">no contact email set</span>
+          )}
+        </span>
+      </div>
       <div className="flex flex-wrap items-center gap-4">
         <label className="flex items-center gap-2 text-sm text-slate-700">
           <input type="checkbox" checked={daily} onChange={(e) => setDaily(e.target.checked)} />

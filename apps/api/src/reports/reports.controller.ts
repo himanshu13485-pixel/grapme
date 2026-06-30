@@ -37,6 +37,12 @@ export class ReportsController {
     return this.reports.activityLogs(user);
   }
 
+  /** Address client reports are sent FROM (admin mailbox), for confirmation. */
+  @Get('reports/sender')
+  reportSender(@CurrentUser() user: AuthUser) {
+    return this.clientReports.senderAddress(user.tenantId);
+  }
+
   /** Send a client report now (test / on-demand). */
   @HttpCode(200)
   @Roles(Role.SUPER_ADMIN, Role.SUB_ADMIN)
