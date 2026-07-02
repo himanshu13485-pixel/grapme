@@ -13,7 +13,8 @@ interface Captcha {
 export default function ClientPortalPage() {
   const { login } = useAuth();
   const router = useRouter();
-  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [mode, setMode] = useState<'login' | 'register' | 'forgot'>('login');
+  const [forgotSent, setForgotSent] = useState(false);
 
   // shared
   const [email, setEmail] = useState('');
@@ -49,6 +50,20 @@ export default function ClientPortalPage() {
       router.replace('/clients');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sign-in failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onForgot(e: FormEvent) {
+    e.preventDefault();
+    setError('');
+    setBusy(true);
+    try {
+      await api.post('/auth/forgot-password', { email });
+      setForgotSent(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong');
     } finally {
       setBusy(false);
     }
@@ -130,7 +145,20 @@ export default function ClientPortalPage() {
               />
             </div>
             <div>
-              <label className="label">Password</label>
+              <div className="flex items-center justify-between">
+                <label className="label">Password</label>
+                <button
+                  type="button"
+                  className="mb-1 text-xs font-medium text-emerald-600 hover:underline"
+                  onClick={() => {
+                    setError('');
+                    setForgotSent(false);
+                    setMode('forgot');
+                  }}
+                >
+                  Forgot password?
+                </button>
+              </div>
               <input
                 type="password"
                 className="input"
@@ -150,6 +178,55 @@ export default function ClientPortalPage() {
               {busy ? 'Please wait…' : 'Sign in'}
             </button>
           </form>
+        ) : mode === 'forgot' ? (
+          forgotSent ? (
+            <div className="space-y-4 text-center">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-3xl">
+                📧
+              </div>
+              <h2 className="text-lg font-semibold text-slate-800">Check your email</h2>
+              <p className="text-sm text-slate-600">
+                If an account exists for <b>{email}</b>, we&apos;ve sent a password-reset
+                link. It expires in 1 hour.
+              </p>
+              <button
+                className="w-full rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-2.5 text-sm font-semibold text-white shadow hover:brightness-110"
+                onClick={() => {
+                  setForgotSent(false);
+                  setMode('login');
+                }}
+              >
+                Back to sign in
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={onForgot} className="space-y-4">
+              <p className="text-sm text-slate-600">
+                Enter your account email and we&apos;ll send you a link to reset your
+                password.
+              </p>
+              <div>
+                <label className="label">Email</label>
+                <input
+                  type="email"
+                  className="input"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                />
+              </div>
+              {error && (
+                <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-600">{error}</p>
+              )}
+              <button
+                type="submit"
+                className="w-full rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-2.5 text-sm font-semibold text-white shadow hover:brightness-110 disabled:opacity-60"
+                disabled={busy}
+              >
+                {busy ? 'Please wait…' : 'Send reset link'}
+              </button>
+            </form>
+          )
         ) : (
           <form onSubmit={onRegister} className="space-y-3.5">
             <div>
@@ -236,7 +313,7 @@ export default function ClientPortalPage() {
           </form>
         )}
 
-        {!registered && (
+        {!registered && mode !== 'forgot' && (
           <p className="mt-6 text-center text-sm text-slate-500">
             {mode === 'login' ? "New client? " : 'Already registered? '}
             <button
@@ -247,6 +324,20 @@ export default function ClientPortalPage() {
               }}
             >
               {mode === 'login' ? 'Create an account' : 'Sign in'}
+            </button>
+          </p>
+        )}
+        {!registered && mode === 'forgot' && !forgotSent && (
+          <p className="mt-6 text-center text-sm text-slate-500">
+            Remembered it?{' '}
+            <button
+              className="font-medium text-emerald-600 hover:underline"
+              onClick={() => {
+                setError('');
+                setMode('login');
+              }}
+            >
+              Back to sign in
             </button>
           </p>
         )}

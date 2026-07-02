@@ -203,11 +203,54 @@ export class AuthService {
           expiresAt: new Date(Date.now() + 60 * 60 * 1000),
         },
       });
-      // TODO: enqueue email with reset link containing `token`.
-      // eslint-disable-next-line no-console
-      console.log(`[dev] password reset token for ${user.email}: ${token}`);
+      await this.sendPasswordResetEmail(
+        user.tenantId,
+        user.email,
+        user.name,
+        token,
+      );
     }
     return { success: true };
+  }
+
+  private async sendPasswordResetEmail(
+    tenantId: string,
+    email: string,
+    name: string,
+    token: string,
+  ) {
+    const link = `${this.webUrl()}/reset?token=${token}`;
+    // Dev fallback: the link is always logged so reset works without SMTP.
+    this.logger.log(`[password-reset] reset link for ${email}: ${link}`);
+    try {
+      const account = await this.systemMailbox(tenantId);
+      if (!account) return;
+      await this.mailer.send({
+        account,
+        to: email,
+        subject: 'Reset your GRAPOUT password',
+        html: `
+          <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto">
+            <h2 style="color:#0f766e">Password reset</h2>
+            <p>Hi${name ? ` ${name}` : ''}, we received a request to reset your
+            GRAPOUT password. Click below to choose a new one.</p>
+            <p style="margin:24px 0">
+              <a href="${link}"
+                 style="background:#0f766e;color:#fff;padding:12px 22px;border-radius:8px;text-decoration:none;font-weight:600">
+                Reset my password
+              </a>
+            </p>
+            <p style="color:#64748b;font-size:13px">
+              Or paste this link into your browser:<br>${link}
+            </p>
+            <p style="color:#94a3b8;font-size:12px">
+              This link expires in 1 hour. If you didn't request it, ignore this email.
+            </p>
+          </div>`,
+      });
+    } catch (err) {
+      this.logger.warn(`Password-reset email to ${email} failed: ${err}`);
+    }
   }
 
   async resetPassword(dto: ResetPasswordDto) {
