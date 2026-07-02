@@ -139,21 +139,37 @@ export default function CohortSchedulePage() {
       />
 
       {/* Emergency master controls — pause/resume/stop every cohort at once. */}
-      <div className="mb-5 flex flex-wrap items-center gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3">
-        <span className="text-sm font-semibold text-rose-700">⚠ Emergency controls</span>
-        <span className="text-xs text-rose-600">Act on every client&apos;s cohorts at once.</span>
-        <div className="ml-auto flex items-center gap-2">
-          {note && <span className="text-xs text-slate-500">{note}</span>}
-          <button className="btn-ghost text-xs" disabled={busy} onClick={() => controlAll('pause')}>
+      <div className="mb-5 flex flex-wrap items-center gap-4 rounded-xl border border-rose-200 bg-gradient-to-r from-rose-50 to-amber-50 px-5 py-4 shadow-sm">
+        <div>
+          <div className="flex items-center gap-2 text-sm font-semibold text-rose-700">
+            <span className="text-lg">🛑</span> Emergency controls
+          </div>
+          <div className="text-xs text-rose-500">Act on every client&apos;s cohorts at once.</div>
+        </div>
+        <div className="ml-auto flex flex-wrap items-center gap-2.5">
+          {note && (
+            <span className="rounded-full bg-white/70 px-3 py-1 text-xs font-medium text-slate-600 shadow-sm">
+              {note}
+            </span>
+          )}
+          <button
+            disabled={busy}
+            onClick={() => controlAll('pause')}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-3.5 py-2 text-sm font-semibold text-amber-700 shadow-sm transition hover:bg-amber-50 hover:shadow disabled:opacity-50"
+          >
             ⏸ Pause all
           </button>
-          <button className="btn-ghost text-xs text-emerald-700" disabled={busy} onClick={() => controlAll('resume')}>
+          <button
+            disabled={busy}
+            onClick={() => controlAll('resume')}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-3.5 py-2 text-sm font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-50 hover:shadow disabled:opacity-50"
+          >
             ▶ Resume all
           </button>
           <button
-            className="rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-50"
             disabled={busy}
             onClick={() => controlAll('stop')}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-700 hover:shadow-md disabled:opacity-50"
           >
             ⏹ Stop all
           </button>
