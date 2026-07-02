@@ -107,6 +107,7 @@ enum ApprovalEntity {
   SEQUENCE
   IMPORT
   SMTP
+  MESSAGE_DELETE
 }
 
 enum ApprovalStatus {

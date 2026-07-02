@@ -1,11 +1,20 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { MessageDirection, MessageStatus } from '@prisma/client';
+import {
+  ApprovalEntity,
+  MessageDirection,
+  MessageStatus,
+  Role,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { ApprovalsService } from '../approvals/approvals.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 
 @Injectable()
 export class MessagesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private approvals: ApprovalsService,
+  ) {}
 
   private base(user: AuthUser, where: object, clientId?: string) {
     // Scope to one client = messages either sent through one of its mailboxes
@@ -98,15 +107,28 @@ export class MessagesService {
     return { marked: res.count };
   }
 
-  /** Delete a message (must belong to the caller's tenant). Events cascade. */
+  /**
+   * Delete a message. Super admins delete immediately; a sub-admin's delete is
+   * submitted for super-admin approval (the message is only removed on approve).
+   */
   async remove(user: AuthUser, id: string) {
     const msg = await this.prisma.emailMessage.findFirst({
       where: { id, tenantId: user.tenantId },
       select: { id: true },
     });
     if (!msg) throw new NotFoundException('Message not found');
-    await this.prisma.emailMessage.delete({ where: { id } });
-    return { ok: true };
+
+    if (user.role === Role.SUPER_ADMIN) {
+      await this.prisma.emailMessage.delete({ where: { id } });
+      return { ok: true, deleted: true };
+    }
+    await this.approvals.submit({
+      tenantId: user.tenantId,
+      submittedById: user.userId,
+      entityType: ApprovalEntity.MESSAGE_DELETE,
+      entityId: id,
+    });
+    return { ok: true, pendingApproval: true };
   }
 
   async inbox(user: AuthUser, clientId?: string) {

@@ -87,7 +87,7 @@ export class ApprovalsService {
     const idsOf = (t: ApprovalEntity) =>
       approvals.filter((a) => a.entityType === t).map((a) => a.entityId);
 
-    const [mailboxes, imports, campaigns, schedules] = await Promise.all([
+    const [mailboxes, imports, campaigns, schedules, messages] = await Promise.all([
       this.prisma.emailAccount.findMany({
         where: { id: { in: idsOf(ApprovalEntity.SMTP) } },
         select: { id: true, label: true, emailAddress: true, clientId: true },
@@ -114,6 +114,16 @@ export class ApprovalsService {
           campaign: { select: { name: true, clientId: true } },
         },
       }),
+      this.prisma.emailMessage.findMany({
+        where: { id: { in: idsOf(ApprovalEntity.MESSAGE_DELETE) } },
+        select: {
+          id: true,
+          subject: true,
+          fromAddress: true,
+          direction: true,
+          emailAccount: { select: { clientId: true } },
+        },
+      }),
     ]);
 
     // Resolve every referenced clientId to a name in one query.
@@ -122,6 +132,7 @@ export class ApprovalsService {
     imports.forEach((j) => j.clientId && clientIds.add(j.clientId));
     campaigns.forEach((c) => c.clientId && clientIds.add(c.clientId));
     schedules.forEach((s) => s.campaign?.clientId && clientIds.add(s.campaign.clientId));
+    messages.forEach((m) => m.emailAccount?.clientId && clientIds.add(m.emailAccount.clientId));
     const clientRows = await this.prisma.client.findMany({
       where: { id: { in: [...clientIds] } },
       select: { id: true, name: true },
@@ -161,6 +172,15 @@ export class ApprovalsService {
         },
       ]),
     );
+    const mg = new Map(
+      messages.map((m) => [
+        m.id,
+        {
+          target: `Delete ${m.direction === 'INBOUND' ? 'inbound' : 'sent'}: ${m.subject || m.fromAddress || 'message'}`,
+          clientName: m.emailAccount?.clientId ? clientName.get(m.emailAccount.clientId) : undefined,
+        },
+      ]),
+    );
 
     for (const a of approvals) {
       switch (a.entityType) {
@@ -185,6 +205,9 @@ export class ApprovalsService {
           if (s) out.set(a.id, { target: `Schedule · ${s.name}`, clientName: s.clientName });
           break;
         }
+        case ApprovalEntity.MESSAGE_DELETE:
+          if (mg.has(a.entityId)) out.set(a.id, mg.get(a.entityId)!);
+          break;
       }
     }
     return out;
@@ -285,6 +308,12 @@ export class ApprovalsService {
       case ApprovalEntity.SEQUENCE:
         // Sequences live on the campaign; approval is recorded but no
         // entity-level flag is flipped here.
+        break;
+      case ApprovalEntity.MESSAGE_DELETE:
+        // Approve = carry out the requested deletion; reject = keep the message.
+        if (approved) {
+          await this.prisma.emailMessage.deleteMany({ where: { id: entityId } });
+        }
         break;
     }
   }

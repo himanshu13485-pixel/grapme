@@ -75,7 +75,13 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
   async function deleteMessage(id: string) {
     if (!confirm('Delete this message permanently?')) return;
     try {
-      await api.del(`/mailbox/${id}`);
+      const r = await api.del<{ deleted?: boolean; pendingApproval?: boolean }>(
+        `/mailbox/${id}`,
+      );
+      if (r?.pendingApproval) {
+        alert('Delete request sent to a super admin for approval.');
+        return;
+      }
       setMessages((prev) => prev.filter((m) => m.id !== id));
       if (typeof window !== 'undefined') window.dispatchEvent(new Event('inbox-read'));
     } catch (err) {
