@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, FormEvent } from 'react';
 import { api } from '@/lib/api';
 import { useCanDelete } from '@/lib/auth';
+import { downloadCsv } from '@/lib/csv';
 import {
   PageHeader,
   EmptyState,
@@ -917,31 +918,55 @@ function ListDetail({
     }
   }
 
+  function exportList() {
+    const headers = ['Email', 'First name', 'Last name', 'Company', 'Country', 'Status'];
+    const rows = members.map((c) => [
+      c.email,
+      c.firstName ?? '',
+      c.lastName ?? '',
+      c.company ?? '',
+      c.country ?? '',
+      c.status,
+    ]);
+    const safe = list.name.replace(/[^\w-]+/g, '_');
+    downloadCsv(`${safe}_contacts`, headers, rows);
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between border-b border-slate-100 pb-3">
         <div className="text-sm text-slate-500">
           {list.description || 'Manage this list’s members below.'}
         </div>
-        {canDelete && (
-          <div className="flex gap-2">
-            <button
-              className="btn-ghost text-xs text-amber-600"
-              onClick={cleanList}
-              disabled={busy}
-              title="Remove bounced/unsubscribed contacts from this list"
-            >
-              🧹 Clean list
-            </button>
-            <button
-              className="btn-ghost text-xs text-rose-600"
-              onClick={deleteList}
-              disabled={busy}
-            >
-              Delete list
-            </button>
-          </div>
-        )}
+        <div className="flex gap-2">
+          <button
+            className="btn-ghost text-xs"
+            onClick={exportList}
+            disabled={members.length === 0}
+            title="Download current members as CSV"
+          >
+            ⭳ Export CSV
+          </button>
+          {canDelete && (
+            <>
+              <button
+                className="btn-ghost text-xs text-amber-600"
+                onClick={cleanList}
+                disabled={busy}
+                title="Remove bounced/unsubscribed contacts from this list"
+              >
+                🧹 Clean list
+              </button>
+              <button
+                className="btn-ghost text-xs text-rose-600"
+                onClick={deleteList}
+                disabled={busy}
+              >
+                Delete list
+              </button>
+            </>
+          )}
+        </div>
       </div>
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
       {/* Members */}
