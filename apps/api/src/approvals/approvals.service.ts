@@ -87,7 +87,8 @@ export class ApprovalsService {
     const idsOf = (t: ApprovalEntity) =>
       approvals.filter((a) => a.entityType === t).map((a) => a.entityId);
 
-    const [mailboxes, imports, campaigns, schedules, messages] = await Promise.all([
+    const [mailboxes, imports, campaigns, schedules, messages, activations] =
+      await Promise.all([
       this.prisma.emailAccount.findMany({
         where: { id: { in: idsOf(ApprovalEntity.SMTP) } },
         select: { id: true, label: true, emailAddress: true, clientId: true },
@@ -123,6 +124,10 @@ export class ApprovalsService {
           direction: true,
           emailAccount: { select: { clientId: true } },
         },
+      }),
+      this.prisma.user.findMany({
+        where: { id: { in: idsOf(ApprovalEntity.CLIENT_ACTIVATION) } },
+        select: { id: true, name: true, email: true, companyName: true },
       }),
     ]);
 
@@ -181,6 +186,15 @@ export class ApprovalsService {
         },
       ]),
     );
+    const ac = new Map(
+      activations.map((u) => [
+        u.id,
+        {
+          target: `Activate client login: ${u.name} (${u.email})`,
+          clientName: u.companyName ?? u.name,
+        },
+      ]),
+    );
 
     for (const a of approvals) {
       switch (a.entityType) {
@@ -213,6 +227,9 @@ export class ApprovalsService {
           if (n) out.set(a.id, { target: `Delete client: ${n}`, clientName: n });
           break;
         }
+        case ApprovalEntity.CLIENT_ACTIVATION:
+          if (ac.has(a.entityId)) out.set(a.id, ac.get(a.entityId)!);
+          break;
       }
     }
     return out;
@@ -326,6 +343,21 @@ export class ApprovalsService {
         if (approved) {
           await this.prisma.client.deleteMany({ where: { id: entityId } });
         }
+        break;
+      case ApprovalEntity.CLIENT_ACTIVATION:
+        // Approve = confirm the client's email so they can sign in; reject =
+        // suspend the pending login so it can't be used.
+        await this.prisma.user.update({
+          where: { id: entityId },
+          data: approved
+            ? {
+                emailVerified: true,
+                verifyTokenHash: null,
+                verifyExpires: null,
+                status: 'ACTIVE',
+              }
+            : { status: 'SUSPENDED' },
+        });
         break;
     }
   }

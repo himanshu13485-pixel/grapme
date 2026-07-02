@@ -110,6 +110,7 @@ enum ApprovalEntity {
   SMTP
   MESSAGE_DELETE
   CLIENT_DELETE
+  CLIENT_ACTIVATION
 }
 
 enum ApprovalStatus {

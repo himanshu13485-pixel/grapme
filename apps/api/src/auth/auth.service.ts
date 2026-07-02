@@ -7,11 +7,12 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { Role } from '@prisma/client';
+import { ApprovalEntity, ApprovalStatus, Role } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { createHash, randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailerService } from '../sending/mailer.service';
+import { ApprovalsService } from '../approvals/approvals.service';
 import {
   LoginDto,
   RegisterDto,
@@ -30,6 +31,7 @@ export class AuthService {
     private jwt: JwtService,
     private config: ConfigService,
     private mailer: MailerService,
+    private approvals: ApprovalsService,
   ) {}
 
   private sha256(value: string): string {
@@ -351,7 +353,7 @@ export class AuthService {
       type: argon2.argon2id,
     });
     const token = randomBytes(32).toString('hex');
-    await this.prisma.user.create({
+    const created = await this.prisma.user.create({
       data: {
         tenantId: tenant.id,
         name: dto.contactName,
@@ -364,6 +366,15 @@ export class AuthService {
         verifyTokenHash: this.sha256(token),
         verifyExpires: new Date(Date.now() + 24 * 60 * 60 * 1000),
       },
+    });
+    // Fallback path: if the client can't confirm via email for any reason, the
+    // pending signup also lands in the admin approval queue. Approving there
+    // activates the login directly.
+    await this.approvals.submit({
+      tenantId: tenant.id,
+      submittedById: created.id,
+      entityType: ApprovalEntity.CLIENT_ACTIVATION,
+      entityId: created.id,
     });
     await this.sendVerificationEmail(tenant.id, email, dto.contactName, token);
     return { success: true, email };
@@ -390,6 +401,15 @@ export class AuthService {
         verifyExpires: null,
         lastLoginAt: new Date(),
       },
+    });
+    // Close the fallback approval so it no longer shows as pending for admins.
+    await this.prisma.approval.updateMany({
+      where: {
+        entityType: ApprovalEntity.CLIENT_ACTIVATION,
+        entityId: user.id,
+        status: ApprovalStatus.PENDING,
+      },
+      data: { status: ApprovalStatus.APPROVED, decidedAt: new Date() },
     });
     return this.issueSession(updated);
   }
