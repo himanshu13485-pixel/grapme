@@ -57,10 +57,11 @@ export class ReportsService {
     // null = all clients (super admin); [] or ids = the sub-admin's clients.
     const ccids = scope.cohortClientIds;
     const seeCohorts = user.role !== Role.USER && (ccids === null || ccids.length > 0);
+    let scopedCohortIds: string[] | undefined;
     if (seeCohorts) {
       const cohortWhere = ccids === null ? {} : { clientId: { in: ccids } };
       // Message cohortId filter for events: restrict to scoped cohorts' ids.
-      const scopedCohortIds =
+      scopedCohortIds =
         ccids === null
           ? undefined
           : (
@@ -94,6 +95,39 @@ export class ReportsService {
       }
     }
 
+    // Forwarded (est.): messages opened from 2+ distinct IPs, across scope.
+    const ipsByMsg = new Map<string, Set<string>>();
+    const collectOpens = (rows: { messageId: string; meta: unknown }[]) => {
+      for (const r of rows) {
+        const ip = (r.meta as { ip?: string } | null)?.ip;
+        if (!ip) continue;
+        if (!ipsByMsg.has(r.messageId)) ipsByMsg.set(r.messageId, new Set());
+        ipsByMsg.get(r.messageId)!.add(ip);
+      }
+    };
+    collectOpens(
+      await this.prisma.emailEvent.findMany({
+        where: { campaign: scope.campaign, eventType: EventType.OPEN },
+        select: { messageId: true, meta: true },
+      }),
+    );
+    if (seeCohorts) {
+      collectOpens(
+        await this.prisma.emailEvent.findMany({
+          where: {
+            eventType: EventType.OPEN,
+            message: {
+              tenantId: user.tenantId,
+              cohortId: scopedCohortIds ? { in: scopedCohortIds } : { not: null },
+            },
+          },
+          select: { messageId: true, meta: true },
+        }),
+      );
+    }
+    let forwarded = 0;
+    for (const ips of ipsByMsg.values()) if (ips.size >= 2) forwarded++;
+
     const sent = ev[EventType.SENT] ?? 0;
     const bounces = ev[EventType.BOUNCE] ?? 0;
     const rate = (n: number) =>
@@ -119,10 +153,12 @@ export class ReportsService {
       replies: ev[EventType.REPLY] ?? 0,
       bounces: ev[EventType.BOUNCE] ?? 0,
       failed: ev[EventType.BOUNCE] ?? 0,
+      forwarded,
       openRate: rate(ev[EventType.OPEN] ?? 0),
       clickRate: rate(ev[EventType.CLICK] ?? 0),
       replyRate: rate(ev[EventType.REPLY] ?? 0),
       bounceRate: rate(ev[EventType.BOUNCE] ?? 0),
+      forwardRate: rate(forwarded),
     };
   }
 

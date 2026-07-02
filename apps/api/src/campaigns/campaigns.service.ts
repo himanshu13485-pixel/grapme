@@ -221,6 +221,21 @@ export class CampaignsService {
     const counts: Record<string, number> = {};
     for (const g of grouped) counts[g.eventType] = g._count._all;
 
+    // Forwarded (estimated) = messages opened from 2+ distinct IPs.
+    const opensWithIp = await this.prisma.emailEvent.findMany({
+      where: { campaignId: id, eventType: EventType.OPEN },
+      select: { messageId: true, meta: true },
+    });
+    const ipsByMsg = new Map<string, Set<string>>();
+    for (const e of opensWithIp) {
+      const ip = (e.meta as { ip?: string } | null)?.ip;
+      if (!ip) continue;
+      if (!ipsByMsg.has(e.messageId)) ipsByMsg.set(e.messageId, new Set());
+      ipsByMsg.get(e.messageId)!.add(ip);
+    }
+    let forwarded = 0;
+    for (const ips of ipsByMsg.values()) if (ips.size >= 2) forwarded++;
+
     const sent = counts[EventType.SENT] ?? 0;
     const bounces = counts[EventType.BOUNCE] ?? 0;
     const pct = (n: number) => (sent ? Math.round((n / sent) * 1000) / 10 : 0);
@@ -235,11 +250,13 @@ export class CampaignsService {
       replies: counts[EventType.REPLY] ?? 0,
       bounces,
       unsubscribes: counts[EventType.UNSUBSCRIBE] ?? 0,
+      forwarded,
       deliveryRate,
       openRate: pct(counts[EventType.OPEN] ?? 0),
       clickRate: pct(counts[EventType.CLICK] ?? 0),
       replyRate: pct(counts[EventType.REPLY] ?? 0),
       bounceRate: pct(counts[EventType.BOUNCE] ?? 0),
+      forwardRate: pct(forwarded),
     };
   }
 

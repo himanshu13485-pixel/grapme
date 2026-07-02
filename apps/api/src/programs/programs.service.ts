@@ -585,6 +585,7 @@ export class ProgramsService {
       select: {
         eventType: true,
         messageId: true,
+        meta: true,
         message: { select: { cohortId: true } },
       },
     });
@@ -592,6 +593,9 @@ export class ProgramsService {
     const clickSet = new Map<string, Set<string>>();
     const replySet = new Map<string, Set<string>>();
     const unsubN = new Map<string, number>();
+    // Per-message open IPs → a message opened from 2+ IPs was likely forwarded.
+    const openIps = new Map<string, Set<string>>();
+    const msgCohort = new Map<string, string>();
     const add = (m: Map<string, Set<string>>, cid: string, msg: string) => {
       if (!m.has(cid)) m.set(cid, new Set());
       m.get(cid)!.add(msg);
@@ -599,11 +603,26 @@ export class ProgramsService {
     for (const e of evs) {
       const cid = e.message?.cohortId;
       if (!cid) continue;
-      if (e.eventType === EventType.OPEN) add(openSet, cid, e.messageId);
-      else if (e.eventType === EventType.CLICK) add(clickSet, cid, e.messageId);
+      if (e.eventType === EventType.OPEN) {
+        add(openSet, cid, e.messageId);
+        msgCohort.set(e.messageId, cid);
+        const ip = (e.meta as { ip?: string } | null)?.ip;
+        if (ip) {
+          if (!openIps.has(e.messageId)) openIps.set(e.messageId, new Set());
+          openIps.get(e.messageId)!.add(ip);
+        }
+      } else if (e.eventType === EventType.CLICK) add(clickSet, cid, e.messageId);
       else if (e.eventType === EventType.REPLY) add(replySet, cid, e.messageId);
       else if (e.eventType === EventType.UNSUBSCRIBE)
         unsubN.set(cid, (unsubN.get(cid) ?? 0) + 1);
+    }
+    // Forwarded (estimated) per cohort = messages opened from 2+ distinct IPs.
+    const forwardedByCohort = new Map<string, number>();
+    for (const [msgId, ips] of openIps) {
+      if (ips.size >= 2) {
+        const cid = msgCohort.get(msgId);
+        if (cid) forwardedByCohort.set(cid, (forwardedByCohort.get(cid) ?? 0) + 1);
+      }
     }
     const metricsFor = (cid: string) => {
       const s = sentMsgs.get(cid) ?? 0;
@@ -611,6 +630,7 @@ export class ProgramsService {
       const clicks = clickSet.get(cid)?.size ?? 0;
       const replies = replySet.get(cid)?.size ?? 0;
       const bounces = bouncedMsgs.get(cid) ?? 0;
+      const forwarded = forwardedByCohort.get(cid) ?? 0;
       const pct = (n: number) => (s ? Math.round((n / s) * 1000) / 10 : 0);
       // Delivered = accepted by the receiving server (sent that didn't bounce).
       const attempts = s + bounces;
@@ -623,11 +643,13 @@ export class ProgramsService {
         replies,
         bounces,
         unsubscribes: unsubN.get(cid) ?? 0,
+        forwarded,
         deliveryRate,
         openRate: pct(opens),
         clickRate: pct(clicks),
         replyRate: pct(replies),
         bounceRate: pct(bounces),
+        forwardRate: pct(forwarded),
       };
     };
 

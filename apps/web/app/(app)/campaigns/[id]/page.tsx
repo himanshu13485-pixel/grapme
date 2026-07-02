@@ -32,10 +32,12 @@ interface Analytics {
   replies: number;
   bounces: number;
   unsubscribes: number;
+  forwarded: number;
   openRate: number;
   clickRate: number;
   replyRate: number;
   bounceRate: number;
+  forwardRate: number;
 }
 
 export default function CampaignDetailPage() {
@@ -131,13 +133,14 @@ export default function CampaignDetailPage() {
             const a = analytics;
             const headers = [
               'Campaign', 'Sent', 'Delivered', 'Delivery %', 'Opens', 'Open %',
-              'Clicks', 'Click %', 'Replies', 'Reply %', 'Bounces', 'Bounce %', 'Unsub',
+              'Clicks', 'Click %', 'Replies', 'Reply %', 'Forwarded', 'Forward %',
+              'Bounces', 'Bounce %', 'Unsub',
             ];
             const row = [
               campaign.name, a?.sent ?? 0, a?.delivered ?? 0, a?.deliveryRate ?? 0,
               a?.opens ?? 0, a?.openRate ?? 0, a?.clicks ?? 0, a?.clickRate ?? 0,
-              a?.replies ?? 0, a?.replyRate ?? 0, a?.bounces ?? 0, a?.bounceRate ?? 0,
-              a?.unsubscribes ?? 0,
+              a?.replies ?? 0, a?.replyRate ?? 0, a?.forwarded ?? 0, a?.forwardRate ?? 0,
+              a?.bounces ?? 0, a?.bounceRate ?? 0, a?.unsubscribes ?? 0,
             ];
             const safe = campaign.name.replace(/[^\w-]+/g, '_');
             downloadCsv(`${safe}_campaign_report`, headers, [row]);
@@ -157,6 +160,8 @@ export default function CampaignDetailPage() {
           ['Click %', `${analytics?.clickRate ?? 0}%`],
           ['Replies', analytics?.replies ?? 0],
           ['Reply %', `${analytics?.replyRate ?? 0}%`],
+          ['Forwarded', analytics?.forwarded ?? 0],
+          ['Forward %', `${analytics?.forwardRate ?? 0}%`],
           ['Bounces', analytics?.bounces ?? 0],
           ['Bounce %', `${analytics?.bounceRate ?? 0}%`],
           ['Unsub', analytics?.unsubscribes ?? 0],

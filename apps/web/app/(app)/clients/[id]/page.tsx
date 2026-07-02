@@ -106,11 +106,13 @@ interface CohortMetrics {
   replies: number;
   bounces: number;
   unsubscribes: number;
+  forwarded: number;
   deliveryRate: number;
   openRate: number;
   clickRate: number;
   replyRate: number;
   bounceRate: number;
+  forwardRate: number;
 }
 
 export default function ClientCockpit() {
@@ -984,8 +986,9 @@ function Cohorts({
             replies: a.replies + c.metrics.replies,
             bounces: a.bounces + c.metrics.bounces,
             unsubscribes: a.unsubscribes + c.metrics.unsubscribes,
+            forwarded: a.forwarded + c.metrics.forwarded,
           }),
-          { sent: 0, opens: 0, clicks: 0, replies: 0, bounces: 0, unsubscribes: 0 },
+          { sent: 0, opens: 0, clicks: 0, replies: 0, bounces: 0, unsubscribes: 0, forwarded: 0 },
         );
         // The selected view: one cohort, or all combined.
         const selected =
@@ -1000,14 +1003,14 @@ function Cohorts({
           const headers = [
             'Cohort', 'Month', 'Status', 'Sent', 'Delivered', 'Delivery %',
             'Opens', 'Open %', 'Clicks', 'Click %', 'Replies', 'Reply %',
-            'Bounces', 'Bounce %', 'Unsub',
+            'Forwarded', 'Forward %', 'Bounces', 'Bounce %', 'Unsub',
           ];
           const rowFor = (c: CohortStat) => [
             c.label, c.monthIndex, c.status, c.metrics.sent, c.metrics.delivered,
             c.metrics.deliveryRate, c.metrics.opens, c.metrics.openRate,
             c.metrics.clicks, c.metrics.clickRate, c.metrics.replies,
-            c.metrics.replyRate, c.metrics.bounces, c.metrics.bounceRate,
-            c.metrics.unsubscribes,
+            c.metrics.replyRate, c.metrics.forwarded, c.metrics.forwardRate,
+            c.metrics.bounces, c.metrics.bounceRate, c.metrics.unsubscribes,
           ];
           const safe = client.name.replace(/[^\w-]+/g, '_');
           if (selected) {
@@ -1019,7 +1022,8 @@ function Cohorts({
             'ALL COHORTS', '', '', totals.sent, totals.sent,
             delivPct(totals.sent, totals.bounces), totals.opens, pct(totals.opens),
             totals.clicks, pct(totals.clicks), totals.replies, pct(totals.replies),
-            totals.bounces, pct(totals.bounces), totals.unsubscribes,
+            totals.forwarded, pct(totals.forwarded), totals.bounces,
+            pct(totals.bounces), totals.unsubscribes,
           ]);
           downloadCsv(`${safe}_cohort_report`, headers, rows);
         }
@@ -1059,6 +1063,8 @@ function Cohorts({
                 ['Click %', `${pct(m.clicks)}%`],
                 ['Replies', m.replies],
                 ['Reply %', `${pct(m.replies)}%`],
+                ['Forwarded', m.forwarded],
+                ['Forward %', `${pct(m.forwarded)}%`],
                 ['Bounces', m.bounces],
                 ['Bounce %', `${pct(m.bounces)}%`],
                 ['Unsub', m.unsubscribes],
@@ -1196,6 +1202,8 @@ function Cohorts({
                           ['Click %', `${c.metrics.clickRate}%`],
                           ['Replies', c.metrics.replies],
                           ['Reply %', `${c.metrics.replyRate}%`],
+                          ['Forwarded', c.metrics.forwarded],
+                          ['Forward %', `${c.metrics.forwardRate}%`],
                           ['Bounces', c.metrics.bounces],
                           ['Bounce %', `${c.metrics.bounceRate}%`],
                           ['Unsub', c.metrics.unsubscribes],
