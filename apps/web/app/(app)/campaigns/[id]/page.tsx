@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import { api } from '@/lib/api';
 import { downloadCsv } from '@/lib/csv';
 import { PageHeader, StatusBadge } from '@/components/ui';
+import { WorldMap, GeoData } from '@/components/WorldMap';
 
 interface Step {
   id: string;
@@ -41,12 +42,14 @@ export default function CampaignDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
+  const [geo, setGeo] = useState<GeoData | null>(null);
   const [error, setError] = useState('');
   const [scheduleAt, setScheduleAt] = useState('');
 
   const load = useCallback(() => {
     api.get<Campaign>(`/campaigns/${id}`).then(setCampaign).catch(() => {});
     api.get<Analytics>(`/campaigns/${id}/analytics`).then(setAnalytics).catch(() => {});
+    api.get<GeoData>(`/campaigns/${id}/geo`).then(setGeo).catch(() => {});
   }, [id]);
 
   useEffect(() => load(), [load]);
@@ -164,6 +167,12 @@ export default function CampaignDetailPage() {
           </div>
         ))}
       </div>
+
+      {geo && (
+        <div className="mb-6">
+          <WorldMap geo={geo} title="Geographic engagement" />
+        </div>
+      )}
 
       {/* Config + steps */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">

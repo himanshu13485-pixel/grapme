@@ -20,6 +20,7 @@ import { renderTemplate } from '../templates/templates.service';
 import { instrumentHtml } from '../sending/tracking.util';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { ActivityService } from '../common/services/activity.service';
+import { GeoService } from '../common/services/geo.service';
 import {
   AssignMailboxDto,
   CreateClientDto,
@@ -67,7 +68,32 @@ export class ProgramsService {
     private mailer: MailerService,
     private config: ConfigService,
     private activity: ActivityService,
+    private geo: GeoService,
   ) {}
+
+  /** Geo breakdown of opens/clicks for a client (optionally one cohort). */
+  async cohortGeo(user: AuthUser, clientId: string, cohortId?: string) {
+    await this.assertClient(user, clientId);
+    const cohorts = await this.prisma.cohort.findMany({
+      where: { clientId, tenantId: user.tenantId },
+      select: { id: true },
+    });
+    let ids = cohorts.map((c) => c.id);
+    if (cohortId) ids = ids.filter((i) => i === cohortId);
+    const evs = await this.prisma.emailEvent.findMany({
+      where: {
+        message: { cohortId: { in: ids } },
+        eventType: { in: [EventType.OPEN, EventType.CLICK] },
+      },
+      select: { eventType: true, meta: true },
+    });
+    return this.geo.aggregate(
+      evs.map((e) => ({
+        ip: (e.meta as { ip?: string } | null)?.ip ?? null,
+        eventType: e.eventType as 'OPEN' | 'CLICK',
+      })),
+    );
+  }
 
   // ── Clients ───────────────────────────────────────────────
   async createClient(user: AuthUser, dto: CreateClientDto) {

@@ -11,6 +11,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { ActivityService } from '../common/services/activity.service';
+import { GeoService } from '../common/services/geo.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import {
   CreateCampaignDto,
@@ -31,7 +32,26 @@ export class CampaignsService {
     private prisma: PrismaService,
     private approvals: ApprovalsService,
     private activity: ActivityService,
+    private geo: GeoService,
   ) {}
+
+  /** Geo breakdown of this campaign's opens/clicks (by recipient IP). */
+  async geoBreakdown(user: AuthUser, id: string) {
+    await this.getOne(user, id);
+    const evs = await this.prisma.emailEvent.findMany({
+      where: {
+        campaignId: id,
+        eventType: { in: [EventType.OPEN, EventType.CLICK] },
+      },
+      select: { eventType: true, meta: true },
+    });
+    return this.geo.aggregate(
+      evs.map((e) => ({
+        ip: (e.meta as { ip?: string } | null)?.ip ?? null,
+        eventType: e.eventType as 'OPEN' | 'CLICK',
+      })),
+    );
+  }
 
   list(user: AuthUser, clientId?: string) {
     return this.prisma.campaign.findMany({

@@ -96,6 +96,11 @@ export class CampaignsController {
     return this.campaigns.analytics(user, id);
   }
 
+  @Get(':id/geo')
+  geo(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.campaigns.geoBreakdown(user, id);
+  }
+
   @Delete(':id')
   remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.campaigns.remove(user, id);

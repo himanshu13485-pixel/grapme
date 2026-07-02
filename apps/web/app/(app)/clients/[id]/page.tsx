@@ -11,6 +11,7 @@ import { TemplatesManager } from '@/components/TemplatesManager';
 import { CampaignsManager } from '@/components/CampaignsManager';
 import { MailboxesManager } from '@/components/MailboxesManager';
 import { MailboxManager } from '@/components/MailboxManager';
+import { WorldMap, GeoData } from '@/components/WorldMap';
 
 function hourLabel(h: number): string {
   const ampm = h < 12 ? 'AM' : 'PM';
@@ -786,6 +787,15 @@ function Cohorts({
   const [openCohort, setOpenCohort] = useState<string | null>(null);
   const [seqCohort, setSeqCohort] = useState<CohortStat | null>(null);
   const [reportCohort, setReportCohort] = useState('ALL');
+  const [geo, setGeo] = useState<GeoData | null>(null);
+
+  useEffect(() => {
+    const q = reportCohort === 'ALL' ? '' : `?cohortId=${reportCohort}`;
+    api
+      .get<GeoData>(`/clients/${client.id}/geo${q}`)
+      .then(setGeo)
+      .catch(() => setGeo(null));
+  }, [client.id, reportCohort]);
 
   async function upload() {
     if (!listId) return;
@@ -1059,6 +1069,17 @@ function Cohorts({
           </div>
         );
       })()}
+
+      {cohorts.length > 0 && geo && (
+        <WorldMap
+          geo={geo}
+          title={
+            reportCohort === 'ALL'
+              ? 'Geographic engagement — all cohorts'
+              : 'Geographic engagement — selected cohort'
+          }
+        />
+      )}
 
       {cohorts.length === 0 ? (
         <EmptyState message="No cohorts yet. Upload a list, or enable auto-cohort above." />

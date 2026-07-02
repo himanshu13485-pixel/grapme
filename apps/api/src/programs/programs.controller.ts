@@ -7,6 +7,7 @@ import {
   Patch,
   Post,
   Put,
+  Query,
 } from '@nestjs/common';
 import { ProgramsService } from './programs.service';
 import {
@@ -121,6 +122,15 @@ export class ProgramsController {
   @Get('clients/:id/cohorts/stats')
   cohortStats(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.programs.cohortStats(user, id);
+  }
+
+  @Get('clients/:id/geo')
+  cohortGeo(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Query('cohortId') cohortId?: string,
+  ) {
+    return this.programs.cohortGeo(user, id, cohortId);
   }
 
   @Post('cohorts/:cohortId/pause')
