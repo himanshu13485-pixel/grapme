@@ -3,14 +3,15 @@
 @tailwind utilities;
 
 :root {
-  --bg: #f6f7fb;
+  --bg: #e6e8f2;
 }
 
 body {
-  /* Soft, subtly-tinted gradient canvas so cards pop without feeling flat. */
+  /* Muted, subtly indigo-tinted canvas — deeper than off-white so the white
+     cards clearly lift off the page. */
   background:
-    radial-gradient(1200px 600px at 100% -10%, rgba(124, 58, 237, 0.08), transparent 60%),
-    radial-gradient(1000px 500px at -10% 10%, rgba(79, 70, 229, 0.07), transparent 55%),
+    radial-gradient(1200px 600px at 100% -10%, rgba(124, 58, 237, 0.12), transparent 60%),
+    radial-gradient(1000px 500px at -10% 10%, rgba(79, 70, 229, 0.10), transparent 55%),
     var(--bg);
   background-attachment: fixed;
   color: #0f172a;
