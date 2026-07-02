@@ -101,6 +101,8 @@ export class AuthService {
     role: Role;
     email: string;
     name: string;
+    fullAccess?: boolean;
+    accessModules?: unknown;
   }) {
     const payload: JwtPayload = {
       sub: user.id,
@@ -117,6 +119,8 @@ export class AuthService {
         email: user.email,
         role: user.role,
         tenantId: user.tenantId,
+        fullAccess: user.fullAccess ?? false,
+        accessModules: user.accessModules ?? [],
       },
       ...tokens,
     };

@@ -52,6 +52,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .finally(() => setLoading(false));
   }, []);
 
+  // After auth, pull the full profile (/auth/me) so the session user carries
+  // fullAccess + accessModules — the login response omits them.
+  async function hydrateUser(fallback: AuthUser) {
+    try {
+      setUser(await api.get<AuthUser>('/auth/me'));
+    } catch {
+      setUser(fallback);
+    }
+  }
+
   async function login(email: string, password: string) {
     const res = await api.post<LoginResponse>('/auth/login', {
       email,
@@ -59,7 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     setToken(res.accessToken);
     setRefreshToken(res.refreshToken);
-    setUser(res.user);
+    await hydrateUser(res.user);
   }
 
   async function register(
@@ -76,7 +86,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     setToken(res.accessToken);
     setRefreshToken(res.refreshToken);
-    setUser(res.user);
+    await hydrateUser(res.user);
   }
 
   function logout() {
