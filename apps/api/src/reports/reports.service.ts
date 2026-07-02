@@ -46,8 +46,13 @@ export class ReportsService {
     const byStatus: Record<string, number> = {};
     for (const c of campaigns) byStatus[c.status] = c._count._all;
 
+    // Email metrics: admins run the cohort engine, so their dashboard reflects
+    // COHORT activity only (keeps it consistent with the cohort reports — no
+    // legacy-campaign sends mixed in). Regular users see their own campaigns.
     const ev: Record<string, number> = {};
-    for (const g of eventGroups) ev[g.eventType] = g._count._all;
+    if (user.role === Role.USER) {
+      for (const g of eventGroups) ev[g.eventType] = g._count._all;
+    }
 
     // Fold in the GRAPOUT cohort engine: its sends/opens/replies carry a
     // cohortId (no campaignId), so without this the dashboard would ignore all
@@ -105,12 +110,14 @@ export class ReportsService {
         ipsByMsg.get(r.messageId)!.add(ip);
       }
     };
-    collectOpens(
-      await this.prisma.emailEvent.findMany({
-        where: { campaign: scope.campaign, eventType: EventType.OPEN },
-        select: { messageId: true, meta: true },
-      }),
-    );
+    if (user.role === Role.USER) {
+      collectOpens(
+        await this.prisma.emailEvent.findMany({
+          where: { campaign: scope.campaign, eventType: EventType.OPEN },
+          select: { messageId: true, meta: true },
+        }),
+      );
+    }
     if (seeCohorts) {
       collectOpens(
         await this.prisma.emailEvent.findMany({
