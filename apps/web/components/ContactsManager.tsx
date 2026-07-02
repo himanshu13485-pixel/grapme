@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, FormEvent } from 'react';
 import { api } from '@/lib/api';
+import { useCanDelete } from '@/lib/auth';
 import {
   PageHeader,
   EmptyState,
@@ -44,6 +45,7 @@ interface ImportJob {
 }
 
 export function ContactsManager({ clientId }: { clientId?: string }) {
+  const canDelete = useCanDelete();
   const [tab, setTab] = useState('contacts');
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [lists, setLists] = useState<List[]>([]);
@@ -213,12 +215,14 @@ export function ContactsManager({ clientId }: { clientId?: string }) {
                         >
                           Edit
                         </button>
-                        <button
-                          className="btn-ghost text-xs text-rose-600"
-                          onClick={() => deleteContact(c)}
-                        >
-                          Delete
-                        </button>
+                        {canDelete && (
+                          <button
+                            className="btn-ghost text-xs text-rose-600"
+                            onClick={() => deleteContact(c)}
+                          >
+                            Delete
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -811,6 +815,7 @@ function ListDetail({
   onChanged: () => void;
   onDeleted: () => void;
 }) {
+  const canDelete = useCanDelete();
   const [members, setMembers] = useState<Contact[]>([]);
   const [selected, setSelected] = useState<string[]>([]); // members to remove
   const [toAdd, setToAdd] = useState<string[]>([]); // contacts to add
@@ -918,23 +923,25 @@ function ListDetail({
         <div className="text-sm text-slate-500">
           {list.description || 'Manage this list’s members below.'}
         </div>
-        <div className="flex gap-2">
-          <button
-            className="btn-ghost text-xs text-amber-600"
-            onClick={cleanList}
-            disabled={busy}
-            title="Remove bounced/unsubscribed contacts from this list"
-          >
-            🧹 Clean list
-          </button>
-          <button
-            className="btn-ghost text-xs text-rose-600"
-            onClick={deleteList}
-            disabled={busy}
-          >
-            Delete list
-          </button>
-        </div>
+        {canDelete && (
+          <div className="flex gap-2">
+            <button
+              className="btn-ghost text-xs text-amber-600"
+              onClick={cleanList}
+              disabled={busy}
+              title="Remove bounced/unsubscribed contacts from this list"
+            >
+              🧹 Clean list
+            </button>
+            <button
+              className="btn-ghost text-xs text-rose-600"
+              onClick={deleteList}
+              disabled={busy}
+            >
+              Delete list
+            </button>
+          </div>
+        )}
       </div>
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
       {/* Members */}

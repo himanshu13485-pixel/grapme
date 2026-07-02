@@ -3,6 +3,7 @@
 import { useEffect, useState, FormEvent } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
+import { useCanDelete } from '@/lib/auth';
 import { PageHeader, StatusBadge, EmptyState, Pagination } from '@/components/ui';
 
 interface Campaign {
@@ -26,6 +27,7 @@ interface Named {
  * ones to it, and picking from that client's own mailboxes/lists/templates.
  */
 export function CampaignsManager({ clientId }: { clientId?: string }) {
+  const canDelete = useCanDelete();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [mailboxes, setMailboxes] = useState<Named[]>([]);
   const [lists, setLists] = useState<Named[]>([]);
@@ -214,12 +216,14 @@ export function CampaignsManager({ clientId }: { clientId?: string }) {
                     <Link href={`/campaigns/${c.id}`} className="ml-1 text-brand-600 hover:underline">
                       Open
                     </Link>
-                    <button
-                      className="btn-ghost text-xs text-rose-600"
-                      onClick={() => deleteCampaign(c)}
-                    >
-                      Delete
-                    </button>
+                    {canDelete && (
+                      <button
+                        className="btn-ghost text-xs text-rose-600"
+                        onClick={() => deleteCampaign(c)}
+                      >
+                        Delete
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}

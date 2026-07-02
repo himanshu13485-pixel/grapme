@@ -103,6 +103,7 @@ export class AuthService {
     name: string;
     fullAccess?: boolean;
     accessModules?: unknown;
+    canDelete?: boolean;
   }) {
     const payload: JwtPayload = {
       sub: user.id,
@@ -121,6 +122,7 @@ export class AuthService {
         tenantId: user.tenantId,
         fullAccess: user.fullAccess ?? false,
         accessModules: user.accessModules ?? [],
+        canDelete: user.canDelete ?? false,
       },
       ...tokens,
     };
@@ -236,6 +238,7 @@ export class AuthService {
         lastLoginAt: true,
         fullAccess: true,
         accessModules: true,
+        canDelete: true,
       },
     });
     if (!user) throw new UnauthorizedException();

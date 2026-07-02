@@ -175,6 +175,7 @@ model User {
   status         UserStatus @default(ACTIVE)
   fullAccess     Boolean    @default(false) // sub-admin: access to everything
   accessModules  Json       @default("[]")  // sub-admin: allowed module keys
+  canDelete      Boolean    @default(false) // sub-admin: allowed to use delete actions
   timezone       String     @default("UTC")
   twoFactorSecret String?
   avatarUrl      String?
@@ -257,11 +258,13 @@ model SubAdminAssignment {
   subAdminId       String
   assignedUserId   String?
   assignedCampaignId String?
+  assignedClientId String?
   createdAt        DateTime @default(now())
 
   subAdmin     User      @relation("SubAdmin", fields: [subAdminId], references: [id], onDelete: Cascade)
   assignedUser User?     @relation("AssignedUser", fields: [assignedUserId], references: [id], onDelete: Cascade)
   campaign     Campaign? @relation(fields: [assignedCampaignId], references: [id], onDelete: Cascade)
+  client       Client?   @relation(fields: [assignedClientId], references: [id], onDelete: Cascade)
 
   @@index([subAdminId])
 }
@@ -685,6 +688,7 @@ model Client {
   contactLists  ContactList[]
   templates     EmailTemplate[]
   campaigns     Campaign[]
+  subAdminAssignments SubAdminAssignment[]
 
   @@index([tenantId])
 }

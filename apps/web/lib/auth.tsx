@@ -17,6 +17,7 @@ export interface AuthUser {
   tenantId: string;
   fullAccess?: boolean;
   accessModules?: string[];
+  canDelete?: boolean;
 }
 
 interface LoginResponse {
@@ -105,4 +106,14 @@ export function useAuth() {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error('useAuth must be used within AuthProvider');
   return ctx;
+}
+
+/** Whether the signed-in user may use delete actions. Super admins always can;
+ *  sub-admins only if granted (full access or the canDelete flag). */
+export function useCanDelete(): boolean {
+  const { user } = useAuth();
+  if (!user) return false;
+  if (user.role === 'SUPER_ADMIN') return true;
+  if (user.role === 'SUB_ADMIN') return !!(user.fullAccess || user.canDelete);
+  return true;
 }

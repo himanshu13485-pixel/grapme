@@ -15,6 +15,7 @@ interface CreateSubAdminDto {
   password: string;
   fullAccess?: boolean;
   accessModules?: string[];
+  canDelete?: boolean;
 }
 interface UpdateSubAdminDto {
   name?: string;
@@ -22,6 +23,7 @@ interface UpdateSubAdminDto {
   status?: string;
   fullAccess?: boolean;
   accessModules?: string[];
+  canDelete?: boolean;
 }
 
 @Injectable()
@@ -41,11 +43,21 @@ export class SubAdminsService {
         status: true,
         fullAccess: true,
         accessModules: true,
+        canDelete: true,
         lastLoginAt: true,
         _count: { select: { assignmentsAsSubAdmin: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  /** Client ids assigned to a sub-admin (for data scoping). */
+  async assignedClientIds(subAdminId: string): Promise<string[]> {
+    const rows = await this.prisma.subAdminAssignment.findMany({
+      where: { subAdminId, assignedClientId: { not: null } },
+      select: { assignedClientId: true },
+    });
+    return rows.map((r) => r.assignedClientId!) as string[];
   }
 
   /** Create a sub-admin login (email + password) with access config. */
@@ -64,6 +76,7 @@ export class SubAdminsService {
         role: Role.SUB_ADMIN,
         fullAccess: dto.fullAccess ?? false,
         accessModules: dto.fullAccess ? [] : dto.accessModules ?? [],
+        canDelete: dto.canDelete ?? false,
       },
       select: { id: true, name: true, email: true },
     });
@@ -88,6 +101,7 @@ export class SubAdminsService {
     if (dto.fullAccess !== undefined) data.fullAccess = dto.fullAccess;
     if (dto.accessModules !== undefined)
       data.accessModules = dto.fullAccess ? [] : dto.accessModules;
+    if (dto.canDelete !== undefined) data.canDelete = dto.canDelete;
     if (dto.password)
       data.passwordHash = await argon2.hash(dto.password, { type: argon2.argon2id });
     const user = await this.prisma.user.update({
@@ -135,6 +149,7 @@ export class SubAdminsService {
       include: {
         assignedUser: { select: { id: true, name: true, email: true } },
         campaign: { select: { id: true, name: true } },
+        client: { select: { id: true, name: true } },
       },
     });
   }
@@ -142,7 +157,11 @@ export class SubAdminsService {
   async assign(
     actor: AuthUser,
     subAdminId: string,
-    body: { assignedUserId?: string; assignedCampaignId?: string },
+    body: {
+      assignedUserId?: string;
+      assignedCampaignId?: string;
+      assignedClientId?: string;
+    },
   ) {
     await this.assertSubAdmin(actor.tenantId, subAdminId);
     const assignment = await this.prisma.subAdminAssignment.create({
@@ -150,6 +169,7 @@ export class SubAdminsService {
         subAdminId,
         assignedUserId: body.assignedUserId,
         assignedCampaignId: body.assignedCampaignId,
+        assignedClientId: body.assignedClientId,
       },
     });
     await this.activity.log({

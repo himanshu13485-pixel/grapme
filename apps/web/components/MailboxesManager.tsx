@@ -2,6 +2,7 @@
 
 import { useEffect, useState, FormEvent } from 'react';
 import { api } from '@/lib/api';
+import { useCanDelete } from '@/lib/auth';
 import { PageHeader, StatusBadge, EmptyState, Modal, Pagination } from '@/components/ui';
 
 interface AuthResult {
@@ -40,6 +41,7 @@ interface Mailbox {
  * allocating new ones to it.
  */
 export function MailboxesManager({ clientId }: { clientId?: string }) {
+  const canDelete = useCanDelete();
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
   const [show, setShow] = useState(false);
   const [test, setTest] = useState<Record<string, string>>({});
@@ -422,12 +424,14 @@ export function MailboxesManager({ clientId }: { clientId?: string }) {
                 >
                   Send test email
                 </button>
-                <button
-                  className="btn-ghost px-3 py-1 text-xs text-rose-600"
-                  onClick={() => removeMailbox(m)}
-                >
-                  Delete
-                </button>
+                {canDelete && (
+                  <button
+                    className="btn-ghost px-3 py-1 text-xs text-rose-600"
+                    onClick={() => removeMailbox(m)}
+                  >
+                    Delete
+                  </button>
+                )}
               </div>
             </div>
           ))}

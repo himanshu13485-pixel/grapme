@@ -11,6 +11,7 @@ interface SubAdmin {
   status: string;
   fullAccess?: boolean;
   accessModules?: string[];
+  canDelete?: boolean;
   lastLoginAt?: string | null;
   _count?: { assignmentsAsSubAdmin: number };
 }
@@ -20,10 +21,15 @@ interface User {
   email: string;
   role: string;
 }
+interface ClientRef {
+  id: string;
+  name: string;
+}
 interface Assignment {
   id: string;
   assignedUser?: { name: string; email: string };
   campaign?: { name: string };
+  client?: { id: string; name: string };
 }
 
 // Modules a sub-admin can be granted access to (keys match the left-menu routes).
@@ -44,9 +50,11 @@ const MODULES: { key: string; label: string }[] = [
 export default function SubAdminsPage() {
   const [subAdmins, setSubAdmins] = useState<SubAdmin[]>([]);
   const [users, setUsers] = useState<User[]>([]);
+  const [clients, setClients] = useState<ClientRef[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [assignUser, setAssignUser] = useState('');
+  const [assignClient, setAssignClient] = useState('');
   const [error, setError] = useState('');
   const [page, setPage] = useState(1);
   const [showCreate, setShowCreate] = useState(false);
@@ -57,8 +65,21 @@ export default function SubAdminsPage() {
   function load() {
     api.get<SubAdmin[]>('/sub-admins').then(setSubAdmins).catch((e) => setError(e.message));
     api.get<User[]>('/users').then(setUsers).catch(() => {});
+    api.get<ClientRef[]>('/clients').then(setClients).catch(() => {});
   }
   useEffect(load, []);
+
+  async function assignClientToSub() {
+    if (!selected || !assignClient) return;
+    try {
+      await api.post(`/sub-admins/${selected}/assignments`, { assignedClientId: assignClient });
+      setAssignClient('');
+      openSubAdmin(selected);
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed');
+    }
+  }
 
   function openSubAdmin(id: string) {
     setSelected(id);
@@ -172,10 +193,27 @@ export default function SubAdminsPage() {
 
         <div className="card p-5">
           <h3 className="mb-3 font-medium">
-            {selected ? 'Assigned users' : 'Select a sub-admin to manage its users'}
+            {selected ? 'Assigned clients & users' : 'Select a sub-admin to manage access'}
           </h3>
           {selected && (
             <>
+              <div className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">
+                Assign clients (scopes their dashboard & data)
+              </div>
+              <div className="mb-4 flex gap-2">
+                <select className="input" value={assignClient} onChange={(e) => setAssignClient(e.target.value)}>
+                  <option value="">Assign a client…</option>
+                  {clients.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+                <button className="btn-primary" onClick={assignClientToSub}>
+                  Assign
+                </button>
+              </div>
+              <div className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">
+                Assign users (for approvals delegation)
+              </div>
               <div className="mb-4 flex gap-2">
                 <select className="input" value={assignUser} onChange={(e) => setAssignUser(e.target.value)}>
                   <option value="">Assign a user…</option>
@@ -190,7 +228,7 @@ export default function SubAdminsPage() {
                 </button>
               </div>
               {assignments.length === 0 ? (
-                <p className="text-sm text-slate-400">No users assigned yet.</p>
+                <p className="text-sm text-slate-400">Nothing assigned yet.</p>
               ) : (
                 <ul className="space-y-2">
                   {assignments.map((a) => (
@@ -199,11 +237,13 @@ export default function SubAdminsPage() {
                       className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2 text-sm"
                     >
                       <span>
-                        {a.assignedUser
-                          ? `${a.assignedUser.name} · ${a.assignedUser.email}`
-                          : a.campaign
-                            ? `Campaign · ${a.campaign.name}`
-                            : 'Assignment'}
+                        {a.client
+                          ? `🏢 Client · ${a.client.name}`
+                          : a.assignedUser
+                            ? `👤 ${a.assignedUser.name} · ${a.assignedUser.email}`
+                            : a.campaign
+                              ? `Campaign · ${a.campaign.name}`
+                              : 'Assignment'}
                       </span>
                       <button className="text-xs text-rose-500 hover:underline" onClick={() => unassign(a.id)}>
                         Remove
@@ -254,6 +294,7 @@ function SubAdminForm({ existing, onDone }: { existing?: SubAdmin; onDone: () =>
   const [status, setStatus] = useState(existing?.status ?? 'ACTIVE');
   const [fullAccess, setFullAccess] = useState(existing?.fullAccess ?? false);
   const [modules, setModules] = useState<string[]>(existing?.accessModules ?? []);
+  const [canDelete, setCanDelete] = useState(existing?.canDelete ?? false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -272,6 +313,7 @@ function SubAdminForm({ existing, onDone }: { existing?: SubAdmin; onDone: () =>
           status,
           fullAccess,
           accessModules: modules,
+          canDelete,
           password: password || undefined,
         });
       } else {
@@ -281,6 +323,7 @@ function SubAdminForm({ existing, onDone }: { existing?: SubAdmin; onDone: () =>
           password,
           fullAccess,
           accessModules: modules,
+          canDelete,
         });
       }
       onDone();
@@ -354,6 +397,11 @@ function SubAdminForm({ existing, onDone }: { existing?: SubAdmin; onDone: () =>
           </div>
         )}
       </div>
+
+      <label className="flex items-center gap-2 rounded-lg border border-slate-200 p-3 text-sm text-slate-700">
+        <input type="checkbox" checked={canDelete} onChange={(e) => setCanDelete(e.target.checked)} />
+        Allow delete actions (show Delete buttons for this sub-admin)
+      </label>
 
       {error && <p className="text-sm text-rose-600">{error}</p>}
       <button className="btn-primary w-full" disabled={busy}>

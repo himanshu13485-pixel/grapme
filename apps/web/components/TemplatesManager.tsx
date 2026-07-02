@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, FormEvent } from 'react';
 import { api } from '@/lib/api';
+import { useCanDelete } from '@/lib/auth';
 import { PageHeader, EmptyState, Pagination } from '@/components/ui';
 
 interface Template {
@@ -33,6 +34,7 @@ function renderPreview(html: string): string {
  * on /templates, or scoped to one client inside the Clients Workspace.
  */
 export function TemplatesManager({ clientId }: { clientId?: string }) {
+  const canDelete = useCanDelete();
   const [templates, setTemplates] = useState<Template[]>([]);
   const [editing, setEditing] = useState<Template | 'new' | null>(null);
   const [page, setPage] = useState(1);
@@ -114,12 +116,14 @@ export function TemplatesManager({ clientId }: { clientId?: string }) {
                 <button className="btn-ghost text-xs" onClick={() => setEditing(t)}>
                   Edit
                 </button>
-                <button
-                  className="btn-ghost text-xs text-rose-600"
-                  onClick={() => deleteTemplate(t)}
-                >
-                  Delete
-                </button>
+                {canDelete && (
+                  <button
+                    className="btn-ghost text-xs text-rose-600"
+                    onClick={() => deleteTemplate(t)}
+                  >
+                    Delete
+                  </button>
+                )}
               </div>
             </div>
           ))}

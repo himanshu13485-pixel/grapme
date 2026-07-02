@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, FormEvent, Fragment } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
+import { useCanDelete } from '@/lib/auth';
 import { downloadCsv } from '@/lib/csv';
 import { PageHeader, EmptyState, StatusBadge, Tabs, Modal } from '@/components/ui';
 import { ContactsManager } from '@/components/ContactsManager';
@@ -787,15 +788,17 @@ function Cohorts({
   const [openCohort, setOpenCohort] = useState<string | null>(null);
   const [seqCohort, setSeqCohort] = useState<CohortStat | null>(null);
   const [reportCohort, setReportCohort] = useState('ALL');
+  const [geoCohort, setGeoCohort] = useState('ALL');
   const [geo, setGeo] = useState<GeoData | null>(null);
+  const canDelete = useCanDelete();
 
   useEffect(() => {
-    const q = reportCohort === 'ALL' ? '' : `?cohortId=${reportCohort}`;
+    const q = geoCohort === 'ALL' ? '' : `?cohortId=${geoCohort}`;
     api
       .get<GeoData>(`/clients/${client.id}/geo${q}`)
       .then(setGeo)
       .catch(() => setGeo(null));
-  }, [client.id, reportCohort]);
+  }, [client.id, geoCohort]);
 
   async function upload() {
     if (!listId) return;
@@ -1071,14 +1074,31 @@ function Cohorts({
       })()}
 
       {cohorts.length > 0 && geo && (
-        <WorldMap
-          geo={geo}
-          title={
-            reportCohort === 'ALL'
-              ? 'Geographic engagement — all cohorts'
-              : 'Geographic engagement — selected cohort'
-          }
-        />
+        <div>
+          <div className="mb-2 flex items-center justify-end gap-2">
+            <span className="text-xs text-slate-400">Map view:</span>
+            <select
+              className="input w-64 py-1 text-xs"
+              value={geoCohort}
+              onChange={(e) => setGeoCohort(e.target.value)}
+            >
+              <option value="ALL">All cohorts</option>
+              {cohorts.map((c) => (
+                <option key={c.id} value={c.id}>
+                  #{c.monthIndex} {c.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <WorldMap
+            geo={geo}
+            title={
+              geoCohort === 'ALL'
+                ? 'Geographic engagement — all cohorts'
+                : `Geographic engagement — #${cohorts.find((c) => c.id === geoCohort)?.monthIndex ?? ''} ${cohorts.find((c) => c.id === geoCohort)?.label ?? ''}`
+            }
+          />
+        </div>
       )}
 
       {cohorts.length === 0 ? (
@@ -1154,7 +1174,9 @@ function Cohorts({
                       <button className="btn-ghost text-xs text-rose-600" onClick={() => lifecycle(c.id, 'stop')}>Stop</button>
                     )}
                     <button className="btn-ghost text-xs" onClick={() => setSeqCohort(c)}>Sequence</button>
-                    <button className="btn-ghost text-xs text-rose-600" onClick={() => deleteCohort(c.id)}>Delete</button>
+                    {canDelete && (
+                      <button className="btn-ghost text-xs text-rose-600" onClick={() => deleteCohort(c.id)}>Delete</button>
+                    )}
                   </td>
                 </tr>
                 {openCohort === c.id && (

@@ -26,6 +26,7 @@ import {
 class AssignDto {
   @IsOptional() @IsString() assignedUserId?: string;
   @IsOptional() @IsString() assignedCampaignId?: string;
+  @IsOptional() @IsString() assignedClientId?: string;
 }
 
 class CreateSubAdminDto {
@@ -34,6 +35,7 @@ class CreateSubAdminDto {
   @MinLength(6) password: string;
   @IsOptional() @IsBoolean() fullAccess?: boolean;
   @IsOptional() @IsArray() @IsString({ each: true }) accessModules?: string[];
+  @IsOptional() @IsBoolean() canDelete?: boolean;
 }
 
 class UpdateSubAdminDto {
@@ -42,6 +44,7 @@ class UpdateSubAdminDto {
   @IsOptional() @IsString() status?: string;
   @IsOptional() @IsBoolean() fullAccess?: boolean;
   @IsOptional() @IsArray() @IsString({ each: true }) accessModules?: string[];
+  @IsOptional() @IsBoolean() canDelete?: boolean;
 }
 
 @Roles(Role.SUPER_ADMIN)

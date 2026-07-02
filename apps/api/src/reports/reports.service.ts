@@ -54,18 +54,35 @@ export class ReportsService {
     // cohort outreach. Admin-scoped (cohorts are tenant-level, not user-owned).
     let cohortCount = 0;
     let activeCohorts = 0;
-    if (user.role !== Role.USER) {
+    // null = all clients (super admin); [] or ids = the sub-admin's clients.
+    const ccids = scope.cohortClientIds;
+    const seeCohorts = user.role !== Role.USER && (ccids === null || ccids.length > 0);
+    if (seeCohorts) {
+      const cohortWhere = ccids === null ? {} : { clientId: { in: ccids } };
+      // Message cohortId filter for events: restrict to scoped cohorts' ids.
+      const scopedCohortIds =
+        ccids === null
+          ? undefined
+          : (
+              await this.prisma.cohort.findMany({
+                where: { tenantId: user.tenantId, clientId: { in: ccids } },
+                select: { id: true },
+              })
+            ).map((c) => c.id);
       const [cohortEvents, cohortStatuses] = await Promise.all([
         this.prisma.emailEvent.groupBy({
           by: ['eventType'],
           where: {
-            message: { tenantId: user.tenantId, cohortId: { not: null } },
+            message: {
+              tenantId: user.tenantId,
+              cohortId: scopedCohortIds ? { in: scopedCohortIds } : { not: null },
+            },
           },
           _count: { _all: true },
         }),
         this.prisma.cohort.groupBy({
           by: ['status'],
-          where: { tenantId: user.tenantId },
+          where: { tenantId: user.tenantId, ...cohortWhere },
           _count: { _all: true },
         }),
       ]);
@@ -112,8 +129,13 @@ export class ReportsService {
   /** Recent cohorts across the tenant with live send/reply stats (dashboard). */
   async recentCohorts(user: AuthUser, take = 8) {
     if (user.role === Role.USER) return [];
+    let clientFilter = {};
+    if (user.role === Role.SUB_ADMIN) {
+      const ids = await this.assignedClientIds(user.userId);
+      clientFilter = { clientId: { in: ids } };
+    }
     const cohorts = await this.prisma.cohort.findMany({
-      where: { tenantId: user.tenantId },
+      where: { tenantId: user.tenantId, ...clientFilter },
       orderBy: { createdAt: 'desc' },
       take,
       include: { client: { select: { id: true, name: true } } },
@@ -219,32 +241,43 @@ export class ReportsService {
     return out;
   }
 
-  /** Builds the campaign/user where-filters for the caller's scope. */
-  private async scopeWhere(user: AuthUser) {
+  /**
+   * Builds the caller's scope. `cohortClientIds` = null means "all clients"
+   * (super admin); an array restricts to those clients (sub-admin's assigned
+   * clients); USER role sees only their own campaigns and no cohorts.
+   */
+  private async scopeWhere(user: AuthUser): Promise<{
+    campaign: Record<string, unknown>;
+    user: Record<string, unknown>;
+    cohortClientIds: string[] | null;
+  }> {
     if (user.role === Role.USER) {
       return {
         campaign: { tenantId: user.tenantId, userId: user.userId },
         user: { tenantId: user.tenantId, id: user.userId },
+        cohortClientIds: [], // users don't own cohorts
       };
     }
     if (user.role === Role.SUB_ADMIN) {
-      const ids = await this.assignedUserIds(user.userId);
+      const clientIds = await this.assignedClientIds(user.userId);
       return {
-        campaign: { tenantId: user.tenantId, userId: { in: ids } },
-        user: { tenantId: user.tenantId, id: { in: ids } },
+        campaign: { tenantId: user.tenantId, clientId: { in: clientIds } },
+        user: { tenantId: user.tenantId },
+        cohortClientIds: clientIds,
       };
     }
     return {
       campaign: { tenantId: user.tenantId },
       user: { tenantId: user.tenantId },
+      cohortClientIds: null,
     };
   }
 
-  private async assignedUserIds(subAdminId: string): Promise<string[]> {
+  private async assignedClientIds(subAdminId: string): Promise<string[]> {
     const rows = await this.prisma.subAdminAssignment.findMany({
-      where: { subAdminId, assignedUserId: { not: null } },
-      select: { assignedUserId: true },
+      where: { subAdminId, assignedClientId: { not: null } },
+      select: { assignedClientId: true },
     });
-    return rows.map((r) => r.assignedUserId!).filter(Boolean);
+    return rows.map((r) => r.assignedClientId!).filter(Boolean);
   }
 }
