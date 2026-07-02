@@ -19,6 +19,8 @@ export interface AuthUser {
   accessModules?: string[];
   canDelete?: boolean;
   profileLimit?: number;
+  companyName?: string | null;
+  contactMobile?: string | null;
 }
 
 interface LoginResponse {

@@ -197,17 +197,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 }`}
               >
                 <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/10 text-xs">＋</span>
-                <span className="flex-1">Add profile</span>
-                <span className="text-[10px] text-emerald-300">
-                  {clientProfiles.length}/{user.profileLimit ?? 1}
+                <span className="flex-1">
+                  {clientProfiles.length === 0 ? 'Set up my workspace' : 'Add profile'}
                 </span>
               </Link>
-            )}
-            {clientProfiles.length >= (user.profileLimit ?? 1) && clientProfiles.length > 0 && (
-              <div className="px-3 pt-2 text-[10px] leading-relaxed text-emerald-400/80">
-                Profile limit reached ({user.profileLimit ?? 1}). Need another (e.g. Export + Import)?
-                Contact your account manager.
-              </div>
             )}
           </nav>
 

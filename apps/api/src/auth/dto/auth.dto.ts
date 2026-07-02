@@ -52,3 +52,39 @@ export class ResetPasswordDto {
   @MinLength(8)
   password: string;
 }
+
+/** Public client self-registration (creates a CLIENT login pending email confirmation). */
+export class ClientRegisterDto {
+  @IsString()
+  @IsNotEmpty()
+  companyName: string;
+
+  @IsString()
+  @IsNotEmpty()
+  contactName: string;
+
+  @IsOptional()
+  @IsString()
+  mobile?: string;
+
+  @IsEmail()
+  email: string;
+
+  @IsString()
+  @MinLength(8)
+  password: string;
+
+  @IsString()
+  @IsNotEmpty()
+  captchaToken: string;
+
+  @IsString()
+  @IsNotEmpty()
+  captchaAnswer: string;
+}
+
+export class ClientVerifyDto {
+  @IsString()
+  @IsNotEmpty()
+  token: string;
+}

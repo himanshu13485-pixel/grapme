@@ -6,6 +6,8 @@ import {
   RefreshDto,
   ForgotPasswordDto,
   ResetPasswordDto,
+  ClientRegisterDto,
+  ClientVerifyDto,
 } from './dto/auth.dto';
 import { Public } from '../common/decorators/public.decorator';
 import {
@@ -55,6 +57,27 @@ export class AuthController {
   @Post('reset-password')
   resetPassword(@Body() dto: ResetPasswordDto) {
     return this.auth.resetPassword(dto);
+  }
+
+  // ─── Client self-registration (public) ──────────────────────────────
+  @Public()
+  @Get('captcha')
+  captcha() {
+    return this.auth.getCaptcha();
+  }
+
+  @Public()
+  @HttpCode(200)
+  @Post('client/register')
+  clientRegister(@Body() dto: ClientRegisterDto) {
+    return this.auth.registerClient(dto);
+  }
+
+  @Public()
+  @HttpCode(200)
+  @Post('client/verify')
+  clientVerify(@Body() dto: ClientVerifyDto) {
+    return this.auth.verifyClientEmail(dto.token);
   }
 
   @Get('me')

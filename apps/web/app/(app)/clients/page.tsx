@@ -96,7 +96,11 @@ export default function ClientsPage() {
         action={
           isAdmin || clientCanAdd ? (
             <button className="btn-primary" onClick={() => setShow(true)}>
-              {isClient ? '+ Add profile' : '+ New client'}
+              {isClient
+                ? clients.length === 0
+                  ? '+ Set up my workspace'
+                  : '+ Add profile'
+                : '+ New client'}
             </button>
           ) : null
         }
@@ -280,12 +284,15 @@ function Stat({ label, value }: { label: string; value: number }) {
 }
 
 function NewClientForm({ onDone }: { onDone: () => void }) {
+  const { user } = useAuth();
+  // Self-registered clients get their company/contact details prefilled.
+  const isClient = user?.role === 'CLIENT';
   const [form, setForm] = useState({
-    name: '',
+    name: isClient ? user?.companyName ?? '' : '',
     invoiceNo: '',
-    contactPerson: '',
-    email: '',
-    mobile: '',
+    contactPerson: isClient ? user?.name ?? '' : '',
+    email: isClient ? user?.email ?? '' : '',
+    mobile: isClient ? user?.contactMobile ?? '' : '',
     productCategory: '',
     serviceType: 'EXPORT',
     plan: 'GROWTH',
@@ -307,7 +314,7 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
     setError('');
     setBusy(true);
     try {
-      await api.post('/clients', {
+      const created = await api.post<{ id: string }>('/clients', {
         ...form,
         invoiceNo: form.invoiceNo || undefined,
         contactPerson: form.contactPerson || undefined,
@@ -324,6 +331,12 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
         sendWindowEnd: Number(form.sendWindowEnd),
         stageIntervalJitterDays: Number(form.stageIntervalJitterDays),
       });
+      // A client just set up their workspace: full-navigate so the portal
+      // sidebar re-fetches and drops them into the new cockpit.
+      if (isClient && created?.id) {
+        window.location.href = `/clients/${created.id}`;
+        return;
+      }
       onDone();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed');
