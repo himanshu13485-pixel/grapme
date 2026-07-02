@@ -131,8 +131,14 @@ export class ReportsService {
     if (user.role === Role.USER) return [];
     let clientFilter = {};
     if (user.role === Role.SUB_ADMIN) {
-      const ids = await this.assignedClientIds(user.userId);
-      clientFilter = { clientId: { in: ids } };
+      const sa = await this.prisma.user.findUnique({
+        where: { id: user.userId },
+        select: { fullAccess: true },
+      });
+      if (!sa?.fullAccess) {
+        const ids = await this.assignedClientIds(user.userId);
+        clientFilter = { clientId: { in: ids } };
+      }
     }
     const cohorts = await this.prisma.cohort.findMany({
       where: { tenantId: user.tenantId, ...clientFilter },
@@ -259,6 +265,19 @@ export class ReportsService {
       };
     }
     if (user.role === Role.SUB_ADMIN) {
+      // A full-access sub-admin sees the whole tenant (same as super admin);
+      // otherwise scope to their assigned clients.
+      const sa = await this.prisma.user.findUnique({
+        where: { id: user.userId },
+        select: { fullAccess: true },
+      });
+      if (sa?.fullAccess) {
+        return {
+          campaign: { tenantId: user.tenantId },
+          user: { tenantId: user.tenantId },
+          cohortClientIds: null,
+        };
+      }
       const clientIds = await this.assignedClientIds(user.userId);
       return {
         campaign: { tenantId: user.tenantId, clientId: { in: clientIds } },
