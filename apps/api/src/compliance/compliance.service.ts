@@ -12,10 +12,37 @@ export class ComplianceService {
   ) {}
 
   // ── Suppression list ──────────────────────────────────────
-  listSuppression(tenantId: string) {
-    return this.prisma.suppression.findMany({
+  /** Suppressed addresses, enriched with the matching contact's client + lists. */
+  async listSuppression(tenantId: string) {
+    const rows = await this.prisma.suppression.findMany({
       where: { tenantId },
       orderBy: { createdAt: 'desc' },
+    });
+    const emails = rows.map((r) => r.email.toLowerCase());
+    const contacts = await this.prisma.contact.findMany({
+      where: { tenantId, email: { in: emails } },
+      select: {
+        email: true,
+        client: { select: { name: true } },
+        lists: { select: { list: { select: { name: true } } } },
+      },
+    });
+    const byEmail = new Map(
+      contacts.map((c) => [
+        c.email.toLowerCase(),
+        {
+          clientName: c.client?.name ?? null,
+          lists: c.lists.map((l) => l.list.name),
+        },
+      ]),
+    );
+    return rows.map((r) => {
+      const info = byEmail.get(r.email.toLowerCase());
+      return {
+        ...r,
+        clientName: info?.clientName ?? null,
+        lists: info?.lists ?? [],
+      };
     });
   }
 

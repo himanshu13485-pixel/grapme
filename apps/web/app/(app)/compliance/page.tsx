@@ -9,6 +9,8 @@ interface Suppression {
   email: string;
   reason: string;
   createdAt: string;
+  clientName?: string | null;
+  lists?: string[];
 }
 
 export default function CompliancePage() {
@@ -81,6 +83,8 @@ export default function CompliancePage() {
               <tr>
                 <th className="px-5 py-3">Email</th>
                 <th className="px-5 py-3">Reason</th>
+                <th className="px-5 py-3">Client</th>
+                <th className="px-5 py-3">List(s)</th>
                 <th className="px-5 py-3">Added</th>
               </tr>
             </thead>
@@ -102,6 +106,18 @@ export default function CompliancePage() {
                     >
                       {s.reason}
                     </span>
+                  </td>
+                  <td className="px-5 py-3">
+                    {s.clientName ? (
+                      <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
+                        {s.clientName}
+                      </span>
+                    ) : (
+                      <span className="text-slate-400">—</span>
+                    )}
+                  </td>
+                  <td className="px-5 py-3 text-slate-500">
+                    {s.lists && s.lists.length > 0 ? s.lists.join(', ') : '—'}
                   </td>
                   <td className="px-5 py-3 text-slate-400">
                     {new Date(s.createdAt).toLocaleDateString()}
