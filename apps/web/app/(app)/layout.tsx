@@ -125,7 +125,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
           <div className="leading-tight">
             <div className="text-base font-extrabold tracking-tight text-white">GRAPOUT</div>
-            <div className="text-[10px] uppercase tracking-[0.2em] text-indigo-300">Outreach OS</div>
+            <div className="text-[10px] font-medium tracking-wide text-indigo-300">GrapOut GVC Framework</div>
           </div>
         </div>
 
