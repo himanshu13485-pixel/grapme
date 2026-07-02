@@ -78,8 +78,11 @@ export class ReportsService {
     }
 
     const sent = ev[EventType.SENT] ?? 0;
+    const bounces = ev[EventType.BOUNCE] ?? 0;
     const rate = (n: number) =>
       sent ? Math.round((n / sent) * 1000) / 10 : 0;
+    const attempts = sent + bounces;
+    const deliveryRate = attempts ? Math.round((sent / attempts) * 1000) / 10 : 0;
 
     return {
       totalUsers: users,
@@ -92,7 +95,8 @@ export class ReportsService {
       activeCohorts,
       pendingApprovals,
       sent,
-      delivered: ev[EventType.DELIVERED] ?? 0,
+      delivered: sent,
+      deliveryRate,
       opens: ev[EventType.OPEN] ?? 0,
       clicks: ev[EventType.CLICK] ?? 0,
       replies: ev[EventType.REPLY] ?? 0,

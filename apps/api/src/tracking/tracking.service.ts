@@ -10,7 +10,13 @@ export class TrackingService {
     return this.prisma.emailMessage.findUnique({ where: { id: messageId } });
   }
 
-  async recordOpen(messageId: string) {
+  /** Normalizes IPv4-mapped IPv6 (::ffff:1.2.3.4) and localhost forms. */
+  private cleanIp(ip?: string): string | undefined {
+    if (!ip) return undefined;
+    return ip.replace(/^::ffff:/, '').replace(/^::1$/, '127.0.0.1');
+  }
+
+  async recordOpen(messageId: string, ip?: string, ua?: string) {
     const msg = await this.message(messageId);
     if (msg) {
       await this.prisma.emailEvent.create({
@@ -18,12 +24,13 @@ export class TrackingService {
           messageId,
           campaignId: msg.campaignId,
           eventType: EventType.OPEN,
+          meta: { ip: this.cleanIp(ip), ua },
         },
       });
     }
   }
 
-  async recordClick(messageId: string, url: string) {
+  async recordClick(messageId: string, url: string, ip?: string, ua?: string) {
     const msg = await this.message(messageId);
     if (msg) {
       await this.prisma.emailEvent.create({
@@ -31,7 +38,7 @@ export class TrackingService {
           messageId,
           campaignId: msg.campaignId,
           eventType: EventType.CLICK,
-          meta: { url },
+          meta: { url, ip: this.cleanIp(ip), ua },
         },
       });
     }

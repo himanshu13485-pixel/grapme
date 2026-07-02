@@ -1,6 +1,8 @@
 import {
   Controller,
   Get,
+  Headers,
+  Ip,
   Param,
   Query,
   Res,
@@ -22,8 +24,13 @@ export class TrackingController {
   constructor(private readonly tracking: TrackingService) {}
 
   @Get('t/open/:messageId.png')
-  async open(@Param('messageId') messageId: string, @Res() res: Response) {
-    await this.tracking.recordOpen(messageId);
+  async open(
+    @Param('messageId') messageId: string,
+    @Ip() ip: string,
+    @Headers('user-agent') ua: string,
+    @Res() res: Response,
+  ) {
+    await this.tracking.recordOpen(messageId, ip, ua);
     res.set({
       'Content-Type': 'image/gif',
       'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
@@ -37,9 +44,11 @@ export class TrackingController {
   async click(
     @Param('messageId') messageId: string,
     @Query('u') url: string,
+    @Ip() ip: string,
+    @Headers('user-agent') ua: string,
   ) {
     const target = url ? decodeURIComponent(url) : 'about:blank';
-    await this.tracking.recordClick(messageId, target);
+    await this.tracking.recordClick(messageId, target, ip, ua);
     return { url: target, statusCode: 302 };
   }
 

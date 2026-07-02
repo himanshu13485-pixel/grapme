@@ -586,13 +586,18 @@ export class ProgramsService {
       const replies = replySet.get(cid)?.size ?? 0;
       const bounces = bouncedMsgs.get(cid) ?? 0;
       const pct = (n: number) => (s ? Math.round((n / s) * 1000) / 10 : 0);
+      // Delivered = accepted by the receiving server (sent that didn't bounce).
+      const attempts = s + bounces;
+      const deliveryRate = attempts ? Math.round((s / attempts) * 1000) / 10 : 0;
       return {
         sent: s,
+        delivered: s,
         opens,
         clicks,
         replies,
         bounces,
         unsubscribes: unsubN.get(cid) ?? 0,
+        deliveryRate,
         openRate: pct(opens),
         clickRate: pct(clicks),
         replyRate: pct(replies),

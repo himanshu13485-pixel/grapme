@@ -98,11 +98,13 @@ interface CohortStat {
 }
 interface CohortMetrics {
   sent: number;
+  delivered: number;
   opens: number;
   clicks: number;
   replies: number;
   bounces: number;
   unsubscribes: number;
+  deliveryRate: number;
   openRate: number;
   clickRate: number;
   replyRate: number;
@@ -979,17 +981,20 @@ function Cohorts({
             : cohorts.find((c) => c.id === reportCohort) ?? null;
         const m = selected ? selected.metrics : totals;
         const pct = (n: number) => (m.sent ? Math.round((n / m.sent) * 1000) / 10 : 0);
+        const delivPct = (s: number, b: number) => (s + b ? Math.round((s / (s + b)) * 1000) / 10 : 0);
 
         function exportCsv() {
           const headers = [
-            'Cohort', 'Month', 'Status', 'Sent', 'Opens', 'Open %', 'Clicks',
-            'Click %', 'Replies', 'Reply %', 'Bounces', 'Bounce %', 'Unsub',
+            'Cohort', 'Month', 'Status', 'Sent', 'Delivered', 'Delivery %',
+            'Opens', 'Open %', 'Clicks', 'Click %', 'Replies', 'Reply %',
+            'Bounces', 'Bounce %', 'Unsub',
           ];
           const rowFor = (c: CohortStat) => [
-            c.label, c.monthIndex, c.status, c.metrics.sent, c.metrics.opens,
-            c.metrics.openRate, c.metrics.clicks, c.metrics.clickRate,
-            c.metrics.replies, c.metrics.replyRate, c.metrics.bounces,
-            c.metrics.bounceRate, c.metrics.unsubscribes,
+            c.label, c.monthIndex, c.status, c.metrics.sent, c.metrics.delivered,
+            c.metrics.deliveryRate, c.metrics.opens, c.metrics.openRate,
+            c.metrics.clicks, c.metrics.clickRate, c.metrics.replies,
+            c.metrics.replyRate, c.metrics.bounces, c.metrics.bounceRate,
+            c.metrics.unsubscribes,
           ];
           const safe = client.name.replace(/[^\w-]+/g, '_');
           if (selected) {
@@ -998,7 +1003,8 @@ function Cohorts({
           }
           const rows: (string | number)[][] = cohorts.map(rowFor);
           rows.push([
-            'ALL COHORTS', '', '', totals.sent, totals.opens, pct(totals.opens),
+            'ALL COHORTS', '', '', totals.sent, totals.sent,
+            delivPct(totals.sent, totals.bounces), totals.opens, pct(totals.opens),
             totals.clicks, pct(totals.clicks), totals.replies, pct(totals.replies),
             totals.bounces, pct(totals.bounces), totals.unsubscribes,
           ]);
@@ -1032,6 +1038,8 @@ function Cohorts({
             <div className="grid grid-cols-3 gap-2 sm:grid-cols-5 lg:grid-cols-10">
               {([
                 ['Sent', m.sent],
+                ['Delivered', m.sent],
+                ['Delivery %', `${delivPct(m.sent, m.bounces)}%`],
                 ['Opens', m.opens],
                 ['Open %', `${pct(m.opens)}%`],
                 ['Clicks', m.clicks],
@@ -1137,6 +1145,8 @@ function Cohorts({
                       <div className="mb-5 grid grid-cols-3 gap-2 sm:grid-cols-5 lg:grid-cols-10">
                         {([
                           ['Sent', c.metrics.sent],
+                          ['Delivered', c.metrics.delivered],
+                          ['Delivery %', `${c.metrics.deliveryRate}%`],
                           ['Opens', c.metrics.opens],
                           ['Open %', `${c.metrics.openRate}%`],
                           ['Clicks', c.metrics.clicks],

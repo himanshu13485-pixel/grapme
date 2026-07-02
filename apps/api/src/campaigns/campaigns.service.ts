@@ -202,15 +202,20 @@ export class CampaignsService {
     for (const g of grouped) counts[g.eventType] = g._count._all;
 
     const sent = counts[EventType.SENT] ?? 0;
+    const bounces = counts[EventType.BOUNCE] ?? 0;
     const pct = (n: number) => (sent ? Math.round((n / sent) * 1000) / 10 : 0);
+    // Delivered = sent that didn't bounce; rate over all attempts (sent+bounced).
+    const attempts = sent + bounces;
+    const deliveryRate = attempts ? Math.round((sent / attempts) * 1000) / 10 : 0;
     return {
       sent,
-      delivered: counts[EventType.DELIVERED] ?? 0,
+      delivered: sent,
       opens: counts[EventType.OPEN] ?? 0,
       clicks: counts[EventType.CLICK] ?? 0,
       replies: counts[EventType.REPLY] ?? 0,
-      bounces: counts[EventType.BOUNCE] ?? 0,
+      bounces,
       unsubscribes: counts[EventType.UNSUBSCRIBE] ?? 0,
+      deliveryRate,
       openRate: pct(counts[EventType.OPEN] ?? 0),
       clickRate: pct(counts[EventType.CLICK] ?? 0),
       replyRate: pct(counts[EventType.REPLY] ?? 0),
