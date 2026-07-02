@@ -65,8 +65,9 @@ export default function CompliancePage() {
       )}
 
       <p className="mb-3 text-sm text-slate-500">
-        Suppressed addresses are excluded from every campaign at send time.
-        Unsubscribes and bounces land here automatically.
+        Suppressed addresses are excluded from every campaign <strong>and cohort</strong>{' '}
+        at send time. Unsubscribes and bounced deliveries land here automatically
+        (bounces are detected from delivery-failure replies in your mailboxes).
       </p>
 
       {items.length === 0 ? (
@@ -87,7 +88,21 @@ export default function CompliancePage() {
               {paged.map((s) => (
                 <tr key={s.id} className="border-t border-slate-100">
                   <td className="px-5 py-3 font-medium">{s.email}</td>
-                  <td className="px-5 py-3 text-slate-500">{s.reason}</td>
+                  <td className="px-5 py-3">
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                        s.reason === 'BOUNCE'
+                          ? 'bg-rose-100 text-rose-700'
+                          : s.reason === 'UNSUBSCRIBE'
+                            ? 'bg-amber-100 text-amber-700'
+                            : s.reason === 'COMPLAINT'
+                              ? 'bg-purple-100 text-purple-700'
+                              : 'bg-slate-100 text-slate-600'
+                      }`}
+                    >
+                      {s.reason}
+                    </span>
+                  </td>
                   <td className="px-5 py-3 text-slate-400">
                     {new Date(s.createdAt).toLocaleDateString()}
                   </td>

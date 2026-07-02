@@ -6,6 +6,7 @@ import {
   MailboxStatus,
   MessageDirection,
   MessageStatus,
+  SuppressionReason,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { decryptCredential } from '../common/crypto/credential-crypto';
@@ -111,9 +112,8 @@ export class InboundMailService {
             const dedupeId =
               msg.envelope?.messageId ??
               `${from}|${subject ?? ''}|${msg.envelope?.date ?? ''}`;
-            const body = msg.source
-              ? this.extractTextBody(msg.source.toString('utf8'))
-              : undefined;
+            const raw = msg.source ? msg.source.toString('utf8') : '';
+            const body = raw ? this.extractTextBody(raw) : undefined;
             const isNew = await this.storeInbound(
               mailbox,
               from,
@@ -124,7 +124,14 @@ export class InboundMailService {
             );
             if (isNew) {
               stored++;
-              await this.recordReply(mailbox.tenantId, from);
+              // A delivery-failure (bounce) is not a reply: suppress the failed
+              // recipient instead of recording a REPLY against the sender.
+              if (this.isBounce(from, subject)) {
+                const rcpt = this.extractBounceRecipient(raw);
+                if (rcpt) await this.handleBounce(mailbox.tenantId, rcpt);
+              } else {
+                await this.recordReply(mailbox.tenantId, from);
+              }
             }
           }
         }
@@ -345,5 +352,76 @@ export class InboundMailService {
       },
     });
     this.logger.log(`Reply detected from ${fromEmail}`);
+  }
+
+  /** Heuristic: is this inbound message a delivery-failure / bounce (DSN)? */
+  private isBounce(from: string, subject?: string): boolean {
+    const f = (from || '').toLowerCase();
+    if (/mailer-daemon|postmaster|maildelivery|mail-daemon/.test(f)) return true;
+    const s = (subject || '').toLowerCase();
+    return /undeliver|delivery (status notification|failed|failure|incomplete)|returned mail|failure notice|not delivered|could ?n.?t be delivered|mail delivery (failed|subsystem)/.test(
+      s,
+    );
+  }
+
+  /** Pulls the failed recipient out of a DSN body. */
+  private extractBounceRecipient(raw: string): string | null {
+    const m =
+      /Final-Recipient:\s*rfc822;\s*<?([^\s>]+@[^\s>]+)>?/i.exec(raw) ||
+      /Original-Recipient:\s*rfc822;\s*<?([^\s>]+@[^\s>]+)>?/i.exec(raw) ||
+      /X-Failed-Recipients:\s*<?([^\s,>]+@[^\s,>]+)>?/i.exec(raw);
+    if (!m) return null;
+    return m[1].toLowerCase().replace(/[<>]/g, '');
+  }
+
+  /**
+   * A bounced address: add it to the suppression list (reason BOUNCE), mark the
+   * contact BOUNCED, stop its enrollments, and flag its last outbound message +
+   * a BOUNCE event so the reports reflect it. Auto-populates Compliance.
+   */
+  private async handleBounce(tenantId: string, email: string) {
+    await this.prisma.suppression.upsert({
+      where: { tenantId_email: { tenantId, email } },
+      update: { reason: SuppressionReason.BOUNCE },
+      create: { tenantId, email, reason: SuppressionReason.BOUNCE },
+    });
+    const contact = await this.prisma.contact.findFirst({
+      where: { tenantId, email: { equals: email, mode: 'insensitive' } },
+    });
+    if (!contact) {
+      this.logger.log(`Bounce suppressed (no contact): ${email}`);
+      return;
+    }
+    await this.prisma.contact.update({
+      where: { id: contact.id },
+      data: { status: 'BOUNCED' },
+    });
+    await this.prisma.enrollment.updateMany({
+      where: { contactId: contact.id, status: EnrollmentStatus.ACTIVE },
+      data: { status: EnrollmentStatus.STOPPED },
+    });
+    const lastOutbound = await this.prisma.emailMessage.findFirst({
+      where: { tenantId, contactId: contact.id, direction: MessageDirection.OUTBOUND },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (lastOutbound) {
+      await this.prisma.emailMessage.update({
+        where: { id: lastOutbound.id },
+        data: { status: MessageStatus.BOUNCED },
+      });
+      const exists = await this.prisma.emailEvent.findFirst({
+        where: { messageId: lastOutbound.id, eventType: EventType.BOUNCE },
+      });
+      if (!exists) {
+        await this.prisma.emailEvent.create({
+          data: {
+            messageId: lastOutbound.id,
+            campaignId: lastOutbound.campaignId,
+            eventType: EventType.BOUNCE,
+          },
+        });
+      }
+    }
+    this.logger.log(`Bounce recorded + suppressed: ${email}`);
   }
 }
