@@ -96,4 +96,9 @@ export class ContactsController {
   ) {
     return this.contacts.removeMembers(user, id, dto.contactIds);
   }
+
+  @Post('contact-lists/:id/clean')
+  cleanList(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.contacts.cleanList(user, id);
+  }
 }

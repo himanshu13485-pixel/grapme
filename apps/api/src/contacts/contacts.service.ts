@@ -327,4 +327,45 @@ export class ContactsService {
     });
     return { removed: res.count };
   }
+
+  /**
+   * List hygiene: remove members whose address is suppressed (bounced /
+   * unsubscribed / manually suppressed) or whose contact status is BOUNCED /
+   * UNSUBSCRIBED. The contacts themselves are kept (for audit); only their
+   * membership in this list is removed.
+   */
+  async cleanList(user: AuthUser, listId: string) {
+    const list = await this.prisma.contactList.findFirst({
+      where: { id: listId, tenantId: user.tenantId },
+    });
+    if (!list) throw new NotFoundException('List not found');
+
+    const suppressed = new Set(
+      (
+        await this.prisma.suppression.findMany({
+          where: { tenantId: user.tenantId },
+          select: { email: true },
+        })
+      ).map((s) => s.email.toLowerCase()),
+    );
+
+    const members = await this.prisma.contactListMember.findMany({
+      where: { listId },
+      select: { contactId: true, contact: { select: { email: true, status: true } } },
+    });
+    const toRemove = members
+      .filter(
+        (m) =>
+          m.contact.status === 'BOUNCED' ||
+          m.contact.status === 'UNSUBSCRIBED' ||
+          suppressed.has(m.contact.email.toLowerCase()),
+      )
+      .map((m) => m.contactId);
+
+    if (toRemove.length === 0) return { removed: 0 };
+    const res = await this.prisma.contactListMember.deleteMany({
+      where: { listId, contactId: { in: toRemove } },
+    });
+    return { removed: res.count };
+  }
 }

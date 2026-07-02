@@ -888,19 +888,53 @@ function ListDetail({
     }
   }
 
+  async function cleanList() {
+    if (
+      !confirm(
+        `Remove all suppressed contacts (bounced / unsubscribed) from "${list.name}"? The contacts are kept — only their membership in this list is removed.`,
+      )
+    )
+      return;
+    setBusy(true);
+    try {
+      const r = await api.post<{ removed: number }>(`/contact-lists/${list.id}/clean`);
+      alert(
+        r.removed > 0
+          ? `Removed ${r.removed} suppressed contact(s) from the list.`
+          : 'No suppressed contacts in this list.',
+      );
+      load();
+      onChanged();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to clean list');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between border-b border-slate-100 pb-3">
         <div className="text-sm text-slate-500">
           {list.description || 'Manage this list’s members below.'}
         </div>
-        <button
-          className="btn-ghost text-xs text-rose-600"
-          onClick={deleteList}
-          disabled={busy}
-        >
-          Delete list
-        </button>
+        <div className="flex gap-2">
+          <button
+            className="btn-ghost text-xs text-amber-600"
+            onClick={cleanList}
+            disabled={busy}
+            title="Remove bounced/unsubscribed contacts from this list"
+          >
+            🧹 Clean list
+          </button>
+          <button
+            className="btn-ghost text-xs text-rose-600"
+            onClick={deleteList}
+            disabled={busy}
+          >
+            Delete list
+          </button>
+        </div>
       </div>
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
       {/* Members */}
