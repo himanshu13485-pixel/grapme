@@ -1,10 +1,12 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import * as argon2 from 'argon2';
 import {
   ApprovalEntity,
   Client,
@@ -129,8 +131,27 @@ export class ProgramsService {
 
   // ── Clients ───────────────────────────────────────────────
   async createClient(user: AuthUser, dto: CreateClientDto) {
+    // Client-portal users may add further profiles (e.g. one for Export and one
+    // for Import — billed separately) but only up to their profileLimit. The new
+    // profile is owned by them so it stays scoped to their panel.
+    const ownerData: { ownerUserId?: string } = {};
+    if (user.role === Role.CLIENT) {
+      const [owned, me] = await Promise.all([
+        this.prisma.client.count({
+          where: { tenantId: user.tenantId, ownerUserId: user.userId },
+        }),
+        this.prisma.user.findUnique({ where: { id: user.userId } }),
+      ]);
+      const limit = me?.profileLimit ?? 1;
+      if (owned >= limit) {
+        throw new ForbiddenException(
+          `Profile limit reached (${limit}). Contact your account manager to add another profile.`,
+        );
+      }
+      ownerData.ownerUserId = user.userId;
+    }
     const client = await this.prisma.client.create({
-      data: { tenantId: user.tenantId, ...dto },
+      data: { tenantId: user.tenantId, ...dto, ...ownerData },
     });
     await this.activity.log({
       tenantId: user.tenantId,
@@ -145,7 +166,11 @@ export class ProgramsService {
 
   listClients(user: AuthUser) {
     return this.prisma.client.findMany({
-      where: { tenantId: user.tenantId },
+      where: {
+        tenantId: user.tenantId,
+        // Client-portal users only see the profiles they own.
+        ...(user.role === Role.CLIENT ? { ownerUserId: user.userId } : {}),
+      },
       orderBy: { createdAt: 'desc' },
       include: {
         _count: { select: { mailboxes: true, cohorts: true, enrollments: true } },
@@ -155,7 +180,11 @@ export class ProgramsService {
 
   async getClient(user: AuthUser, id: string) {
     const client = await this.prisma.client.findFirst({
-      where: { id, tenantId: user.tenantId },
+      where: {
+        id,
+        tenantId: user.tenantId,
+        ...(user.role === Role.CLIENT ? { ownerUserId: user.userId } : {}),
+      },
       include: {
         mailboxes: {
           select: { id: true, label: true, emailAddress: true, status: true, rotationOrder: true },
@@ -1278,9 +1307,67 @@ export class ProgramsService {
 
   private async assertClient(user: AuthUser, id: string): Promise<Client> {
     const client = await this.prisma.client.findFirst({
-      where: { id, tenantId: user.tenantId },
+      where: {
+        id,
+        tenantId: user.tenantId,
+        // A client-portal user can only reach a profile they own.
+        ...(user.role === Role.CLIENT ? { ownerUserId: user.userId } : {}),
+      },
     });
     if (!client) throw new NotFoundException('Client not found');
     return client;
+  }
+
+  /** Create (or reset) the client-portal login that owns a profile. */
+  async setClientLogin(
+    user: AuthUser,
+    clientId: string,
+    dto: { email: string; password: string },
+  ) {
+    const client = await this.assertClient(user, clientId);
+    const email = dto.email.toLowerCase();
+    const passwordHash = await argon2.hash(dto.password, { type: argon2.argon2id });
+
+    // Reuse an existing login for this email, else create a CLIENT user.
+    let owner = await this.prisma.user.findUnique({ where: { email } });
+    if (owner) {
+      owner = await this.prisma.user.update({
+        where: { id: owner.id },
+        data: { passwordHash, role: Role.CLIENT },
+      });
+    } else {
+      owner = await this.prisma.user.create({
+        data: {
+          tenantId: user.tenantId,
+          name: client.contactPerson || client.name,
+          email,
+          passwordHash,
+          role: Role.CLIENT,
+        },
+      });
+    }
+    await this.prisma.client.update({
+      where: { id: clientId },
+      data: { ownerUserId: owner.id },
+    });
+    await this.activity.log({
+      tenantId: user.tenantId,
+      actorId: user.userId,
+      action: 'SET_CLIENT_LOGIN',
+      entityType: 'Client',
+      entityId: clientId,
+      after: { email, client: client.name },
+    });
+    return { ok: true, email };
+  }
+
+  /** Profiles owned by a client-portal user (for the client panel switcher). */
+  async myClientProfiles(user: AuthUser) {
+    if (user.role !== Role.CLIENT) return [];
+    return this.prisma.client.findMany({
+      where: { tenantId: user.tenantId, ownerUserId: user.userId },
+      select: { id: true, name: true, serviceType: true, plan: true },
+      orderBy: { createdAt: 'asc' },
+    });
   }
 }

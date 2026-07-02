@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, FormEvent, Fragment } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
-import { useCanDelete } from '@/lib/auth';
+import { useCanDelete, useAuth } from '@/lib/auth';
 import { downloadCsv } from '@/lib/csv';
 import { PageHeader, EmptyState, StatusBadge, Tabs, Modal } from '@/components/ui';
 import { ContactsManager } from '@/components/ContactsManager';
@@ -117,6 +117,8 @@ interface CohortMetrics {
 
 export default function ClientCockpit() {
   const { id } = useParams<{ id: string }>();
+  const { user } = useAuth();
+  const isClient = user?.role === 'CLIENT';
   const [client, setClient] = useState<Client | null>(null);
   const [allMailboxes, setAllMailboxes] = useState<Mailbox[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -170,9 +172,11 @@ export default function ClientCockpit() {
 
   return (
     <div>
-      <div className="mb-2 text-sm">
-        <Link href="/clients" className="text-brand-600 hover:underline">← Clients</Link>
-      </div>
+      {!isClient && (
+        <div className="mb-2 text-sm">
+          <Link href="/clients" className="text-brand-600 hover:underline">← Clients</Link>
+        </div>
+      )}
       <PageHeader
         title={client.name}
         subtitle={`${client.plan} · ${client.dailyBatchSize}/day · ${client.followUpCount} follow-ups · ${client.weekdaysOnly ? 'weekdays only' : 'all days'}`}

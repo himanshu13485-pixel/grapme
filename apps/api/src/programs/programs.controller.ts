@@ -37,6 +37,22 @@ export class ProgramsController {
     return this.programs.listClients(user);
   }
 
+  /** Profiles the signed-in client-portal user owns (panel switcher). */
+  @Get('my/clients')
+  myClients(@CurrentUser() user: AuthUser) {
+    return this.programs.myClientProfiles(user);
+  }
+
+  /** Super/sub admin: create or reset a client-portal login for a profile. */
+  @Post('clients/:id/login')
+  setClientLogin(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: { email: string; password: string },
+  ) {
+    return this.programs.setClientLogin(user, id, dto);
+  }
+
   @Get('clients/:id')
   getClient(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.programs.getClient(user, id);

@@ -239,6 +239,7 @@ export class AuthService {
         fullAccess: true,
         accessModules: true,
         canDelete: true,
+        profileLimit: true,
       },
     });
     if (!user) throw new UnauthorizedException();

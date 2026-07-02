@@ -34,10 +34,30 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [toast, setToast] = useState('');
   const prevUnread = useRef<number | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [clientProfiles, setClientProfiles] = useState<
+    { id: string; name: string; serviceType?: string | null }[]
+  >([]);
 
   useEffect(() => {
     if (!loading && !user) router.replace('/login');
   }, [user, loading, router]);
+
+  // Client-portal users: load their owned profiles, and land them on one.
+  useEffect(() => {
+    if (user?.role !== 'CLIENT') return;
+    api
+      .get<{ id: string; name: string; serviceType?: string | null }[]>('/my/clients')
+      .then((profiles) => {
+        setClientProfiles(profiles);
+        // Land them on their first profile — but leave them alone on the
+        // clients list/add page so they can create an extra profile.
+        if (profiles[0] && !pathname.startsWith('/clients')) {
+          router.replace(`/clients/${profiles[0].id}`);
+        }
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
 
   // Poll the unread-reply count so the Inbox badge stays live and we can alert
   // when a new reply lands — anywhere in the app, not just on the Inbox page.
@@ -113,7 +133,114 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       ? 'Super Admin'
       : user.role === 'SUB_ADMIN'
         ? 'Sub Admin'
-        : 'User';
+        : user.role === 'CLIENT'
+          ? 'Client'
+          : 'User';
+
+  // ── Client portal: a distinct emerald-teal panel scoped to their profiles ──
+  if (user.role === 'CLIENT') {
+    return (
+      <div className="flex min-h-screen">
+        <aside className="sticky top-0 flex h-screen w-64 flex-col bg-gradient-to-b from-teal-900 via-emerald-900 to-emerald-800 text-emerald-100 shadow-xl">
+          <div className="flex items-center gap-3 px-5 py-6">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/95 text-lg font-black text-emerald-700 shadow-lg">
+              G
+            </div>
+            <div className="leading-tight">
+              <div className="text-base font-extrabold tracking-tight text-white">GRAPOUT</div>
+              <div className="text-[10px] font-medium tracking-wide text-emerald-300">Client Portal</div>
+            </div>
+          </div>
+
+          <nav className="flex-1 space-y-1 overflow-y-auto px-3 pb-4">
+            <div className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-emerald-400">
+              My workspace{clientProfiles.length > 1 ? 's' : ''}
+            </div>
+            {clientProfiles.map((p) => {
+              const active = pathname.startsWith(`/clients/${p.id}`);
+              return (
+                <Link
+                  key={p.id}
+                  href={`/clients/${p.id}`}
+                  className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all ${
+                    active
+                      ? 'bg-white text-emerald-700 shadow-lg'
+                      : 'text-emerald-100 hover:translate-x-0.5 hover:bg-white/10 hover:text-white'
+                  }`}
+                >
+                  <span
+                    className={`flex h-7 w-7 items-center justify-center rounded-lg text-xs ${
+                      active ? 'bg-emerald-600 text-white' : 'bg-white/10 text-emerald-100'
+                    }`}
+                  >
+                    🏢
+                  </span>
+                  <span className="flex-1 truncate">{p.name}</span>
+                  {p.serviceType && (
+                    <span className="rounded-full bg-white/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-emerald-100">
+                      {p.serviceType === 'BOTH' ? 'EX/IM' : p.serviceType.slice(0, 2)}
+                    </span>
+                  )}
+                </Link>
+              );
+            })}
+            {clientProfiles.length === 0 && (
+              <div className="px-3 py-2 text-xs text-emerald-300">No workspace assigned yet.</div>
+            )}
+            {clientProfiles.length < (user.profileLimit ?? 1) && (
+              <Link
+                href="/clients"
+                className={`group mt-1 flex items-center gap-3 rounded-xl border border-dashed border-white/20 px-3 py-2.5 text-sm font-medium transition-all ${
+                  pathname === '/clients'
+                    ? 'bg-white text-emerald-700 shadow-lg'
+                    : 'text-emerald-200 hover:bg-white/10 hover:text-white'
+                }`}
+              >
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/10 text-xs">＋</span>
+                <span className="flex-1">Add profile</span>
+                <span className="text-[10px] text-emerald-300">
+                  {clientProfiles.length}/{user.profileLimit ?? 1}
+                </span>
+              </Link>
+            )}
+            {clientProfiles.length >= (user.profileLimit ?? 1) && clientProfiles.length > 0 && (
+              <div className="px-3 pt-2 text-[10px] leading-relaxed text-emerald-400/80">
+                Profile limit reached ({user.profileLimit ?? 1}). Need another (e.g. Export + Import)?
+                Contact your account manager.
+              </div>
+            )}
+          </nav>
+
+          <div className="border-t border-white/10 p-4">
+            <div className="mb-3 flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-600 text-xs font-bold text-white shadow-lg">
+                {initials}
+              </div>
+              <div className="min-w-0 leading-tight">
+                <div className="truncate text-sm font-semibold text-white">{user.name}</div>
+                <div className="text-[11px] text-emerald-300">Client</div>
+              </div>
+            </div>
+            <button
+              onClick={logout}
+              className="w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs font-medium text-emerald-100 transition hover:bg-white/15 hover:text-white"
+            >
+              Sign out
+            </button>
+          </div>
+        </aside>
+        <main className="flex-1 overflow-auto bg-emerald-50/40 px-8 py-8">{children}</main>
+        {toast && (
+          <button
+            onClick={() => setToast('')}
+            className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-xl bg-emerald-700 px-4 py-3 text-sm font-medium text-white shadow-lg"
+          >
+            {toast}
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen">

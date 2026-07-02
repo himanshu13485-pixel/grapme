@@ -13,11 +13,12 @@ export interface AuthUser {
   id: string;
   name: string;
   email: string;
-  role: 'SUPER_ADMIN' | 'SUB_ADMIN' | 'USER';
+  role: 'SUPER_ADMIN' | 'SUB_ADMIN' | 'USER' | 'CLIENT';
   tenantId: string;
   fullAccess?: boolean;
   accessModules?: string[];
   canDelete?: boolean;
+  profileLimit?: number;
 }
 
 interface LoginResponse {
@@ -115,5 +116,6 @@ export function useCanDelete(): boolean {
   if (!user) return false;
   if (user.role === 'SUPER_ADMIN') return true;
   if (user.role === 'SUB_ADMIN') return !!(user.fullAccess || user.canDelete);
+  if (user.role === 'CLIENT') return false; // deletes go through admin
   return true;
 }

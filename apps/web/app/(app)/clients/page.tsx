@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, FormEvent } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
-import { useCanDelete } from '@/lib/auth';
+import { useCanDelete, useAuth } from '@/lib/auth';
 import { PageHeader, EmptyState, Modal, StatusBadge, Pagination } from '@/components/ui';
 
 interface Client {
@@ -39,6 +39,11 @@ export default function ClientsPage() {
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 12;
   const canDelete = useCanDelete();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'SUB_ADMIN';
+  const isClient = user?.role === 'CLIENT';
+  // A client may self-create profiles up to their billable limit.
+  const clientCanAdd = isClient && clients.length < (user?.profileLimit ?? 1);
 
   function load() {
     api.get<Client[]>('/clients').then(setClients).catch(() => {});
@@ -82,12 +87,18 @@ export default function ClientsPage() {
   return (
     <div>
       <PageHeader
-        title="Clients Workspace"
-        subtitle="Each client runs its own mailbox group, sequence, and monthly cohorts"
+        title={isClient ? 'My Profiles' : 'Clients Workspace'}
+        subtitle={
+          isClient
+            ? `Each profile runs its own mailbox group, sequence, and monthly cohorts (${clients.length}/${user?.profileLimit ?? 1} used)`
+            : 'Each client runs its own mailbox group, sequence, and monthly cohorts'
+        }
         action={
-          <button className="btn-primary" onClick={() => setShow(true)}>
-            + New client
-          </button>
+          isAdmin || clientCanAdd ? (
+            <button className="btn-primary" onClick={() => setShow(true)}>
+              {isClient ? '+ Add profile' : '+ New client'}
+            </button>
+          ) : null
         }
       />
 
@@ -144,16 +155,18 @@ export default function ClientsPage() {
                   >
                     View
                   </button>
-                  <button
-                    type="button"
-                    className="text-brand-600 hover:underline"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      setEditing(c);
-                    }}
-                  >
-                    Edit
-                  </button>
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      className="text-brand-600 hover:underline"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setEditing(c);
+                      }}
+                    >
+                      Edit
+                    </button>
+                  )}
                   {canDelete && (
                     <button
                       type="button"
@@ -450,6 +463,31 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
   });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [loginEmail, setLoginEmail] = useState(client.email ?? '');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginNote, setLoginNote] = useState('');
+  const [loginBusy, setLoginBusy] = useState(false);
+
+  async function saveLogin() {
+    if (!loginEmail || !loginPassword) {
+      setLoginNote('Enter an email and password.');
+      return;
+    }
+    setLoginBusy(true);
+    setLoginNote('');
+    try {
+      await api.post(`/clients/${client.id}/login`, {
+        email: loginEmail,
+        password: loginPassword,
+      });
+      setLoginNote(`Client login set: ${loginEmail}`);
+      setLoginPassword('');
+    } catch (e) {
+      setLoginNote(e instanceof Error ? e.message : 'Failed');
+    } finally {
+      setLoginBusy(false);
+    }
+  }
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -565,6 +603,35 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
               Weekdays only
             </label>
           </div>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-4">
+        <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-emerald-700">
+          Client portal login
+        </div>
+        <p className="mb-3 text-xs text-slate-500">
+          Give this client a login to their own scoped panel (this profile only, no delete).
+          Each profile is one login; a client wanting Export <em>and</em> Import gets two
+          profiles — billed separately.
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="label">Login email</label>
+            <input type="email" className="input" value={loginEmail}
+              onChange={(e) => setLoginEmail(e.target.value)} placeholder="client@company.com" />
+          </div>
+          <div>
+            <label className="label">Set / reset password</label>
+            <input type="password" className="input" value={loginPassword}
+              onChange={(e) => setLoginPassword(e.target.value)} placeholder="Min 6 characters" />
+          </div>
+        </div>
+        <div className="mt-3 flex items-center gap-3">
+          <button type="button" className="btn-ghost text-xs" onClick={saveLogin} disabled={loginBusy}>
+            {loginBusy ? 'Saving…' : 'Create / update client login'}
+          </button>
+          {loginNote && <span className="text-xs text-slate-500">{loginNote}</span>}
         </div>
       </div>
 
