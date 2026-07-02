@@ -38,7 +38,9 @@ export function PageHeader({
   return (
     <div className="mb-6 flex items-end justify-between">
       <div>
-        <h1 className="text-2xl font-semibold text-slate-900">{title}</h1>
+        <h1 className="bg-gradient-to-r from-slate-900 via-brand-800 to-accent-700 bg-clip-text text-2xl font-bold tracking-tight text-transparent">
+          {title}
+        </h1>
         {subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}
       </div>
       {action}

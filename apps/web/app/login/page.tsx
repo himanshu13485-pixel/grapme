@@ -30,13 +30,18 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-brand-50 to-slate-100 px-4">
-      <div className="card w-full max-w-md p-8">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-sidebar-gradient px-4">
+      {/* Ambient glows */}
+      <div className="pointer-events-none absolute -left-32 -top-32 h-96 w-96 rounded-full bg-accent-500/30 blur-3xl" />
+      <div className="pointer-events-none absolute -bottom-32 -right-32 h-96 w-96 rounded-full bg-brand-500/30 blur-3xl" />
+      <div className="relative z-10 w-full max-w-md rounded-2xl border border-white/10 bg-white/95 p-8 shadow-2xl backdrop-blur">
         <div className="mb-6 text-center">
-          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-brand-600 text-xl font-bold text-white">
-            ✉
+          <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-gradient text-2xl font-black text-white shadow-glow">
+            G
           </div>
-          <h1 className="text-xl font-semibold">Automated Email Outreach</h1>
+          <h1 className="bg-gradient-to-r from-brand-700 to-accent-600 bg-clip-text text-2xl font-extrabold tracking-tight text-transparent">
+            GRAPOUT
+          </h1>
           <p className="mt-1 text-sm text-slate-500">
             {mode === 'login'
               ? 'Sign in to your workspace'
