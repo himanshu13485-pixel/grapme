@@ -127,7 +127,7 @@ export class ApprovalsService {
     ]);
 
     // Resolve every referenced clientId to a name in one query.
-    const clientIds = new Set<string>();
+    const clientIds = new Set<string>(idsOf(ApprovalEntity.CLIENT_DELETE));
     mailboxes.forEach((m) => m.clientId && clientIds.add(m.clientId));
     imports.forEach((j) => j.clientId && clientIds.add(j.clientId));
     campaigns.forEach((c) => c.clientId && clientIds.add(c.clientId));
@@ -208,6 +208,11 @@ export class ApprovalsService {
         case ApprovalEntity.MESSAGE_DELETE:
           if (mg.has(a.entityId)) out.set(a.id, mg.get(a.entityId)!);
           break;
+        case ApprovalEntity.CLIENT_DELETE: {
+          const n = clientName.get(a.entityId);
+          if (n) out.set(a.id, { target: `Delete client: ${n}`, clientName: n });
+          break;
+        }
       }
     }
     return out;
@@ -313,6 +318,13 @@ export class ApprovalsService {
         // Approve = carry out the requested deletion; reject = keep the message.
         if (approved) {
           await this.prisma.emailMessage.deleteMany({ where: { id: entityId } });
+        }
+        break;
+      case ApprovalEntity.CLIENT_DELETE:
+        // Approve = delete the client (cohorts/sequences/enrollments cascade;
+        // mailboxes/contacts/lists/templates/campaigns are kept + unlinked).
+        if (approved) {
+          await this.prisma.client.deleteMany({ where: { id: entityId } });
         }
         break;
     }

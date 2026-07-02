@@ -26,6 +26,7 @@ const TYPE_LABEL: Record<string, string> = {
   SCHEDULE: 'Campaign schedule',
   SEQUENCE: 'Follow-up sequence',
   MESSAGE_DELETE: 'Message deletion',
+  CLIENT_DELETE: 'Client deletion',
 };
 function typeLabel(t: string) {
   return TYPE_LABEL[t] ?? t;

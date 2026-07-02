@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ProgramsService } from './programs.service';
 import { ProgramsController } from './programs.controller';
 import { MailerModule } from '../sending/mailer.module';
+import { ApprovalsModule } from '../approvals/approvals.module';
 
 /**
  * GRAPOUT cohort engine: clients, mailbox groups, sequences, and monthly
@@ -9,7 +10,7 @@ import { MailerModule } from '../sending/mailer.module';
  * drip tick lives in SendingModule and is only active when the engine is on.
  */
 @Module({
-  imports: [MailerModule],
+  imports: [MailerModule, ApprovalsModule],
   providers: [ProgramsService],
   controllers: [ProgramsController],
   exports: [ProgramsService],

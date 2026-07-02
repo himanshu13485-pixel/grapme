@@ -51,6 +51,11 @@ export class ProgramsController {
     return this.programs.updateClient(user, id, dto);
   }
 
+  @Delete('clients/:id')
+  deleteClient(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.programs.deleteClient(user, id);
+  }
+
   // Mailbox group
   @Post('clients/:id/mailboxes')
   assignMailbox(

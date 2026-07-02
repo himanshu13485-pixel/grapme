@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, FormEvent } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
+import { useCanDelete } from '@/lib/auth';
 import { PageHeader, EmptyState, Modal, StatusBadge, Pagination } from '@/components/ui';
 
 interface Client {
@@ -37,11 +38,31 @@ export default function ClientsPage() {
   const [invoiceQ, setInvoiceQ] = useState('');
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 12;
+  const canDelete = useCanDelete();
 
   function load() {
     api.get<Client[]>('/clients').then(setClients).catch(() => {});
   }
   useEffect(load, []);
+
+  async function deleteClient(c: Client) {
+    if (
+      !confirm(
+        `Delete client "${c.name}"?\n\nThis permanently deletes its COHORTS (and their sequences & enrollments). Mailboxes, contacts, lists, templates and campaigns are kept but unlinked from the client.`,
+      )
+    )
+      return;
+    try {
+      const r = await api.del<{ deleted?: boolean; pendingApproval?: boolean }>(`/clients/${c.id}`);
+      if (r?.pendingApproval) {
+        alert('Delete request sent to a super admin for approval.');
+        return;
+      }
+      load();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to delete client');
+    }
+  }
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -133,6 +154,18 @@ export default function ClientsPage() {
                   >
                     Edit
                   </button>
+                  {canDelete && (
+                    <button
+                      type="button"
+                      className="text-rose-600 hover:underline"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        deleteClient(c);
+                      }}
+                    >
+                      Delete
+                    </button>
+                  )}
                 </span>
               </div>
             </Link>

@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
+  ApprovalEntity,
   Client,
   EmailAccount,
   EnrollmentStatus,
@@ -13,6 +14,7 @@ import {
   MailboxStatus,
   MessageDirection,
   MessageStatus,
+  Role,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailerService } from '../sending/mailer.service';
@@ -20,6 +22,7 @@ import { renderTemplate } from '../templates/templates.service';
 import { instrumentHtml } from '../sending/tracking.util';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { ActivityService } from '../common/services/activity.service';
+import { ApprovalsService } from '../approvals/approvals.service';
 import { GeoService } from '../common/services/geo.service';
 import {
   AssignMailboxDto,
@@ -69,7 +72,36 @@ export class ProgramsService {
     private config: ConfigService,
     private activity: ActivityService,
     private geo: GeoService,
+    private approvals: ApprovalsService,
   ) {}
+
+  /**
+   * Delete a client. Super admins delete immediately (cohorts/sequences/
+   * enrollments cascade; mailboxes/contacts/lists/templates/campaigns are kept
+   * and unlinked). A sub-admin's delete is submitted for super-admin approval.
+   */
+  async deleteClient(user: AuthUser, id: string) {
+    const client = await this.assertClient(user, id);
+    if (user.role === Role.SUPER_ADMIN) {
+      await this.prisma.client.delete({ where: { id } });
+      await this.activity.log({
+        tenantId: user.tenantId,
+        actorId: user.userId,
+        action: 'DELETE_CLIENT',
+        entityType: 'Client',
+        entityId: id,
+        before: { name: client.name },
+      });
+      return { ok: true, deleted: true };
+    }
+    await this.approvals.submit({
+      tenantId: user.tenantId,
+      submittedById: user.userId,
+      entityType: ApprovalEntity.CLIENT_DELETE,
+      entityId: id,
+    });
+    return { ok: true, pendingApproval: true };
+  }
 
   /** Geo breakdown of opens/clicks for a client (optionally one cohort). */
   async cohortGeo(user: AuthUser, clientId: string, cohortId?: string) {
