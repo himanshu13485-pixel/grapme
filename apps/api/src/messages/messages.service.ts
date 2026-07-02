@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { MessageDirection, MessageStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
@@ -96,6 +96,17 @@ export class MessagesService {
       data: { readAt: new Date() },
     });
     return { marked: res.count };
+  }
+
+  /** Delete a message (must belong to the caller's tenant). Events cascade. */
+  async remove(user: AuthUser, id: string) {
+    const msg = await this.prisma.emailMessage.findFirst({
+      where: { id, tenantId: user.tenantId },
+      select: { id: true },
+    });
+    if (!msg) throw new NotFoundException('Message not found');
+    await this.prisma.emailMessage.delete({ where: { id } });
+    return { ok: true };
   }
 
   async inbox(user: AuthUser, clientId?: string) {

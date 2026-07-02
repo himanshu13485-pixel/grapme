@@ -1,4 +1,12 @@
-import { Controller, Get, HttpCode, Post, Query } from '@nestjs/common';
+import {
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { MessagesService } from './messages.service';
 import { InboundMailService } from './inbound-mail.service';
 import {
@@ -57,5 +65,11 @@ export class MessagesController {
   @Get('inbox')
   inbox(@CurrentUser() user: AuthUser, @Query('clientId') clientId?: string) {
     return this.messages.inbox(user, clientId);
+  }
+
+  /** Delete a single message from any folder (its events cascade). */
+  @Delete(':id')
+  remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.messages.remove(user, id);
   }
 }

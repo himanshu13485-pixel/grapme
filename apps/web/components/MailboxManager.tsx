@@ -2,6 +2,7 @@
 
 import { Fragment, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
+import { useCanDelete } from '@/lib/auth';
 import { PageHeader, EmptyState } from '@/components/ui';
 
 interface Message {
@@ -30,6 +31,7 @@ type TabKey = (typeof TABS)[number]['key'];
 /** Inbox / Sent / etc. across mailboxes. When `clientId` is set, only that
  *  client's mail (its mailboxes + contacts) is shown. */
 export function MailboxManager({ clientId }: { clientId?: string }) {
+  const canDelete = useCanDelete();
   const [tab, setTab] = useState<TabKey>('inbox');
   const [messages, setMessages] = useState<Message[]>([]);
   const [open, setOpen] = useState<string | null>(null);
@@ -69,6 +71,17 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, clientId]);
+
+  async function deleteMessage(id: string) {
+    if (!confirm('Delete this message permanently?')) return;
+    try {
+      await api.del(`/mailbox/${id}`);
+      setMessages((prev) => prev.filter((m) => m.id !== id));
+      if (typeof window !== 'undefined') window.dispatchEvent(new Event('inbox-read'));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to delete');
+    }
+  }
 
   // Pulls new mail straight from IMAP now (instead of waiting for the ~5-min
   // background poll), then reloads the list.
@@ -176,6 +189,7 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
                 <th className="px-5 py-3">{isInbox ? 'To mailbox' : 'Campaign'}</th>
                 <th className="px-5 py-3">Status</th>
                 <th className="px-5 py-3">When</th>
+                {canDelete && <th className="px-5 py-3"></th>}
               </tr>
             </thead>
             <tbody>
@@ -203,10 +217,23 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
                     <td className="px-5 py-3 text-slate-400">
                       {new Date(m.sentAt ?? m.createdAt).toLocaleString()}
                     </td>
+                    {canDelete && (
+                      <td className="px-5 py-3 text-right">
+                        <button
+                          className="btn-ghost text-xs text-rose-600"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteMessage(m.id);
+                          }}
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    )}
                   </tr>
                   {isInbox && open === m.id && (
                     <tr className="bg-slate-50">
-                      <td colSpan={5} className="px-6 py-4">
+                      <td colSpan={canDelete ? 6 : 5} className="px-6 py-4">
                         <div className="mb-2 text-xs text-slate-400">
                           From {m.fromAddress ?? '—'} · received{' '}
                           {new Date(m.createdAt).toLocaleString()}
