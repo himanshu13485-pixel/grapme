@@ -4,9 +4,17 @@ import {
   Delete,
   Get,
   Param,
+  Patch,
   Post,
 } from '@nestjs/common';
-import { IsOptional, IsString } from 'class-validator';
+import {
+  IsArray,
+  IsBoolean,
+  IsEmail,
+  IsOptional,
+  IsString,
+  MinLength,
+} from 'class-validator';
 import { Role } from '@prisma/client';
 import { SubAdminsService } from './sub-admins.service';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -20,6 +28,22 @@ class AssignDto {
   @IsOptional() @IsString() assignedCampaignId?: string;
 }
 
+class CreateSubAdminDto {
+  @IsString() name: string;
+  @IsEmail() email: string;
+  @MinLength(6) password: string;
+  @IsOptional() @IsBoolean() fullAccess?: boolean;
+  @IsOptional() @IsArray() @IsString({ each: true }) accessModules?: string[];
+}
+
+class UpdateSubAdminDto {
+  @IsOptional() @IsString() name?: string;
+  @IsOptional() @MinLength(6) password?: string;
+  @IsOptional() @IsString() status?: string;
+  @IsOptional() @IsBoolean() fullAccess?: boolean;
+  @IsOptional() @IsArray() @IsString({ each: true }) accessModules?: string[];
+}
+
 @Roles(Role.SUPER_ADMIN)
 @Controller('sub-admins')
 export class SubAdminsController {
@@ -28,6 +52,25 @@ export class SubAdminsController {
   @Get()
   list(@CurrentUser('tenantId') tenantId: string) {
     return this.subAdmins.list(tenantId);
+  }
+
+  @Post()
+  create(@CurrentUser() user: AuthUser, @Body() dto: CreateSubAdminDto) {
+    return this.subAdmins.create(user, dto);
+  }
+
+  @Patch(':id')
+  update(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: UpdateSubAdminDto,
+  ) {
+    return this.subAdmins.update(user, id, dto);
+  }
+
+  @Delete(':id')
+  remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.subAdmins.remove(user, id);
   }
 
   @Get(':id/assignments')

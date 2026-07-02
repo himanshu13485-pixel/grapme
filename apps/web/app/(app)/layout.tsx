@@ -6,20 +6,23 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { api } from '@/lib/api';
 
+// `superOnly` items are hidden from sub-admins entirely. All other items are
+// gated for sub-admins by their accessModules (unless fullAccess). `module` is
+// the access key checked against a sub-admin's granted modules.
 const NAV = [
-  { href: '/dashboard', label: 'Dashboard', icon: '▦' },
-  { href: '/clients', label: 'Clients Workspace', icon: '🏢', admin: true },
-  { href: '/cohort-schedule', label: 'Cohort Schedule', icon: '📅', admin: true },
-  { href: '/campaigns', label: 'Campaigns', icon: '✈' },
-  { href: '/contacts', label: 'Contacts', icon: '☰' },
-  { href: '/templates', label: 'Templates', icon: '❏' },
-  { href: '/mailbox', label: 'Inbox & Sent', icon: '📥', inboxBadge: true },
-  { href: '/mailboxes', label: 'Mailboxes', icon: '✉' },
-  { href: '/deliverability', label: 'Deliverability', icon: '◎' },
-  { href: '/approvals', label: 'Approvals', icon: '✓', admin: true },
-  { href: '/compliance', label: 'Compliance', icon: '⚖', admin: true },
-  { href: '/sub-admins', label: 'Sub Admins', icon: '⚇', admin: true },
-  { href: '/activity-logs', label: 'Activity Logs', icon: '◷', admin: true },
+  { href: '/dashboard', label: 'Dashboard', icon: '▦', module: 'dashboard' },
+  { href: '/clients', label: 'Clients Workspace', icon: '🏢', admin: true, module: 'clients' },
+  { href: '/cohort-schedule', label: 'Cohort Schedule', icon: '📅', admin: true, module: 'cohort-schedule' },
+  { href: '/campaigns', label: 'Campaigns', icon: '✈', module: 'campaigns' },
+  { href: '/contacts', label: 'Contacts', icon: '☰', module: 'contacts' },
+  { href: '/templates', label: 'Templates', icon: '❏', module: 'templates' },
+  { href: '/mailbox', label: 'Inbox & Sent', icon: '📥', inboxBadge: true, module: 'mailbox' },
+  { href: '/mailboxes', label: 'Mailboxes', icon: '✉', module: 'mailboxes' },
+  { href: '/deliverability', label: 'Deliverability', icon: '◎', module: 'deliverability' },
+  { href: '/approvals', label: 'Approvals', icon: '✓', admin: true, module: 'approvals' },
+  { href: '/compliance', label: 'Compliance', icon: '⚖', admin: true, module: 'compliance' },
+  { href: '/sub-admins', label: 'Sub Admins', icon: '⚇', admin: true, superOnly: true, module: 'sub-admins' },
+  { href: '/activity-logs', label: 'Activity Logs', icon: '◷', admin: true, module: 'activity-logs' },
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
@@ -87,8 +90,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const isAdmin = user.role === 'SUPER_ADMIN' || user.role === 'SUB_ADMIN';
-  const nav = NAV.filter((n) => !n.admin || isAdmin);
+  const nav = NAV.filter((n) => {
+    if (user.role === 'SUPER_ADMIN') return true;
+    if (user.role === 'SUB_ADMIN') {
+      if (n.superOnly) return false; // e.g. managing other sub-admins
+      if (n.href === '/dashboard') return true; // always available
+      if (user.fullAccess) return true;
+      return (user.accessModules ?? []).includes(n.module);
+    }
+    // Regular user: only non-admin sections.
+    return !n.admin;
+  });
 
   return (
     <div className="flex min-h-screen">

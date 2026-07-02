@@ -173,6 +173,8 @@ model User {
   passwordHash   String
   role           Role       @default(USER)
   status         UserStatus @default(ACTIVE)
+  fullAccess     Boolean    @default(false) // sub-admin: access to everything
+  accessModules  Json       @default("[]")  // sub-admin: allowed module keys
   timezone       String     @default("UTC")
   twoFactorSecret String?
   avatarUrl      String?

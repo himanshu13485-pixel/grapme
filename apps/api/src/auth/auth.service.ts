@@ -230,6 +230,8 @@ export class AuthService {
         timezone: true,
         avatarUrl: true,
         lastLoginAt: true,
+        fullAccess: true,
+        accessModules: true,
       },
     });
     if (!user) throw new UnauthorizedException();
