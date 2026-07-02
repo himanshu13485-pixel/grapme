@@ -16,7 +16,6 @@ const NAV = [
   { href: '/mailbox', label: 'Inbox & Sent', icon: '📥', inboxBadge: true },
   { href: '/mailboxes', label: 'Mailboxes', icon: '✉' },
   { href: '/deliverability', label: 'Deliverability', icon: '◎' },
-  { href: '/credits', label: 'Credits', icon: '◈' },
   { href: '/approvals', label: 'Approvals', icon: '✓', admin: true },
   { href: '/compliance', label: 'Compliance', icon: '⚖', admin: true },
   { href: '/sub-admins', label: 'Sub Admins', icon: '⚇', admin: true },

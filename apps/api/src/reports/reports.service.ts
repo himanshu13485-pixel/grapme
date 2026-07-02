@@ -156,13 +156,67 @@ export class ReportsService {
     }));
   }
 
-  activityLogs(user: AuthUser, take = 250) {
-    return this.prisma.activityLog.findMany({
+  async activityLogs(user: AuthUser, take = 250) {
+    const logs = await this.prisma.activityLog.findMany({
       where: { tenantId: user.tenantId },
       orderBy: { occurredAt: 'desc' },
       take,
       include: { actor: { select: { name: true, email: true, role: true } } },
     });
+    const clientNames = await this.resolveLogClients(logs);
+    return logs.map((l) => ({ ...l, clientName: clientNames.get(l.id) ?? null }));
+  }
+
+  /** Best-effort owning-client (company) name per activity-log entry. */
+  private async resolveLogClients(
+    logs: { id: string; entityType: string; entityId: string | null; after: unknown }[],
+  ): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    const idsOf = (types: string[]) =>
+      logs
+        .filter((l) => l.entityId && types.includes(l.entityType))
+        .map((l) => l.entityId!) as string[];
+
+    const [cohorts, mailboxes, campaigns, templates, contacts, imports, lists] =
+      await Promise.all([
+        this.prisma.cohort.findMany({ where: { id: { in: idsOf(['Cohort']) } }, select: { id: true, clientId: true } }),
+        this.prisma.emailAccount.findMany({ where: { id: { in: idsOf(['EmailAccount', 'SMTP']) } }, select: { id: true, clientId: true } }),
+        this.prisma.campaign.findMany({ where: { id: { in: idsOf(['Campaign', 'CAMPAIGN']) } }, select: { id: true, clientId: true } }),
+        this.prisma.emailTemplate.findMany({ where: { id: { in: idsOf(['EmailTemplate']) } }, select: { id: true, clientId: true } }),
+        this.prisma.contact.findMany({ where: { id: { in: idsOf(['Contact']) } }, select: { id: true, clientId: true } }),
+        this.prisma.importJob.findMany({ where: { id: { in: idsOf(['ImportJob', 'IMPORT']) } }, select: { id: true, clientId: true } }),
+        this.prisma.contactList.findMany({ where: { id: { in: idsOf(['ContactList']) } }, select: { id: true, clientId: true } }),
+      ]);
+
+    const entClient = new Map<string, string | null>();
+    for (const rows of [cohorts, mailboxes, campaigns, templates, contacts, imports, lists])
+      for (const r of rows) entClient.set(r.id, r.clientId);
+
+    // Resolve all referenced client ids (+ 'Client' entities themselves) to names.
+    const clientIds = new Set<string>([...idsOf(['Client'])]);
+    entClient.forEach((cid) => cid && clientIds.add(cid));
+    const clientRows = await this.prisma.client.findMany({
+      where: { id: { in: [...clientIds] } },
+      select: { id: true, name: true },
+    });
+    const nameById = new Map(clientRows.map((c) => [c.id, c.name]));
+
+    for (const l of logs) {
+      let name: string | undefined;
+      if (l.entityType === 'Client' && l.entityId) {
+        name = nameById.get(l.entityId);
+      } else if (l.entityId) {
+        const cid = entClient.get(l.entityId);
+        if (cid) name = nameById.get(cid);
+      }
+      // Fallback: some logs embed the client name in their payload.
+      if (!name) {
+        const after = l.after as { client?: string } | null;
+        if (after?.client) name = after.client;
+      }
+      if (name) out.set(l.id, name);
+    }
+    return out;
   }
 
   /** Builds the campaign/user where-filters for the caller's scope. */

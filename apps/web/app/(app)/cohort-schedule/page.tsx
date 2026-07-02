@@ -32,11 +32,37 @@ export default function CohortSchedulePage() {
   const [stageFilter, setStageFilter] = useState<'ALL' | 'INITIAL' | 'FU'>('ALL');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState('');
   const PAGE_SIZE = 50;
 
-  useEffect(() => {
+  function loadAgenda() {
     api.get<AgendaRow[]>('/programs/agenda').then(setRows).catch(() => setRows([]));
-  }, []);
+  }
+  useEffect(loadAgenda, []);
+
+  async function controlAll(action: 'pause' | 'resume' | 'stop') {
+    const verb =
+      action === 'pause' ? 'PAUSE' : action === 'resume' ? 'RESUME' : 'STOP';
+    const warn =
+      action === 'stop'
+        ? 'STOP ALL cohorts permanently and end their active contacts? This cannot be undone.'
+        : `${verb} ALL cohorts across every client now?`;
+    if (!confirm(warn)) return;
+    setBusy(true);
+    setNote('');
+    try {
+      const r = await api.post<{ action: string; affected: number }>(
+        `/programs/cohorts/${action}`,
+      );
+      setNote(`${verb.toLowerCase()}d ${r.affected} cohort(s).`);
+      loadAgenda();
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : 'Failed');
+    } finally {
+      setBusy(false);
+    }
+  }
 
   const clientNames = useMemo(
     () => [...new Set(rows.map((r) => r.clientName))].sort(),
@@ -111,6 +137,28 @@ export default function CohortSchedulePage() {
           </div>
         }
       />
+
+      {/* Emergency master controls — pause/resume/stop every cohort at once. */}
+      <div className="mb-5 flex flex-wrap items-center gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3">
+        <span className="text-sm font-semibold text-rose-700">⚠ Emergency controls</span>
+        <span className="text-xs text-rose-600">Act on every client&apos;s cohorts at once.</span>
+        <div className="ml-auto flex items-center gap-2">
+          {note && <span className="text-xs text-slate-500">{note}</span>}
+          <button className="btn-ghost text-xs" disabled={busy} onClick={() => controlAll('pause')}>
+            ⏸ Pause all
+          </button>
+          <button className="btn-ghost text-xs text-emerald-700" disabled={busy} onClick={() => controlAll('resume')}>
+            ▶ Resume all
+          </button>
+          <button
+            className="rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-50"
+            disabled={busy}
+            onClick={() => controlAll('stop')}
+          >
+            ⏹ Stop all
+          </button>
+        </div>
+      </div>
 
       <div className="mb-5 flex flex-wrap items-center gap-3">
         {range === 'custom' && (

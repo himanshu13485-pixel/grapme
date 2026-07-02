@@ -10,6 +10,7 @@ interface Log {
   entityType: string;
   entityId?: string;
   occurredAt: string;
+  clientName?: string | null;
   before?: Record<string, unknown> | null;
   after?: Record<string, unknown> | null;
   ipAddress?: string | null;
@@ -175,6 +176,7 @@ export default function ActivityLogsPage() {
               <tr>
                 <th className="px-5 py-3">Action</th>
                 <th className="px-5 py-3">Target</th>
+                <th className="px-5 py-3">Company</th>
                 <th className="px-5 py-3">Who</th>
                 <th className="px-5 py-3">When</th>
               </tr>
@@ -208,6 +210,15 @@ export default function ActivityLogsPage() {
                         <span className="ml-2 text-xs text-slate-400">{l.entityType}</span>
                       </td>
                       <td className="px-5 py-3">
+                        {l.clientName ? (
+                          <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
+                            {l.clientName}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3">
                         <div className="flex items-center gap-2">
                           <span className="text-slate-700">{l.actor?.name ?? 'System'}</span>
                           <span
@@ -226,7 +237,7 @@ export default function ActivityLogsPage() {
                     </tr>
                     {expandable && open === l.id && (
                       <tr className="bg-slate-50">
-                        <td colSpan={4} className="px-6 py-4">
+                        <td colSpan={5} className="px-6 py-4">
                           <div className="mb-2 text-xs font-medium text-slate-500">
                             What changed
                           </div>

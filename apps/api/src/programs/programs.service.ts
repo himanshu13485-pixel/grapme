@@ -810,6 +810,53 @@ export class ProgramsService {
     return { ok: true };
   }
 
+  /**
+   * Emergency control: pause / resume / stop EVERY cohort in the tenant at once.
+   *  - pause: all RUNNING → PAUSED (reversible)
+   *  - resume: all PAUSED → RUNNING
+   *  - stop: all RUNNING/PAUSED → STOPPED and end their active enrollments
+   */
+  async controlAllCohorts(user: AuthUser, action: 'pause' | 'resume' | 'stop') {
+    const tenantId = user.tenantId;
+    let affected = 0;
+    if (action === 'pause') {
+      const r = await this.prisma.cohort.updateMany({
+        where: { tenantId, status: 'RUNNING' },
+        data: { status: 'PAUSED' },
+      });
+      affected = r.count;
+    } else if (action === 'resume') {
+      const r = await this.prisma.cohort.updateMany({
+        where: { tenantId, status: 'PAUSED' },
+        data: { status: 'RUNNING' },
+      });
+      affected = r.count;
+    } else {
+      const cohorts = await this.prisma.cohort.findMany({
+        where: { tenantId, status: { in: ['RUNNING', 'PAUSED'] } },
+        select: { id: true },
+      });
+      const ids = cohorts.map((c) => c.id);
+      const r = await this.prisma.cohort.updateMany({
+        where: { id: { in: ids } },
+        data: { status: 'STOPPED', endedAt: new Date() },
+      });
+      await this.prisma.enrollment.updateMany({
+        where: { cohortId: { in: ids }, status: EnrollmentStatus.ACTIVE },
+        data: { status: EnrollmentStatus.STOPPED },
+      });
+      affected = r.count;
+    }
+    await this.activity.log({
+      tenantId,
+      actorId: user.userId,
+      action: `${action.toUpperCase()}_ALL_COHORTS`,
+      entityType: 'Cohort',
+      after: { affected },
+    });
+    return { action, affected };
+  }
+
   /** Send now: make this cohort's active contacts due immediately, then run the
    *  engine. Per-mailbox daily caps still throttle the actual volume. */
   async sendCohortNow(user: AuthUser, cohortId: string) {
@@ -953,8 +1000,42 @@ export class ProgramsService {
       }
       const nowMs = now.getTime();
 
+      // Never email contacts who unsubscribed / bounced or are on the tenant
+      // suppression list — mirror the campaign path for the cohort engine.
+      const contactMap = new Map(
+        (
+          await this.prisma.contact.findMany({
+            where: { id: { in: enrollments.map((e) => e.contactId) } },
+            select: { id: true, email: true, status: true },
+          })
+        ).map((c) => [c.id, c]),
+      );
+      const suppressed = new Set(
+        (
+          await this.prisma.suppression.findMany({
+            where: { tenantId: client.tenantId },
+            select: { email: true },
+          })
+        ).map((s) => s.email.toLowerCase()),
+      );
+
       let rot = 0;
       for (const enr of enrollments) {
+        const contact = contactMap.get(enr.contactId);
+        if (
+          !contact ||
+          contact.status !== 'ACTIVE' ||
+          suppressed.has(contact.email.toLowerCase())
+        ) {
+          // Opted out / suppressed: stop this enrollment so it's never retried.
+          await this.prisma.enrollment.update({
+            where: { id: enr.id },
+            data: { status: EnrollmentStatus.STOPPED },
+          });
+          skipped++;
+          continue;
+        }
+
         // Stop if the contact has replied (any recorded REPLY for them).
         const replied = await this.prisma.emailEvent.findFirst({
           where: {

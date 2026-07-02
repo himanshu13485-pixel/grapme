@@ -187,4 +187,13 @@ export class ProgramsController {
   runAutoCohorts() {
     return this.programs.runAutoCohorts();
   }
+
+  // Emergency: pause / resume / stop every cohort in the tenant at once.
+  @Post('programs/cohorts/:action')
+  controlAll(
+    @CurrentUser() user: AuthUser,
+    @Param('action') action: 'pause' | 'resume' | 'stop',
+  ) {
+    return this.programs.controlAllCohorts(user, action);
+  }
 }
