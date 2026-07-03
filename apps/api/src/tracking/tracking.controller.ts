@@ -47,9 +47,28 @@ export class TrackingController {
     @Ip() ip: string,
     @Headers('user-agent') ua: string,
   ) {
-    const target = url ? decodeURIComponent(url) : 'about:blank';
+    // Only ever redirect to http(s) targets — never javascript:/data:/file: or
+    // malformed URLs — so the tracking domain can't be abused for open redirects.
+    const target = this.safeRedirect(url);
     await this.tracking.recordClick(messageId, target, ip, ua);
     return { url: target, statusCode: 302 };
+  }
+
+  private safeRedirect(raw?: string): string {
+    if (!raw) return 'about:blank';
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(raw);
+    } catch {
+      return 'about:blank';
+    }
+    try {
+      const u = new URL(decoded);
+      if (u.protocol === 'http:' || u.protocol === 'https:') return decoded;
+    } catch {
+      /* not an absolute URL */
+    }
+    return 'about:blank';
   }
 
   @Get('unsubscribe/:messageId')
