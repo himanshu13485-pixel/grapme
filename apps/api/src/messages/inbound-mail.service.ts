@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { ImapFlow } from 'imapflow';
 import {
   EnrollmentStatus,
@@ -6,9 +7,11 @@ import {
   MailboxStatus,
   MessageDirection,
   MessageStatus,
+  Role,
   SuppressionReason,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { MailerService } from '../sending/mailer.service';
 import { decryptCredential } from '../common/crypto/credential-crypto';
 
 /**
@@ -20,7 +23,11 @@ import { decryptCredential } from '../common/crypto/credential-crypto';
 export class InboundMailService {
   private readonly logger = new Logger(InboundMailService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private mailer: MailerService,
+    private config: ConfigService,
+  ) {}
 
   /** Poll every active IMAP mailbox across all tenants (background worker). */
   async syncAll(sinceDays = 1): Promise<void> {
@@ -131,6 +138,13 @@ export class InboundMailService {
                 if (rcpt) await this.handleBounce(mailbox.tenantId, rcpt);
               } else {
                 await this.recordReply(mailbox.tenantId, from);
+                // Alert the client (CC admin) that a reply landed. Never let a
+                // notification failure interrupt the poll.
+                try {
+                  await this.notifyClientOfReply(mailbox, from, subject);
+                } catch (err) {
+                  this.logger.warn(`Reply alert failed for ${from}: ${err}`);
+                }
               }
             }
           }
@@ -352,6 +366,87 @@ export class InboundMailService {
       },
     });
     this.logger.log(`Reply detected from ${fromEmail}`);
+  }
+
+  private webUrl(): string {
+    return (
+      this.config.get<string>('WEB_PUBLIC_URL') ||
+      this.config.get<string>('CORS_ORIGIN') ||
+      'http://localhost:3000'
+    );
+  }
+
+  /**
+   * Emails the client that a reply landed in their mailbox, CC'ing the tenant's
+   * admin(s). Sent from the tenant's report mailbox when set, else from the
+   * mailbox that received the reply. Best-effort: only fires for client-scoped
+   * mailboxes that have a reachable client email.
+   */
+  private async notifyClientOfReply(
+    mailbox: any,
+    fromEmail: string,
+    subject?: string,
+  ): Promise<void> {
+    if (!mailbox.clientId) return;
+    const client = await this.prisma.client.findUnique({
+      where: { id: mailbox.clientId },
+      include: { owner: { select: { email: true, name: true } } },
+    });
+    if (!client) return;
+    const clientEmail = client.owner?.email || client.email;
+    if (!clientEmail) return;
+
+    // CC the tenant's active super admin(s).
+    const admins = await this.prisma.user.findMany({
+      where: {
+        tenantId: mailbox.tenantId,
+        role: Role.SUPER_ADMIN,
+        status: 'ACTIVE',
+      },
+      select: { email: true },
+    });
+    const cc =
+      admins.map((a) => a.email).filter(Boolean).join(', ') || undefined;
+
+    // Prefer the tenant's report mailbox as the "admin side" sender.
+    let sender = mailbox;
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: mailbox.tenantId },
+    });
+    if (tenant?.reportMailboxId) {
+      const acct = await this.prisma.emailAccount.findUnique({
+        where: { id: tenant.reportMailboxId },
+      });
+      if (acct) sender = acct;
+    }
+
+    const safeSubject = subject?.trim() || '(no subject)';
+    await this.mailer.send({
+      account: sender,
+      to: clientEmail,
+      cc,
+      subject: `New reply received — ${client.name}`,
+      html: `
+        <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto">
+          <h2 style="color:#0f766e">You have a new reply</h2>
+          <p>A prospect just replied to your outreach for <b>${client.name}</b>.</p>
+          <table style="font-size:14px;color:#334155;margin:16px 0">
+            <tr><td style="color:#94a3b8;padding-right:12px">From</td><td>${fromEmail}</td></tr>
+            <tr><td style="color:#94a3b8;padding-right:12px">Subject</td><td>${safeSubject}</td></tr>
+            <tr><td style="color:#94a3b8;padding-right:12px">Mailbox</td><td>${mailbox.emailAddress}</td></tr>
+          </table>
+          <p style="margin:20px 0">
+            <a href="${this.webUrl()}/portal"
+               style="background:#0f766e;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600">
+              Open your portal
+            </a>
+          </p>
+          <p style="color:#94a3b8;font-size:12px">
+            You're receiving this because a reply arrived in your GRAPOUT mailbox.
+          </p>
+        </div>`,
+    });
+    this.logger.log(`Reply alert sent to ${clientEmail} (cc ${cc ?? 'none'})`);
   }
 
   /** Heuristic: is this inbound message a delivery-failure / bounce (DSN)? */
