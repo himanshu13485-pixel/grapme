@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, FormEvent } from 'react';
+import { useEffect, useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
+import { api } from '@/lib/api';
 
 export default function LoginPage() {
   const { login, register } = useAuth();
@@ -13,6 +14,18 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [allowSignup, setAllowSignup] = useState(true);
+
+  // Hide "Create workspace" when public admin signup is disabled on the server.
+  useEffect(() => {
+    api
+      .get<{ allowAdminSignup: boolean }>('/auth/config')
+      .then((c) => {
+        setAllowSignup(c.allowAdminSignup);
+        if (!c.allowAdminSignup) setMode('login');
+      })
+      .catch(() => {});
+  }, []);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -93,15 +106,17 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <p className="mt-6 text-center text-sm text-slate-500">
-          {mode === 'login' ? "Don't have a workspace? " : 'Already have one? '}
-          <button
-            className="font-medium text-brand-600 hover:underline"
-            onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
-          >
-            {mode === 'login' ? 'Create one' : 'Sign in'}
-          </button>
-        </p>
+        {allowSignup && (
+          <p className="mt-6 text-center text-sm text-slate-500">
+            {mode === 'login' ? "Don't have a workspace? " : 'Already have one? '}
+            <button
+              className="font-medium text-brand-600 hover:underline"
+              onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
+            >
+              {mode === 'login' ? 'Create one' : 'Sign in'}
+            </button>
+          </p>
+        )}
 
         <p className="mt-4 border-t border-slate-100 pt-4 text-center text-sm text-slate-500">
           Are you a client?{' '}

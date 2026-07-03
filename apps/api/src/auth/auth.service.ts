@@ -2,6 +2,7 @@ import {
   Injectable,
   Logger,
   BadRequestException,
+  ForbiddenException,
   UnauthorizedException,
   ConflictException,
 } from '@nestjs/common';
@@ -57,8 +58,16 @@ export class AuthService {
     });
   }
 
+  /** Whether public "create a new admin workspace" signup is allowed. */
+  adminSignupAllowed(): boolean {
+    return (this.config.get<string>('ALLOW_ADMIN_SIGNUP') ?? 'true') !== 'false';
+  }
+
   /** First user of a new tenant becomes SUPER_ADMIN. */
   async register(dto: RegisterDto) {
+    if (!this.adminSignupAllowed()) {
+      throw new ForbiddenException('Public registration is disabled.');
+    }
     const existing = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });

@@ -22,6 +22,13 @@ import {
 export class AuthController {
   constructor(private readonly auth: AuthService) {}
 
+  /** Public feature flags the login page needs (e.g. whether signup is open). */
+  @Public()
+  @Get('config')
+  config() {
+    return { allowAdminSignup: this.auth.adminSignupAllowed() };
+  }
+
   @Public()
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('register')

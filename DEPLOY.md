@@ -49,8 +49,18 @@ Open the web URL, click **“Create workspace”**, and register your super-admi
 login. That's your admin account — there are no default/demo credentials in
 production.
 
-> Optional: after creating your admin you can disable public self-registration
-> of new admin workspaces. Ask and it can be gated.
+### Lock down signup after creating your admin (recommended)
+
+Public "Create workspace" signup is open on first run so you can make your admin.
+Once you have, close it:
+
+```bash
+echo 'ALLOW_ADMIN_SIGNUP=false' >> .env      # or edit the line if it exists
+docker compose -f docker-compose.prod.yml up -d   # restart the api with the new value
+```
+
+Now `/auth/register` returns 403 and the login page hides "Create workspace".
+Set it back to `true` (and restart) if you ever need to create another workspace.
 
 ## 5. Add mailboxes
 
