@@ -90,7 +90,13 @@ export function MailboxesManager({ clientId }: { clientId?: string }) {
 
   function load() {
     const q = clientId ? `?clientId=${clientId}` : '';
-    api.get<Mailbox[]>(`/email-accounts${q}`).then(setMailboxes).catch(() => {});
+    api
+      .get<Mailbox[]>(`/email-accounts${q}`)
+      .then((mbs) => {
+        setMailboxes(mbs);
+        loadAuth(mbs);
+      })
+      .catch(() => {});
     if (!clientId)
       api
         .get<{ mailboxId: string | null }>('/reports/sender')
@@ -98,6 +104,33 @@ export function MailboxesManager({ clientId }: { clientId?: string }) {
         .catch(() => {});
   }
   useEffect(load, [clientId]);
+
+  // Auto-populate each mailbox's SPF/DKIM/DMARC badge (cached server-side).
+  async function loadAuth(mbs: Mailbox[]) {
+    try {
+      const byDomain = await api.get<
+        Record<string, { score: number; spf: boolean; dkim: boolean; dmarc: boolean }>
+      >('/deliverability/mailbox-auth');
+      setAuth((prev) => {
+        const next: Record<string, AuthResult> = {};
+        for (const m of mbs) {
+          const d = m.emailAddress.split('@')[1]?.toLowerCase();
+          const r = d ? byDomain[d] : undefined;
+          if (r)
+            next[m.id] = {
+              score: r.score,
+              spf: { found: r.spf },
+              dkim: { found: r.dkim },
+              dmarc: { found: r.dmarc },
+            };
+        }
+        // A manual "Check auth" result (fuller detail) takes precedence.
+        return { ...next, ...prev };
+      });
+    } catch {
+      /* ignore — badges just won't show */
+    }
+  }
 
   async function setReportSender(m: Mailbox) {
     try {

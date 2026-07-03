@@ -1,9 +1,17 @@
 import { Injectable } from '@nestjs/common';
 import { promises as dns, setServers } from 'dns';
+import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class DeliverabilityService {
-  constructor() {
+  // Short-lived cache so repeated page loads don't re-run DNS for every domain.
+  private authCache = new Map<
+    string,
+    { at: number; value: Awaited<ReturnType<DeliverabilityService['emailAuth']>> }
+  >();
+  private readonly CACHE_TTL_MS = 10 * 60 * 1000;
+
+  constructor(private prisma: PrismaService) {
     // Node's default c-ares resolver can't reach the system DNS in some
     // environments (lookups fail with ECONNREFUSED → every record shows as
     // missing). Pin public resolvers so SPF/DKIM/DMARC/MX checks actually work.
@@ -42,6 +50,48 @@ export class DeliverabilityService {
           ? 'All core authentication records found. Good foundation for deliverability.'
           : 'Missing records hurt deliverability and increase spam-folder placement.',
     };
+  }
+
+  /** Cached domain-auth lookup (shared by the per-mailbox badges). */
+  private async emailAuthCached(domain: string) {
+    const key = domain.trim().toLowerCase();
+    const hit = this.authCache.get(key);
+    if (hit && Date.now() - hit.at < this.CACHE_TTL_MS) return hit.value;
+    const value = await this.emailAuth(key);
+    this.authCache.set(key, { at: Date.now(), value });
+    return value;
+  }
+
+  /**
+   * SPF/DKIM/DMARC status for every configured mailbox domain in a tenant, so
+   * the Mailboxes page can flag misconfigured senders at a glance.
+   */
+  async mailboxAuth(tenantId: string) {
+    const accounts = await this.prisma.emailAccount.findMany({
+      where: { tenantId },
+      select: { emailAddress: true },
+    });
+    const domains = [
+      ...new Set(
+        accounts
+          .map((a) => a.emailAddress.split('@')[1]?.toLowerCase())
+          .filter((d): d is string => !!d),
+      ),
+    ];
+    const results = await Promise.all(
+      domains.map(async (domain) => {
+        const r = await this.emailAuthCached(domain);
+        return {
+          domain,
+          score: r.score,
+          spf: r.spf.found,
+          dkim: r.dkim.found,
+          dmarc: r.dmarc.found,
+        };
+      }),
+    );
+    // Keyed by domain for easy lookup from a mailbox's address.
+    return Object.fromEntries(results.map((r) => [r.domain, r]));
   }
 
   /** Syntax + MX validation — does the domain actually accept mail? */
