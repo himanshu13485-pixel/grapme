@@ -37,14 +37,14 @@ export function PageHeader({
   action?: ReactNode;
 }) {
   return (
-    <div className="mb-6 flex items-end justify-between">
+    <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div>
-        <h1 className="bg-gradient-to-r from-slate-900 via-brand-800 to-accent-700 bg-clip-text text-2xl font-bold tracking-tight text-transparent">
+        <h1 className="bg-gradient-to-r from-slate-900 via-brand-800 to-accent-700 bg-clip-text text-xl font-bold tracking-tight text-transparent sm:text-2xl">
           {title}
         </h1>
         {subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}
       </div>
-      {action}
+      {action && <div className="shrink-0">{action}</div>}
     </div>
   );
 }

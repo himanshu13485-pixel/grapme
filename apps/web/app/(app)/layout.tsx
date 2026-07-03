@@ -41,10 +41,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     { id: string; name: string; serviceType?: string | null; plan?: string }[]
   >([]);
   const [planColors, setPlanColors] = useState<Record<string, string>>({});
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) router.replace('/login');
   }, [user, loading, router]);
+
+  // Close the mobile drawer whenever the route changes.
+  useEffect(() => setSidebarOpen(false), [pathname]);
 
   // Client portal is themed by the client's membership colour.
   useEffect(() => {
@@ -166,8 +170,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
     return (
       <div className="flex min-h-screen">
+        {sidebarOpen && (
+          <div
+            className="fixed inset-0 z-30 bg-black/50 md:hidden"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
         <aside
-          className="sticky top-0 flex h-screen w-64 flex-col text-white/85 shadow-xl"
+          className={`fixed inset-y-0 left-0 z-40 flex h-screen w-64 flex-col text-white/85 shadow-xl transition-transform duration-200 md:sticky md:top-0 md:z-auto md:translate-x-0 ${
+            sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+          }`}
           style={{ background: sidebarBg }}
         >
           <div className="flex items-center gap-3 px-5 py-6">
@@ -279,9 +291,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </button>
           </div>
         </aside>
-        <main className="flex-1 overflow-auto px-8 py-8" style={{ background: mainBg }}>
-          {children}
-        </main>
+        <div className="flex min-w-0 flex-1 flex-col">
+          <MobileTopBar onMenu={() => setSidebarOpen(true)} />
+          <main
+            className="flex-1 overflow-auto px-4 py-5 md:px-8 md:py-8"
+            style={{ background: mainBg }}
+          >
+            {children}
+          </main>
+        </div>
         {toast && (
           <button
             onClick={() => setToast('')}
@@ -297,8 +315,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen">
+      {/* Mobile drawer backdrop */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/50 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
       {/* Sidebar */}
-      <aside className="sticky top-0 flex h-screen w-64 flex-col bg-sidebar-gradient text-indigo-100 shadow-xl">
+      <aside
+        className={`fixed inset-y-0 left-0 z-40 flex h-screen w-64 flex-col bg-sidebar-gradient text-indigo-100 shadow-xl transition-transform duration-200 md:sticky md:top-0 md:z-auto md:translate-x-0 ${
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
         <div className="flex items-center gap-3 px-5 py-6">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/95 text-lg font-black text-brand-700 shadow-glow">
             G
@@ -360,7 +389,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* Content */}
-      <main className="flex-1 overflow-auto px-8 py-8">{children}</main>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <MobileTopBar onMenu={() => setSidebarOpen(true)} />
+        <main className="flex-1 overflow-auto px-4 py-5 md:px-8 md:py-8">{children}</main>
+      </div>
 
       {/* New-mail alert toast */}
       {toast && (
@@ -419,5 +451,26 @@ function ClientNavItem({
       <span className="flex-1 truncate">{label}</span>
       {badge}
     </Link>
+  );
+}
+
+// Compact top bar shown only on small screens, with a hamburger to open the
+// sidebar drawer. Hidden from md upward where the sidebar is always visible.
+function MobileTopBar({ onMenu }: { onMenu: () => void }) {
+  return (
+    <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-slate-200 bg-white/90 px-4 py-3 backdrop-blur md:hidden">
+      <button
+        onClick={onMenu}
+        aria-label="Open menu"
+        className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <line x1="3" y1="6" x2="21" y2="6" />
+          <line x1="3" y1="12" x2="21" y2="12" />
+          <line x1="3" y1="18" x2="21" y2="18" />
+        </svg>
+      </button>
+      <span className="text-sm font-extrabold tracking-tight text-slate-800">GRAPOUT</span>
+    </header>
   );
 }

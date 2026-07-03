@@ -108,7 +108,8 @@ export default function DashboardPage() {
             </Link>
           </div>
         ) : (
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase text-slate-400">
               <tr>
                 <th className="px-5 py-3">Cohort</th>
@@ -142,6 +143,7 @@ export default function DashboardPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>

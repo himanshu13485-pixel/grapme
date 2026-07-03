@@ -418,7 +418,7 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
 
   return (
     <form onSubmit={submit} className="space-y-4">
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
           <label className="label">Company name *</label>
           <input
@@ -703,7 +703,7 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
         <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
           Client details
         </div>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label className="label">Company name *</label>
             <input className="input" value={form.name} required
@@ -754,7 +754,7 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
           ⚠ Changes apply to future scheduling only — running cohorts keep their
           already-scheduled sends.
         </p>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label className="label">Plan</label>
             <select className="input" value={form.plan}
@@ -791,7 +791,7 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
         <p className="mb-3 text-xs text-slate-500">
           Give this client a login to their own scoped panel (this profile only, no delete).
         </p>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label className="label">Login email</label>
             <input type="email" className="input" value={loginEmail}
@@ -818,7 +818,7 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
             <p className="mb-3 text-xs text-slate-500">
               The client sees these read-only in their portal — only you can change them.
             </p>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div>
                 <label className="label">Contact name</label>
                 <input className="input" value={ownerName}
