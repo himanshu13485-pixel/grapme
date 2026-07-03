@@ -48,21 +48,28 @@ export class ApprovalsService {
   }
 
   async list(reviewer: AuthUser, query: ListApprovalsQuery) {
-    // A sub-admin only reviews items submitted by their assigned users.
-    let submitterFilter = {};
+    // A sub-admin reviews items submitted by their assigned users — plus new
+    // client activations, which aren't tied to an assigned user yet and so must
+    // reach every sub-admin who can review approvals.
+    let scopeFilter = {};
     if (reviewer.role === Role.SUB_ADMIN) {
       const rows = await this.prisma.subAdminAssignment.findMany({
         where: { subAdminId: reviewer.userId, assignedUserId: { not: null } },
         select: { assignedUserId: true },
       });
-      submitterFilter = { submittedById: { in: rows.map((r) => r.assignedUserId!) } };
+      scopeFilter = {
+        OR: [
+          { submittedById: { in: rows.map((r) => r.assignedUserId!) } },
+          { entityType: ApprovalEntity.CLIENT_ACTIVATION },
+        ],
+      };
     }
     const approvals = await this.prisma.approval.findMany({
       where: {
         tenantId: reviewer.tenantId,
         status: query.status,
         entityType: query.entityType,
-        ...submitterFilter,
+        ...scopeFilter,
       },
       orderBy: { createdAt: 'desc' },
       include: {
@@ -70,7 +77,6 @@ export class ApprovalsService {
         reviewer: { select: { name: true, email: true } },
       },
     });
-    const targets = await this.resolveTargets(approvals);
     const meta = await this.resolveTargets(approvals);
     return approvals.map((a) => ({
       ...a,
