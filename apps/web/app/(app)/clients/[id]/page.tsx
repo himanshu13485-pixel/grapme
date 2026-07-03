@@ -668,26 +668,36 @@ function SequenceEditor({
                   ))}
                 </select>
               ) : (
-                activeMailboxes.map((mb, slot) => (
-                  <div key={mb.id} className="flex items-center gap-2">
-                    <span
-                      className="w-28 shrink-0 truncate text-xs text-slate-400"
-                      title={mb.emailAddress}
-                    >
-                      {mb.label || mb.emailAddress}
-                    </span>
-                    <select
-                      className="input flex-1"
-                      value={row.templateIds[slot] ?? ''}
-                      onChange={(e) => setTemplate(i, slot, e.target.value)}
-                    >
-                      <option value="">— no template —</option>
-                      {templates.map((t) => (
-                        <option key={t.id} value={t.id}>{t.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                ))
+                <>
+                  {activeMailboxes.map((mb, slot) => (
+                    <div key={mb.id} className="flex items-center gap-2">
+                      <span
+                        className="w-28 shrink-0 truncate text-xs text-slate-400"
+                        title={mb.emailAddress}
+                      >
+                        {mb.label || mb.emailAddress}
+                      </span>
+                      <select
+                        className="input flex-1"
+                        value={row.templateIds[slot] ?? ''}
+                        onChange={(e) => setTemplate(i, slot, e.target.value)}
+                      >
+                        <option value="">— no template —</option>
+                        {templates.map((t) => (
+                          <option key={t.id} value={t.id}>{t.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  ))}
+                  {(() => {
+                    const filled = row.templateIds.filter(Boolean).length;
+                    return filled > 0 && filled < slots ? (
+                      <p className="text-[11px] text-amber-600">
+                        ⚠ Blank slots reuse another template.
+                      </p>
+                    ) : null;
+                  })()}
+                </>
               )}
             </div>
             {i === 0 ? (
