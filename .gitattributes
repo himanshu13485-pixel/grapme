@@ -1,0 +1,6 @@
+# Force LF for files that must run on Linux servers, even when authored on
+# Windows — avoids "bad interpreter: /bin/bash^M" and Docker build failures.
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
