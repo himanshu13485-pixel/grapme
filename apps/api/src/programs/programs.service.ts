@@ -1362,6 +1362,30 @@ export class ProgramsService {
     return { ok: true, email };
   }
 
+  /** Admin: set a client's plan validity window (days). Resets the start date. */
+  async setClientValidity(user: AuthUser, clientId: string, days: number | null) {
+    this.assertAdmin(user);
+    const client = await this.assertClient(user, clientId);
+    const validityDays = days && days > 0 ? Math.floor(days) : null;
+    const updated = await this.prisma.client.update({
+      where: { id: clientId },
+      data: {
+        validityDays,
+        validityStartAt: validityDays ? new Date() : null,
+      },
+      select: { id: true, validityDays: true, validityStartAt: true },
+    });
+    await this.activity.log({
+      tenantId: user.tenantId,
+      actorId: user.userId,
+      action: 'SET_CLIENT_VALIDITY',
+      entityType: 'Client',
+      entityId: clientId,
+      after: { validityDays, client: client.name },
+    });
+    return updated;
+  }
+
   private assertAdmin(user: AuthUser) {
     if (user.role !== Role.SUPER_ADMIN && user.role !== Role.SUB_ADMIN) {
       throw new ForbiddenException('Admins only');

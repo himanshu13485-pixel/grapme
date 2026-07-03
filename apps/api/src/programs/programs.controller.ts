@@ -53,6 +53,16 @@ export class ProgramsController {
     return this.programs.setClientLogin(user, id, dto);
   }
 
+  /** Admin: set a client's plan validity window (days). */
+  @Patch('clients/:id/validity')
+  setClientValidity(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: { days: number | null },
+  ) {
+    return this.programs.setClientValidity(user, id, dto.days);
+  }
+
   /** Admin: reset a client login to the shared default password. */
   @Post('clients/:id/reset-password')
   resetClientPassword(@CurrentUser() user: AuthUser, @Param('id') id: string) {

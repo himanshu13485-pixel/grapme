@@ -26,6 +26,8 @@ interface Client {
   sendWindowStart: number;
   sendWindowEnd: number;
   stageIntervalJitterDays: number;
+  validityDays?: number | null;
+  validityStartAt?: string | null;
   _count?: { mailboxes: number; cohorts: number; enrollments: number };
   owner?: { id: string; name: string; email: string; contactMobile?: string | null } | null;
 }
@@ -274,6 +276,7 @@ function ClientDetailView({ client }: { client: Client }) {
     { label: 'Product / Category', value: client.productCategory || '—' },
     { label: 'Service type', value: serviceLabel(client.serviceType) },
     { label: 'Plan', value: client.plan },
+    { label: 'Plan validity', value: client.validityDays ? `${client.validityDays} days` : '—' },
     { label: 'Status', value: client.status },
     { label: 'Contacts / month', value: String(client.monthlyQuota) },
     { label: 'Sends / day', value: String(client.dailyBatchSize) },

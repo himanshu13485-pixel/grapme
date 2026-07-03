@@ -688,6 +688,8 @@ model Client {
   autoCohortListId  String?                  // source list for auto cohorts
   autoCohortDay     Int      @default(1)      // day-of-month to create it
   lastAutoCohortAt  DateTime?                 // guards once-per-month creation
+  validityDays      Int?                      // plan validity window in days (30/180/360)
+  validityStartAt   DateTime?                 // when the validity window began
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 

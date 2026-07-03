@@ -13,6 +13,7 @@ import { CampaignsManager } from '@/components/CampaignsManager';
 import { MailboxesManager } from '@/components/MailboxesManager';
 import { MailboxManager } from '@/components/MailboxManager';
 import { WorldMap, GeoData } from '@/components/WorldMap';
+import { ValidityBadge } from '@/components/Validity';
 
 function hourLabel(h: number): string {
   const ampm = h < 12 ? 'AM' : 'PM';
@@ -60,6 +61,8 @@ interface Client {
   reportWeekly: boolean;
   reportMonthly: boolean;
   reportHour: number;
+  validityDays?: number | null;
+  validityStartAt?: string | null;
   mailboxes: Mailbox[];
   sequenceSteps: SeqStep[];
   _count?: {
@@ -184,9 +187,14 @@ export default function ClientCockpit() {
         title={client.name}
         subtitle={`${client.plan} · ${client.dailyBatchSize}/day · ${client.followUpCount} follow-ups · ${client.weekdaysOnly ? 'weekdays only' : 'all days'}`}
         action={
-          <button className="btn-ghost" onClick={runEngine}>
-            ▶ Run engine now
-          </button>
+          <div className="flex items-center gap-3">
+            <ValidityBadge days={client.validityDays} startAt={client.validityStartAt} />
+            {!isClient && (
+              <button className="btn-ghost" onClick={runEngine}>
+                ▶ Run engine now
+              </button>
+            )}
+          </div>
         }
       />
 
