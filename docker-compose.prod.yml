@@ -1,0 +1,75 @@
+# Production stack: PostgreSQL + Redis + API + Web.
+# Bring up with:  docker compose -f docker-compose.prod.yml up -d --build
+# (the deploy.sh script does this for you, including generating .env)
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: aeo
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: aeo
+    volumes:
+      - aeo_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U aeo']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - aeo_redisdata:/data
+
+  api:
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+    image: aeo-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      NODE_ENV: production
+      API_PORT: 4000
+      DATABASE_URL: postgresql://aeo:${POSTGRES_PASSWORD}@postgres:5432/aeo?schema=public
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      QUEUE_ENABLED: 'true'
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_ACCESS_TTL: 15m
+      JWT_REFRESH_TTL: 7d
+      CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY}
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL}
+      WEB_PUBLIC_URL: ${WEB_PUBLIC_URL}
+      CORS_ORIGIN: ${WEB_PUBLIC_URL}
+    # Apply DB migrations on boot, then start the API.
+    command: >
+      sh -c "npx prisma migrate deploy --schema=/app/apps/api/prisma/schema.prisma &&
+             node apps/api/dist/main.js"
+    ports:
+      - '4000:4000'
+
+  web:
+    image: aeo-app # reuses the image built by the api service
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+    command: sh -c "npm run start --workspace apps/web"
+    ports:
+      - '3000:3000'
+
+volumes:
+  aeo_pgdata:
+  aeo_redisdata:

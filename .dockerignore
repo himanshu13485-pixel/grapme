@@ -1,0 +1,15 @@
+node_modules
+**/node_modules
+.git
+.next
+**/.next
+apps/api/dist
+**/dist
+apps/api/.pgdata
+.redis
+.env
+.env.*
+!.env.production.example
+*.log
+scratchpad
+landing
