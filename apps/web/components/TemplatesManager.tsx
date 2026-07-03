@@ -168,6 +168,8 @@ function TemplateEditor({
   const [spam, setSpam] = useState<SpamResult | null>(null);
   const visualRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
 
   // Load HTML into the visual editor whenever we (re)enter visual mode. We do
   // NOT re-set it on every keystroke, so the caret position is preserved.
@@ -227,11 +229,36 @@ function TemplateEditor({
     const html = `<a href="${url}" style="background:#4f46e5;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;display:inline-block">Click here</a>`;
     visual ? insertHtmlVisual(html) : wrapHtml(html);
   }
+  function insertImg(url: string) {
+    const html = `<img src="${url}" alt="" style="max-width:100%;height:auto" />`;
+    visual ? insertHtmlVisual(html) : wrapHtml(html);
+  }
   function image() {
     const url = window.prompt('Image URL', 'https://');
-    if (!url) return;
-    const html = `<img src="${url}" alt="" style="max-width:100%" />`;
-    visual ? insertHtmlVisual(html) : wrapHtml(html);
+    if (url) insertImg(url);
+  }
+  // Upload a file → hosted image URL → insert inline at the cursor.
+  async function uploadImage(file: File) {
+    setUploading(true);
+    setError('');
+    try {
+      const dataBase64 = await new Promise<string>((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(String(r.result));
+        r.onerror = () => reject(new Error('Could not read the file'));
+        r.readAsDataURL(file);
+      });
+      const res = await api.post<{ url: string }>('/assets', {
+        filename: file.name,
+        mimeType: file.type,
+        dataBase64,
+      });
+      insertImg(res.url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Upload failed');
+    } finally {
+      setUploading(false);
+    }
   }
   const divider = () => (visual ? insertHtmlVisual('<hr />') : wrapHtml('<hr />'));
   const insertVar = (v: string) =>
@@ -315,7 +342,26 @@ function TemplateEditor({
           <button type="button" className={tool} onClick={bullets}>• List</button>
           <button type="button" className={tool} onClick={link}>Link</button>
           <button type="button" className={tool} onClick={button}>Button</button>
-          <button type="button" className={tool} onClick={image}>Image</button>
+          <button
+            type="button"
+            className={tool}
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+          >
+            {uploading ? 'Uploading…' : '🖼 Upload image'}
+          </button>
+          <button type="button" className={tool} onClick={image}>Image URL</button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) uploadImage(f);
+              e.target.value = '';
+            }}
+          />
           <button type="button" className={tool} onClick={divider}>Divider</button>
           <span className="mx-2 h-4 w-px bg-slate-200" />
           {/* Mode toggle */}

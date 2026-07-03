@@ -170,6 +170,22 @@ model Tenant {
   enrollments     Enrollment[]
   plans           Plan[]
   greetings       Greeting[]
+  assets          Asset[]
+}
+
+// Uploaded images (e.g. for email templates), served publicly by id so mail
+// clients can load them. Stored in the DB so they persist without a file volume.
+model Asset {
+  id        String   @id @default(uuid())
+  tenantId  String
+  filename  String
+  mimeType  String
+  data      Bytes
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
 }
 
 // Admin-authored "Happy Business" messages shown in the daily client greeting.

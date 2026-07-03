@@ -4,6 +4,7 @@ import { NestFactory } from '@nestjs/core';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Request, Response, NextFunction } from 'express';
+import { json, urlencoded } from 'express';
 import { AppModule } from './app.module';
 import { AuthService } from './auth/auth.service';
 
@@ -33,7 +34,11 @@ function assertSecrets(config: ConfigService) {
 }
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // Own the body parsers so base64 image uploads aren't capped at the 100kb
+  // default. Keep a sane ceiling to avoid abuse.
+  const app = await NestFactory.create(AppModule, { bodyParser: false });
+  app.use(json({ limit: '8mb' }));
+  app.use(urlencoded({ extended: true, limit: '8mb' }));
   const config = app.get(ConfigService);
   assertSecrets(config);
 
