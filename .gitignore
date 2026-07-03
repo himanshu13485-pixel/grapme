@@ -41,3 +41,7 @@ coverage/
 # Redis runtime dump (bundled portable Redis, no-Docker dev)
 .redis/dump.rdb
 *.rdb
+
+# Redis debug symbols + downloaded archive (keep only the runnable binaries)
+.redis/*.pdb
+.redis/*.zip
