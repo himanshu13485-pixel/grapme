@@ -53,6 +53,22 @@ export class ProgramsController {
     return this.programs.setClientLogin(user, id, dto);
   }
 
+  /** Admin: reset a client login to the shared default password. */
+  @Post('clients/:id/reset-password')
+  resetClientPassword(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.programs.resetClientDefaultPassword(user, id);
+  }
+
+  /** Admin: edit the client login's identity (name/email/phone). */
+  @Patch('clients/:id/owner')
+  updateClientOwner(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: { name?: string; email?: string; mobile?: string },
+  ) {
+    return this.programs.updateClientOwner(user, id, dto);
+  }
+
   @Get('clients/:id')
   getClient(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.programs.getClient(user, id);

@@ -8,6 +8,7 @@ import {
   ResetPasswordDto,
   ClientRegisterDto,
   ClientVerifyDto,
+  ChangePasswordDto,
 } from './dto/auth.dto';
 import { Public } from '../common/decorators/public.decorator';
 import {
@@ -78,6 +79,15 @@ export class AuthController {
   @Post('client/verify')
   clientVerify(@Body() dto: ClientVerifyDto) {
     return this.auth.verifyClientEmail(dto.token);
+  }
+
+  @HttpCode(200)
+  @Post('change-password')
+  changePassword(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: ChangePasswordDto,
+  ) {
+    return this.auth.changePassword(user.userId, dto);
   }
 
   @Get('me')

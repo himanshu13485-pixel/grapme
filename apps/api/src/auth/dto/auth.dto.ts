@@ -88,3 +88,13 @@ export class ClientVerifyDto {
   @IsNotEmpty()
   token: string;
 }
+
+export class ChangePasswordDto {
+  @IsString()
+  @IsNotEmpty()
+  currentPassword: string;
+
+  @IsString()
+  @MinLength(8)
+  newPassword: string;
+}

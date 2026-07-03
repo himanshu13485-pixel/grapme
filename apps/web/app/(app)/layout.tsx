@@ -49,9 +49,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       .get<{ id: string; name: string; serviceType?: string | null }[]>('/my/clients')
       .then((profiles) => {
         setClientProfiles(profiles);
-        // Land them on their first profile — but leave them alone on the
-        // clients list/add page so they can create an extra profile.
-        if (profiles[0] && !pathname.startsWith('/clients')) {
+        // Land them on their first profile — but leave them on the clients
+        // list/add page (create a profile) and on their own account page.
+        if (
+          profiles[0] &&
+          !pathname.startsWith('/clients') &&
+          pathname !== '/my-profile'
+        ) {
           router.replace(`/clients/${profiles[0].id}`);
         }
       })
@@ -189,7 +193,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             )}
             {clientProfiles.length < (user.profileLimit ?? 1) && (
               <Link
-                href="/clients"
+                href="/clients?new=1"
                 className={`group mt-1 flex items-center gap-3 rounded-xl border border-dashed border-white/20 px-3 py-2.5 text-sm font-medium transition-all ${
                   pathname === '/clients'
                     ? 'bg-white text-emerald-700 shadow-lg'
@@ -202,6 +206,27 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 </span>
               </Link>
             )}
+
+            <div className="px-3 pb-1 pt-4 text-[10px] font-semibold uppercase tracking-wider text-emerald-400">
+              Account
+            </div>
+            <Link
+              href="/my-profile"
+              className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all ${
+                pathname === '/my-profile'
+                  ? 'bg-white text-emerald-700 shadow-lg'
+                  : 'text-emerald-100 hover:translate-x-0.5 hover:bg-white/10 hover:text-white'
+              }`}
+            >
+              <span
+                className={`flex h-7 w-7 items-center justify-center rounded-lg text-xs ${
+                  pathname === '/my-profile' ? 'bg-emerald-600 text-white' : 'bg-white/10 text-emerald-100'
+                }`}
+              >
+                👤
+              </span>
+              <span className="flex-1">My Profile</span>
+            </Link>
           </nav>
 
           <div className="border-t border-white/10 p-4">

@@ -48,21 +48,27 @@ export class ApprovalsService {
   }
 
   async list(reviewer: AuthUser, query: ListApprovalsQuery) {
-    // A sub-admin reviews items submitted by their assigned users — plus new
-    // client activations, which aren't tied to an assigned user yet and so must
-    // reach every sub-admin who can review approvals.
+    // A sub-admin reviews items submitted by their assigned users — plus
+    // anything submitted by a client-portal user (activations and any profile
+    // change a client makes). Client submissions aren't tied to an assigned
+    // user, so they must reach every sub-admin who can review approvals.
     let scopeFilter = {};
     if (reviewer.role === Role.SUB_ADMIN) {
-      const rows = await this.prisma.subAdminAssignment.findMany({
-        where: { subAdminId: reviewer.userId, assignedUserId: { not: null } },
-        select: { assignedUserId: true },
-      });
-      scopeFilter = {
-        OR: [
-          { submittedById: { in: rows.map((r) => r.assignedUserId!) } },
-          { entityType: ApprovalEntity.CLIENT_ACTIVATION },
-        ],
-      };
+      const [rows, clientUsers] = await Promise.all([
+        this.prisma.subAdminAssignment.findMany({
+          where: { subAdminId: reviewer.userId, assignedUserId: { not: null } },
+          select: { assignedUserId: true },
+        }),
+        this.prisma.user.findMany({
+          where: { tenantId: reviewer.tenantId, role: Role.CLIENT },
+          select: { id: true },
+        }),
+      ]);
+      const submitterIds = [
+        ...rows.map((r) => r.assignedUserId!),
+        ...clientUsers.map((u) => u.id),
+      ];
+      scopeFilter = { submittedById: { in: submitterIds } };
     }
     const approvals = await this.prisma.approval.findMany({
       where: {

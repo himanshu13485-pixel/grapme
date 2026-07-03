@@ -27,6 +27,7 @@ interface Client {
   sendWindowEnd: number;
   stageIntervalJitterDays: number;
   _count?: { mailboxes: number; cohorts: number; enrollments: number };
+  owner?: { id: string; name: string; email: string; contactMobile?: string | null } | null;
 }
 
 export default function ClientsPage() {
@@ -36,6 +37,7 @@ export default function ClientsPage() {
   const [editing, setEditing] = useState<Client | null>(null);
   const [q, setQ] = useState('');
   const [invoiceQ, setInvoiceQ] = useState('');
+  const [emailQ, setEmailQ] = useState('');
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 12;
   const canDelete = useCanDelete();
@@ -49,6 +51,15 @@ export default function ClientsPage() {
     api.get<Client[]>('/clients').then(setClients).catch(() => {});
   }
   useEffect(load, []);
+
+  // The sidebar "Set up my workspace" links here with ?new=1 to open the form.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (new URLSearchParams(window.location.search).get('new') === '1') {
+      setShow(true);
+      window.history.replaceState(null, '', '/clients');
+    }
+  }, []);
 
   async function deleteClient(c: Client) {
     if (
@@ -72,16 +83,18 @@ export default function ClientsPage() {
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
     const inv = invoiceQ.trim().toLowerCase();
+    const em = emailQ.trim().toLowerCase();
     return clients.filter((c) => {
       if (inv && !(c.invoiceNo ?? '').toLowerCase().includes(inv)) return false;
+      if (em && !(c.email ?? c.owner?.email ?? '').toLowerCase().includes(em)) return false;
       if (!s) return true;
-      return [c.name, c.plan, c.invoiceNo]
+      return [c.name, c.plan, c.invoiceNo, c.email]
         .filter(Boolean)
         .some((v) => v!.toLowerCase().includes(s));
     });
-  }, [clients, q, invoiceQ]);
+  }, [clients, q, invoiceQ, emailQ]);
 
-  useEffect(() => setPage(1), [q, invoiceQ]);
+  useEffect(() => setPage(1), [q, invoiceQ, emailQ]);
   const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
@@ -118,11 +131,19 @@ export default function ClientsPage() {
             onChange={(e) => setQ(e.target.value)}
           />
           <input
-            className="input w-48"
-            placeholder="Filter by invoice no.…"
-            value={invoiceQ}
-            onChange={(e) => setInvoiceQ(e.target.value)}
+            className="input w-56"
+            placeholder="Filter by email…"
+            value={emailQ}
+            onChange={(e) => setEmailQ(e.target.value)}
           />
+          {!isClient && (
+            <input
+              className="input w-48"
+              placeholder="Filter by invoice no.…"
+              value={invoiceQ}
+              onChange={(e) => setInvoiceQ(e.target.value)}
+            />
+          )}
           <span className="ml-auto text-sm text-slate-400">
             {filtered.length} of {clients.length}
           </span>
@@ -137,6 +158,11 @@ export default function ClientsPage() {
                 <div className="font-medium text-slate-800">{c.name}</div>
                 <StatusBadge status={c.status === 'active' ? 'ACTIVE' : c.status} />
               </div>
+              {(c.email || c.owner?.email) && (
+                <div className="mt-0.5 truncate text-xs text-slate-500">
+                  {c.email || c.owner?.email}
+                </div>
+              )}
               <div className="mt-1 text-xs text-slate-400">
                 {c.plan}
                 {c.invoiceNo && <span> · Invoice {c.invoiceNo}</span>}
@@ -476,10 +502,47 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
   });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [loginEmail, setLoginEmail] = useState(client.email ?? '');
+  const [loginEmail, setLoginEmail] = useState(client.owner?.email ?? client.email ?? '');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginNote, setLoginNote] = useState('');
   const [loginBusy, setLoginBusy] = useState(false);
+  const hasOwner = !!client.owner;
+  const [ownerName, setOwnerName] = useState(client.owner?.name ?? '');
+  const [ownerEmail, setOwnerEmail] = useState(client.owner?.email ?? '');
+  const [ownerMobile, setOwnerMobile] = useState(client.owner?.contactMobile ?? '');
+  const [ownerNote, setOwnerNote] = useState('');
+  const [ownerBusy, setOwnerBusy] = useState(false);
+
+  async function saveOwner() {
+    setOwnerBusy(true);
+    setOwnerNote('');
+    try {
+      await api.patch(`/clients/${client.id}/owner`, {
+        name: ownerName,
+        email: ownerEmail,
+        mobile: ownerMobile,
+      });
+      setOwnerNote('Client identity updated.');
+    } catch (e) {
+      setOwnerNote(e instanceof Error ? e.message : 'Failed');
+    } finally {
+      setOwnerBusy(false);
+    }
+  }
+
+  async function resetDefault() {
+    if (!confirm('Reset this client to the default password "grapout@123"?')) return;
+    setOwnerBusy(true);
+    setOwnerNote('');
+    try {
+      const r = await api.post<{ password: string }>(`/clients/${client.id}/reset-password`);
+      setOwnerNote(`Password reset to: ${r.password} — ask the client to change it after signing in.`);
+    } catch (e) {
+      setOwnerNote(e instanceof Error ? e.message : 'Failed');
+    } finally {
+      setOwnerBusy(false);
+    }
+  }
 
   async function saveLogin() {
     if (!loginEmail || !loginPassword) {
@@ -625,8 +688,6 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
         </div>
         <p className="mb-3 text-xs text-slate-500">
           Give this client a login to their own scoped panel (this profile only, no delete).
-          Each profile is one login; a client wanting Export <em>and</em> Import gets two
-          profiles — billed separately.
         </p>
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -642,10 +703,48 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
         </div>
         <div className="mt-3 flex items-center gap-3">
           <button type="button" className="btn-ghost text-xs" onClick={saveLogin} disabled={loginBusy}>
-            {loginBusy ? 'Saving…' : 'Create / update client login'}
+            {loginBusy ? 'Saving…' : hasOwner ? 'Update login email / password' : 'Create client login'}
           </button>
           {loginNote && <span className="text-xs text-slate-500">{loginNote}</span>}
         </div>
+
+        {hasOwner && (
+          <div className="mt-4 border-t border-emerald-200 pt-4">
+            <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-emerald-700">
+              Client identity (registration details)
+            </div>
+            <p className="mb-3 text-xs text-slate-500">
+              The client sees these read-only in their portal — only you can change them.
+            </p>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="label">Contact name</label>
+                <input className="input" value={ownerName}
+                  onChange={(e) => setOwnerName(e.target.value)} />
+              </div>
+              <div>
+                <label className="label">Email</label>
+                <input type="email" className="input" value={ownerEmail}
+                  onChange={(e) => setOwnerEmail(e.target.value)} />
+              </div>
+              <div>
+                <label className="label">Phone</label>
+                <input className="input" value={ownerMobile}
+                  onChange={(e) => setOwnerMobile(e.target.value)} placeholder="+91 98765 43210" />
+              </div>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <button type="button" className="btn-ghost text-xs" onClick={saveOwner} disabled={ownerBusy}>
+                {ownerBusy ? 'Saving…' : 'Save identity'}
+              </button>
+              <button type="button" className="text-xs font-medium text-amber-700 hover:underline"
+                onClick={resetDefault} disabled={ownerBusy}>
+                Reset to default password (grapout@123)
+              </button>
+              {ownerNote && <span className="text-xs text-slate-500">{ownerNote}</span>}
+            </div>
+          </div>
+        )}
       </div>
 
       {error && <p className="text-sm text-rose-600">{error}</p>}

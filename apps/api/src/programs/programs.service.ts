@@ -174,6 +174,7 @@ export class ProgramsService {
       orderBy: { createdAt: 'desc' },
       include: {
         _count: { select: { mailboxes: true, cohorts: true, enrollments: true } },
+        owner: { select: { id: true, name: true, email: true, contactMobile: true } },
       },
     });
   }
@@ -1359,6 +1360,79 @@ export class ProgramsService {
       after: { email, client: client.name },
     });
     return { ok: true, email };
+  }
+
+  private assertAdmin(user: AuthUser) {
+    if (user.role !== Role.SUPER_ADMIN && user.role !== Role.SUB_ADMIN) {
+      throw new ForbiddenException('Admins only');
+    }
+  }
+
+  /** Default password handed to a client who never received a reset email. */
+  private static readonly DEFAULT_CLIENT_PASSWORD = 'grapout@123';
+
+  /** Admin: reset a client login to the shared default password. */
+  async resetClientDefaultPassword(user: AuthUser, clientId: string) {
+    this.assertAdmin(user);
+    const client = await this.assertClient(user, clientId);
+    if (!client.ownerUserId) {
+      throw new BadRequestException('Set a client login first.');
+    }
+    const passwordHash = await argon2.hash(
+      ProgramsService.DEFAULT_CLIENT_PASSWORD,
+      { type: argon2.argon2id },
+    );
+    await this.prisma.user.update({
+      where: { id: client.ownerUserId },
+      data: { passwordHash, emailVerified: true, status: 'ACTIVE' },
+    });
+    await this.activity.log({
+      tenantId: user.tenantId,
+      actorId: user.userId,
+      action: 'RESET_CLIENT_DEFAULT_PASSWORD',
+      entityType: 'Client',
+      entityId: clientId,
+      after: { client: client.name },
+    });
+    return { ok: true, password: ProgramsService.DEFAULT_CLIENT_PASSWORD };
+  }
+
+  /** Admin: edit the client login's identity (name/email/phone). */
+  async updateClientOwner(
+    user: AuthUser,
+    clientId: string,
+    dto: { name?: string; email?: string; mobile?: string },
+  ) {
+    this.assertAdmin(user);
+    const client = await this.assertClient(user, clientId);
+    if (!client.ownerUserId) {
+      throw new BadRequestException('Set a client login first.');
+    }
+    const email = dto.email?.toLowerCase();
+    if (email) {
+      const clash = await this.prisma.user.findFirst({
+        where: { email, id: { not: client.ownerUserId } },
+      });
+      if (clash) throw new BadRequestException('That email is already in use.');
+    }
+    const owner = await this.prisma.user.update({
+      where: { id: client.ownerUserId },
+      data: {
+        ...(dto.name !== undefined ? { name: dto.name } : {}),
+        ...(email ? { email } : {}),
+        ...(dto.mobile !== undefined ? { contactMobile: dto.mobile } : {}),
+      },
+      select: { id: true, name: true, email: true, contactMobile: true },
+    });
+    await this.activity.log({
+      tenantId: user.tenantId,
+      actorId: user.userId,
+      action: 'UPDATE_CLIENT_OWNER',
+      entityType: 'Client',
+      entityId: clientId,
+      after: { name: owner.name, email: owner.email },
+    });
+    return owner;
   }
 
   /** Profiles owned by a client-portal user (for the client panel switcher). */
