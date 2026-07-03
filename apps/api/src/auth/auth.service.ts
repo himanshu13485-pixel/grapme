@@ -63,6 +63,40 @@ export class AuthService {
     return (this.config.get<string>('ALLOW_ADMIN_SIGNUP') ?? 'true') !== 'false';
   }
 
+  /**
+   * On boot, ensure the preset super-admin exists (from ADMIN_EMAIL /
+   * ADMIN_PASSWORD). Runs once — it never resets the password on later boots, so
+   * a password you change in-app survives restarts. No-op if the env is unset.
+   */
+  async ensureBootstrapAdmin(): Promise<void> {
+    const email = this.config.get<string>('ADMIN_EMAIL')?.trim().toLowerCase();
+    const password = this.config.get<string>('ADMIN_PASSWORD');
+    if (!email || !password) return;
+
+    const existing = await this.prisma.user.findUnique({ where: { email } });
+    if (existing) return; // already provisioned — leave its password alone
+
+    let tenant = await this.prisma.tenant.findFirst({
+      orderBy: { createdAt: 'asc' },
+    });
+    if (!tenant) {
+      tenant = await this.prisma.tenant.create({ data: { name: 'GRAPOUT' } });
+    }
+    const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
+    await this.prisma.user.create({
+      data: {
+        tenantId: tenant.id,
+        name: 'Admin',
+        email,
+        passwordHash,
+        role: Role.SUPER_ADMIN,
+        emailVerified: true,
+        status: 'ACTIVE',
+      },
+    });
+    this.logger.log(`Bootstrapped super-admin ${email}`);
+  }
+
   /** First user of a new tenant becomes SUPER_ADMIN. */
   async register(dto: RegisterDto) {
     if (!this.adminSignupAllowed()) {

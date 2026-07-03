@@ -35,6 +35,11 @@ if [ ! -f .env ]; then
 
   gen() { openssl rand -base64 "$1" | tr -d '\n'; }
 
+  # Preset admin: use ADMIN_EMAIL if provided, else a sensible default; generate
+  # a strong password unless one was supplied.
+  ADMIN_EMAIL="${ADMIN_EMAIL:-admin@${HOST}}"
+  ADMIN_PASSWORD="${ADMIN_PASSWORD:-$(openssl rand -base64 12 | tr -d '/+=' | cut -c1-16)}"
+
   cat > .env <<EOF
 WEB_PUBLIC_URL=${SCHEME}://${HOST}:${WEB_PORT_PUB}
 APP_PUBLIC_URL=${SCHEME}://${HOST}:${API_PORT_PUB}
@@ -43,8 +48,12 @@ POSTGRES_PASSWORD=$(openssl rand -hex 24)
 JWT_ACCESS_SECRET=$(gen 48)
 JWT_REFRESH_SECRET=$(gen 48)
 CREDENTIAL_ENCRYPTION_KEY=$(gen 32)
+ADMIN_EMAIL=${ADMIN_EMAIL}
+ADMIN_PASSWORD=${ADMIN_PASSWORD}
+ALLOW_ADMIN_SIGNUP=false
 EOF
   echo "Wrote .env (host: ${HOST}). Edit it if you use a domain/HTTPS, then re-run."
+  ADMIN_CREATED=1
 else
   say ".env already exists — using it as-is."
 fi
@@ -57,6 +66,8 @@ say "Done. Containers:"
 docker compose -f "$COMPOSE_FILE" ps
 
 WEB_URL=$(grep '^WEB_PUBLIC_URL=' .env | cut -d= -f2-)
+ADMIN_EMAIL=$(grep '^ADMIN_EMAIL=' .env | cut -d= -f2-)
+ADMIN_PASSWORD=$(grep '^ADMIN_PASSWORD=' .env | cut -d= -f2-)
 cat <<EOF
 
 ✅  Deployed.
@@ -64,8 +75,13 @@ cat <<EOF
    Web:  ${WEB_URL}
    API:  $(grep '^APP_PUBLIC_URL=' .env | cut -d= -f2-)/api/v1
 
+Your admin login (created automatically — no signup page):
+   Email:    ${ADMIN_EMAIL}
+   Password: ${ADMIN_PASSWORD}
+   ⚠  Log in and change this immediately under My Account. Keep .env private.
+
 Next steps:
-  1. Open the web URL, click "Create workspace" to make your super-admin login.
+  1. Open the web URL and sign in with the admin login above.
   2. Open ports 3000 and 4000 in your cloud firewall/security group.
   3. Configure real SMTP/IMAP mailboxes in the app to send/receive email.
   4. (Recommended) Put it behind a domain + HTTPS — see DEPLOY.md.

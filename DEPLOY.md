@@ -43,24 +43,38 @@ PUBLIC_HOST=app.yourdomain.com SCHEME=https sudo -E bash deploy.sh
 In your cloud provider's firewall / security group, allow inbound **3000** and
 **4000** (or **80/443** if you add a reverse proxy — see below).
 
-## 4. Create your admin
+## 4. Your admin login (no signup)
 
-Open the web URL, click **“Create workspace”**, and register your super-admin
-login. That's your admin account — there are no default/demo credentials in
-production.
+There is **no signup page**. Your super-admin is **created automatically on
+first boot** from `ADMIN_EMAIL` / `ADMIN_PASSWORD`. `deploy.sh` generates these
+and **prints them at the end** — write them down. The login page shows only
+sign-in + the Client portal link.
 
-### Lock down signup after creating your admin (recommended)
+- Sign in at the web URL with that email/password, then **change the password
+  immediately** under **My Account**. Keep `.env` private.
+- To choose your own values up front, set them before the first run:
 
-Public "Create workspace" signup is open on first run so you can make your admin.
-Once you have, close it:
+  ```bash
+  ADMIN_EMAIL=you@yourdomain.com ADMIN_PASSWORD='a-strong-password' \
+    PUBLIC_HOST=app.yourdomain.com sudo -E bash deploy.sh
+  ```
+
+> Changing `ADMIN_PASSWORD` in `.env` **after** first boot does **not** reset the
+> account (it already exists) — change the password in-app instead. If you're
+> ever locked out, reset it directly (see "Locked out?" below).
+>
+> Public signup stays disabled (`ALLOW_ADMIN_SIGNUP=false`). Set it to `true` and
+> restart only if you ever need the "Create workspace" flow back.
+
+### Locked out?
+
+Reset the admin password straight in the database:
 
 ```bash
-echo 'ALLOW_ADMIN_SIGNUP=false' >> .env      # or edit the line if it exists
-docker compose -f docker-compose.prod.yml up -d   # restart the api with the new value
+docker compose -f docker-compose.prod.yml exec api \
+  node -e "const {PrismaClient}=require('@prisma/client');const a=require('argon2');(async()=>{const p=new PrismaClient();const h=await a.hash(process.argv[1],{type:a.argon2id});await p.user.updateMany({where:{email:process.argv[2]},data:{passwordHash:h,status:'ACTIVE',emailVerified:true}});console.log('reset');process.exit(0)})()" \
+  'NEW_PASSWORD' 'admin@yourdomain.com'
 ```
-
-Now `/auth/register` returns 403 and the login page hides "Create workspace".
-Set it back to `true` (and restart) if you ever need to create another workspace.
 
 ## 5. Add mailboxes
 

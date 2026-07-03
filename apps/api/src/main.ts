@@ -5,6 +5,7 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Request, Response, NextFunction } from 'express';
 import { AppModule } from './app.module';
+import { AuthService } from './auth/auth.service';
 
 /**
  * Fail fast (in production) when a security-critical secret is missing, weak, or
@@ -72,6 +73,9 @@ async function bootstrap() {
     .map((o) => o.trim())
     .filter(Boolean);
   app.enableCors({ origin: origins, credentials: true });
+
+  // Seed the preset super-admin (ADMIN_EMAIL / ADMIN_PASSWORD) if configured.
+  await app.get(AuthService).ensureBootstrapAdmin();
 
   const port = config.get<number>('API_PORT', 4000);
   await app.listen(port);
