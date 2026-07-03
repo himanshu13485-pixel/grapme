@@ -57,6 +57,10 @@ interface Client {
   autoCohortDay: number;
   contactPerson?: string;
   email?: string;
+  invoiceNo?: string;
+  mobile?: string;
+  productCategory?: string;
+  serviceType?: string;
   reportDaily: boolean;
   reportWeekly: boolean;
   reportMonthly: boolean;
@@ -130,6 +134,7 @@ export default function ClientCockpit() {
   const [tab, setTab] = useState('mailboxes');
   const [notice, setNotice] = useState('');
   const [inboxUnread, setInboxUnread] = useState(0);
+  const [showDetails, setShowDetails] = useState(false);
 
   function flash(m: string) {
     setNotice(m);
@@ -224,6 +229,9 @@ export default function ClientCockpit() {
               {isActive ? 'Active' : 'Inactive'}
             </span>
             <ValidityBadge days={client.validityDays} startAt={client.validityStartAt} />
+            <button className="btn-ghost" onClick={() => setShowDetails(true)}>
+              ℹ Profile details
+            </button>
             {!isClient && (
               <>
                 <button
@@ -240,6 +248,14 @@ export default function ClientCockpit() {
           </div>
         }
       />
+
+      <Modal
+        open={showDetails}
+        onClose={() => setShowDetails(false)}
+        title={`Profile · ${client.name}`}
+      >
+        <ClientDetails client={client} />
+      </Modal>
 
       {(() => {
         const next = cohorts
@@ -1594,6 +1610,43 @@ function ClientCampaigns({ clientId, onChanged }: { clientId: string; onChanged:
         </div>
       )}
       <p className="text-xs text-slate-400">Full campaign builder (steps, schedule, approval) on the global Campaigns page.</p>
+    </div>
+  );
+}
+
+function ClientDetails({ client }: { client: Client }) {
+  const serviceLabel = (s?: string) =>
+    s === 'EXPORT' ? 'Export' : s === 'IMPORT' ? 'Import' : s === 'BOTH' ? 'Both' : '—';
+  const active = (client.status ?? 'active').toLowerCase() === 'active';
+  const rows: { label: string; value: string }[] = [
+    { label: 'Company name', value: client.name },
+    { label: 'Invoice no.', value: client.invoiceNo || '—' },
+    { label: 'Contact person', value: client.contactPerson || '—' },
+    { label: 'Contact email', value: client.email || '—' },
+    { label: 'Mobile no.', value: client.mobile || '—' },
+    { label: 'Product / Category', value: client.productCategory || '—' },
+    { label: 'Service type', value: serviceLabel(client.serviceType) },
+    { label: 'Plan', value: client.plan },
+    { label: 'Status', value: active ? 'Active' : 'Inactive' },
+    { label: 'Plan validity', value: client.validityDays ? `${client.validityDays} days` : '—' },
+    { label: 'Contacts / month', value: String(client.monthlyQuota) },
+    { label: 'Sends / day', value: String(client.dailyBatchSize) },
+    { label: 'Follow-ups (after initial)', value: String(client.followUpCount) },
+    { label: 'Send window', value: `${hourLabel(client.sendWindowStart)} – ${hourLabel(client.sendWindowEnd)}` },
+    { label: 'Weekdays only', value: client.weekdaysOnly ? 'Yes' : 'No' },
+  ];
+  return (
+    <div className="overflow-hidden rounded-lg border border-slate-200">
+      <table className="w-full text-sm">
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.label} className="border-b border-slate-100 last:border-0">
+              <td className="w-48 bg-slate-50 px-4 py-2.5 font-medium text-slate-500">{r.label}</td>
+              <td className="px-4 py-2.5 text-slate-800">{r.value}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
