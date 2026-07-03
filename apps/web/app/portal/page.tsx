@@ -109,7 +109,7 @@ export default function ClientPortalPage() {
           <h1 className="bg-gradient-to-r from-emerald-700 to-teal-600 bg-clip-text text-2xl font-extrabold tracking-tight text-transparent">
             GRAPOUT
           </h1>
-          <p className="mt-1 text-sm text-slate-500">Client Portal</p>
+          <p className="mt-1 text-sm text-slate-500">GVC Framework · Client Portal</p>
         </div>
 
         {registered ? (

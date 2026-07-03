@@ -152,7 +152,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </div>
             <div className="leading-tight">
               <div className="text-base font-extrabold tracking-tight text-white">GRAPOUT</div>
-              <div className="text-[10px] font-medium tracking-wide text-emerald-300">Client Portal</div>
+              <div className="text-[10px] font-medium tracking-wide text-emerald-300">GVC Framework · Client Portal</div>
             </div>
           </div>
 
