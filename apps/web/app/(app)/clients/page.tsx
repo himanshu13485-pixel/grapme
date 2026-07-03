@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, FormEvent } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useCanDelete, useAuth } from '@/lib/auth';
+import { usePlans } from '@/lib/plans';
 import { PageHeader, EmptyState, Modal, StatusBadge, Pagination } from '@/components/ui';
 
 interface Client {
@@ -48,6 +49,7 @@ export default function ClientsPage() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'SUB_ADMIN';
   const isClient = user?.role === 'CLIENT';
+  const { planNames } = usePlans();
   // A client may self-create profiles up to their billable limit.
   const clientCanAdd = isClient && clients.length < (user?.profileLimit ?? 1);
 
@@ -170,9 +172,11 @@ export default function ClientsPage() {
               onChange={(e) => setPlanFilter(e.target.value)}
             >
               <option value="ALL">All plans</option>
-              <option value="GROWTH">Growth</option>
-              <option value="GROWTH_PLUS">Growth Plus</option>
-              <option value="ENTERPRISE">Enterprise</option>
+              {planNames.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
             </select>
           )}
           <span className="ml-auto text-sm text-slate-400">
@@ -345,6 +349,7 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
   const { user } = useAuth();
   // Self-registered clients get their company/contact details prefilled.
   const isClient = user?.role === 'CLIENT';
+  const { planNames } = usePlans();
   const [form, setForm] = useState({
     name: isClient ? user?.companyName ?? '' : '',
     invoiceNo: '',
@@ -353,7 +358,7 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
     mobile: isClient ? user?.contactMobile ?? '' : '',
     productCategory: '',
     serviceType: 'EXPORT',
-    plan: 'GROWTH',
+    plan: 'Growth',
     monthlyQuota: 100,
     dailyBatchSize: 10,
     batchWindowDays: 10,
@@ -366,6 +371,14 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
   });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+
+  // Default to the first available plan if the seeded default isn't present.
+  useEffect(() => {
+    if (planNames.length && !planNames.includes(form.plan)) {
+      setForm((f) => ({ ...f, plan: planNames[0] }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [planNames]);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -480,9 +493,11 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
             value={form.plan}
             onChange={(e) => setForm({ ...form, plan: e.target.value })}
           >
-            <option value="GROWTH">Growth</option>
-            <option value="GROWTH_PLUS">Growth Plus</option>
-            <option value="ENTERPRISE">Enterprise</option>
+            {planNames.map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
           </select>
         </div>
         <NumberField label="Contacts / month" value={form.monthlyQuota} onChange={(v) => setForm({ ...form, monthlyQuota: v })} />
@@ -546,6 +561,9 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
   const [ownerBusy, setOwnerBusy] = useState(false);
   const [status, setStatus] = useState((client.status ?? 'active').toLowerCase());
   const [statusBusy, setStatusBusy] = useState(false);
+  const { planNames } = usePlans();
+  // Always include the client's current plan even if it was later removed.
+  const planOptions = [...new Set([client.plan, ...planNames].filter(Boolean))];
 
   async function toggleStatus(active: boolean) {
     if (
@@ -741,9 +759,11 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
             <label className="label">Plan</label>
             <select className="input" value={form.plan}
               onChange={(e) => setForm({ ...form, plan: e.target.value })}>
-              <option value="GROWTH">Growth</option>
-              <option value="GROWTH_PLUS">Growth Plus</option>
-              <option value="ENTERPRISE">Enterprise</option>
+              {planOptions.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
             </select>
           </div>
           <NumberField label="Contacts / month" value={form.monthlyQuota} onChange={(v) => setForm({ ...form, monthlyQuota: v })} />

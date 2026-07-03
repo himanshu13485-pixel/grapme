@@ -167,6 +167,21 @@ model Tenant {
   clients         Client[]
   cohorts         Cohort[]
   enrollments     Enrollment[]
+  plans           Plan[]
+}
+
+// Tenant-defined plan names shown in every plan picker/filter.
+model Plan {
+  id        String   @id @default(uuid())
+  tenantId  String
+  name      String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
 }
 
 model User {
@@ -666,7 +681,7 @@ model Client {
   productCategory   String?  // product / category being exported/imported
   serviceType       String?  // EXPORT | IMPORT | BOTH
   status            String   @default("active")
-  plan              String   @default("GROWTH")
+  plan              String   @default("Growth")
   reportDaily       Boolean  @default(false) // email a daily performance report
   reportWeekly      Boolean  @default(false) // email a weekly report (Mondays)
   reportMonthly     Boolean  @default(false) // email a monthly report (1st)
