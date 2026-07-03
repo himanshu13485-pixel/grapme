@@ -1,6 +1,13 @@
 'use client';
 
-import { useEffect, useRef, useState, FormEvent } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  FormEvent,
+  type ClipboardEvent as ReactClipboardEvent,
+  type DragEvent as ReactDragEvent,
+} from 'react';
 import { api } from '@/lib/api';
 import { useCanDelete } from '@/lib/auth';
 import { PageHeader, EmptyState, Pagination } from '@/components/ui';
@@ -229,8 +236,9 @@ function TemplateEditor({
     const html = `<a href="${url}" style="background:#4f46e5;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;display:inline-block">Click here</a>`;
     visual ? insertHtmlVisual(html) : wrapHtml(html);
   }
-  function insertImg(url: string) {
-    const html = `<img src="${url}" alt="" style="max-width:100%;height:auto" />`;
+  function insertImg(url: string, alt = '') {
+    const safeAlt = alt.replace(/"/g, '&quot;');
+    const html = `<img src="${url}" alt="${safeAlt}" style="max-width:100%;height:auto" />`;
     visual ? insertHtmlVisual(html) : wrapHtml(html);
   }
   function image() {
@@ -238,7 +246,11 @@ function TemplateEditor({
     if (url) insertImg(url);
   }
   // Upload a file → hosted image URL → insert inline at the cursor.
-  async function uploadImage(file: File) {
+  async function uploadImage(file: File, alt = '') {
+    if (!file.type.startsWith('image/')) {
+      setError('Only image files can be uploaded.');
+      return;
+    }
     setUploading(true);
     setError('');
     try {
@@ -253,11 +265,32 @@ function TemplateEditor({
         mimeType: file.type,
         dataBase64,
       });
-      insertImg(res.url);
+      insertImg(res.url, alt);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed');
     } finally {
       setUploading(false);
+    }
+  }
+  // Paste an image straight from the clipboard into the editor.
+  function handlePaste(e: ReactClipboardEvent) {
+    const item = Array.from(e.clipboardData.items).find((i) =>
+      i.type.startsWith('image/'),
+    );
+    const file = item?.getAsFile();
+    if (file) {
+      e.preventDefault();
+      uploadImage(file);
+    }
+  }
+  // Drag & drop an image file onto the editor.
+  function handleDrop(e: ReactDragEvent) {
+    const file = Array.from(e.dataTransfer.files).find((f) =>
+      f.type.startsWith('image/'),
+    );
+    if (file) {
+      e.preventDefault();
+      uploadImage(file);
     }
   }
   const divider = () => (visual ? insertHtmlVisual('<hr />') : wrapHtml('<hr />'));
@@ -358,7 +391,11 @@ function TemplateEditor({
             className="hidden"
             onChange={(e) => {
               const f = e.target.files?.[0];
-              if (f) uploadImage(f);
+              if (f) {
+                const alt =
+                  window.prompt('Alt text (describe the image, optional):', '') ?? '';
+                uploadImage(f, alt);
+              }
               e.target.value = '';
             }}
           />
@@ -398,13 +435,21 @@ function TemplateEditor({
       {/* Editor + live preview */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <div>
-          <label className="label">{visual ? 'Visual editor' : 'HTML body'}</label>
+          <label className="label">
+            {visual ? 'Visual editor' : 'HTML body'}
+            <span className="ml-2 font-normal text-slate-400">
+              — paste or drop an image to insert it
+            </span>
+          </label>
           {visual ? (
             <div
               ref={visualRef}
               contentEditable
               suppressContentEditableWarning
               onInput={syncFromVisual}
+              onPaste={handlePaste}
+              onDrop={handleDrop}
+              onDragOver={(e) => e.preventDefault()}
               className="h-72 overflow-auto rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-brand-200"
             />
           ) : (
@@ -413,6 +458,9 @@ function TemplateEditor({
               className="input h-72 font-mono text-xs"
               value={bodyHtml}
               onChange={(e) => setBodyHtml(e.target.value)}
+              onPaste={handlePaste}
+              onDrop={handleDrop}
+              onDragOver={(e) => e.preventDefault()}
               required
             />
           )}
