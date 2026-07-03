@@ -96,18 +96,18 @@ export default function ApprovalsPage() {
       ) : (
         <>
         <div className="mb-3 text-sm text-slate-400">{items.length} item{items.length === 1 ? '' : 's'}</div>
-        <div className="card overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="card overflow-x-auto">
+          <table className="w-full min-w-[860px] text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase text-slate-400">
               <tr>
-                <th className="px-5 py-3">Type</th>
-                <th className="px-5 py-3">Client</th>
-                <th className="px-5 py-3">What</th>
-                <th className="px-5 py-3">Submitted by</th>
-                <th className="px-5 py-3">When</th>
-                <th className="px-5 py-3">Status</th>
-                <th className="px-5 py-3">Reviewed by</th>
-                <th className="px-5 py-3"></th>
+                <th className="px-4 py-3">Type</th>
+                <th className="px-4 py-3">Client</th>
+                <th className="px-4 py-3">What</th>
+                <th className="px-4 py-3">Submitted by</th>
+                <th className="px-4 py-3">When</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Reviewed by</th>
+                <th className="px-4 py-3"></th>
               </tr>
             </thead>
             <tbody>
@@ -117,11 +117,11 @@ export default function ApprovalsPage() {
                   className="cursor-pointer border-t border-slate-100 hover:bg-slate-50"
                   onClick={() => setOpen(open === a.id ? null : a.id)}
                 >
-                  <td className="px-5 py-3 font-medium">
+                  <td className="px-4 py-3 font-medium">
                     <span className="mr-1 text-slate-400">{open === a.id ? '▾' : '▸'}</span>
                     {typeLabel(a.entityType)}
                   </td>
-                  <td className="px-5 py-3">
+                  <td className="px-4 py-3">
                     {a.clientName ? (
                       <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700">
                         {a.clientName}
@@ -130,17 +130,17 @@ export default function ApprovalsPage() {
                       <span className="text-slate-400">—</span>
                     )}
                   </td>
-                  <td className="px-5 py-3 text-slate-700">{a.target ?? '—'}</td>
-                  <td className="px-5 py-3 text-slate-500">
+                  <td className="px-4 py-3 text-slate-700">{a.target ?? '—'}</td>
+                  <td className="px-4 py-3 text-slate-500">
                     {a.submittedBy?.name ?? '—'}
                   </td>
-                  <td className="px-5 py-3 text-slate-500">
+                  <td className="px-4 py-3 text-slate-500">
                     {new Date(a.createdAt).toLocaleString()}
                   </td>
-                  <td className="px-5 py-3">
+                  <td className="px-4 py-3">
                     <StatusBadge status={a.status} />
                   </td>
-                  <td className="px-5 py-3 text-slate-500">
+                  <td className="px-4 py-3 text-slate-500">
                     {a.status === 'PENDING' ? (
                       '—'
                     ) : (
@@ -152,7 +152,7 @@ export default function ApprovalsPage() {
                       </div>
                     )}
                   </td>
-                  <td className="px-5 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                  <td className="whitespace-nowrap px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                     {a.status === 'PENDING' && (
                       <div className="flex justify-end gap-2">
                         <button
