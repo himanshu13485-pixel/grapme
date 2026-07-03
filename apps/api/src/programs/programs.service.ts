@@ -998,7 +998,9 @@ export class ProgramsService {
     let sent = 0;
     let skipped = 0;
 
-    // Expire validity first: flip lapsed clients to inactive + pause cohorts.
+    // Plan-expiry reminders, then expire validity: flip lapsed clients to
+    // inactive + pause cohorts.
+    await this.notifyValidityMilestones();
     await this.enforceClientValidity();
 
     const due = await this.prisma.enrollment.findMany({
@@ -1393,6 +1395,124 @@ export class ProgramsService {
     );
   }
 
+  private webUrlBase(): string {
+    return (
+      this.config.get<string>('WEB_PUBLIC_URL') ||
+      this.config.get<string>('CORS_ORIGIN') ||
+      'http://localhost:3000'
+    );
+  }
+
+  /** The mailbox used to send system/admin mail for a tenant, if any. */
+  private async tenantSystemMailbox(tenantId: string) {
+    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
+    if (tenant?.reportMailboxId) {
+      const acct = await this.prisma.emailAccount.findUnique({
+        where: { id: tenant.reportMailboxId },
+      });
+      if (acct) return acct;
+    }
+    return this.prisma.emailAccount.findFirst({
+      where: { tenantId },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  /**
+   * Plan-expiry reminders: emails the client (CC admins) as the validity window
+   * winds down — at ~10, 4 and 1 days out, and once on/after expiry. Each
+   * milestone fires once; the stage marker (0..4) advances so a tick only ever
+   * sends the most-urgent newly-crossed reminder. Reset when validity is renewed.
+   */
+  private async notifyValidityMilestones(): Promise<void> {
+    const clients = await this.prisma.client.findMany({
+      where: {
+        validityDays: { not: null },
+        validityStartAt: { not: null },
+        validityNotifyStage: { lt: 4 },
+      },
+      include: { owner: { select: { email: true, name: true } } },
+    });
+    if (clients.length === 0) return;
+
+    const now = Date.now();
+    for (const c of clients) {
+      const expiryMs =
+        c.validityStartAt!.getTime() + c.validityDays! * 86_400_000;
+      const daysLeft = Math.ceil((expiryMs - now) / 86_400_000);
+
+      let target = c.validityNotifyStage;
+      if (daysLeft <= 10) target = Math.max(target, 1);
+      if (daysLeft <= 4) target = Math.max(target, 2);
+      if (daysLeft <= 1) target = Math.max(target, 3);
+      if (daysLeft <= 0) target = Math.max(target, 4);
+      if (target <= c.validityNotifyStage) continue;
+
+      try {
+        await this.sendValidityReminder(c, daysLeft, target);
+      } catch (err) {
+        this.logger.warn(`Validity reminder failed for ${c.name}: ${err}`);
+      }
+      await this.prisma.client.update({
+        where: { id: c.id },
+        data: { validityNotifyStage: target },
+      });
+    }
+  }
+
+  private async sendValidityReminder(
+    client: {
+      id: string;
+      name: string;
+      tenantId: string;
+      email: string | null;
+      owner: { email: string | null; name: string | null } | null;
+    },
+    daysLeft: number,
+    stage: number,
+  ): Promise<void> {
+    const to = client.owner?.email || client.email;
+    if (!to) return;
+    const account = await this.tenantSystemMailbox(client.tenantId);
+    if (!account) return;
+
+    const admins = await this.prisma.user.findMany({
+      where: { tenantId: client.tenantId, role: Role.SUPER_ADMIN, status: 'ACTIVE' },
+      select: { email: true },
+    });
+    const cc = admins.map((a) => a.email).filter(Boolean).join(', ') || undefined;
+
+    const expired = stage >= 4 || daysLeft <= 0;
+    const headline = expired
+      ? `Your plan for ${client.name} has expired`
+      : `Your plan for ${client.name} expires in ${daysLeft} day${daysLeft === 1 ? '' : 's'}`;
+    const body = expired
+      ? 'Your outreach has been paused. Please contact your account manager to renew and resume sending.'
+      : 'Please contact your account manager to renew before it lapses, so your outreach keeps running without interruption.';
+
+    await this.mailer.send({
+      account,
+      to,
+      cc,
+      subject: headline,
+      html: `
+        <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto">
+          <h2 style="color:${expired ? '#b91c1c' : '#0f766e'}">${headline}</h2>
+          <p>${body}</p>
+          <p style="margin:20px 0">
+            <a href="${this.webUrlBase()}/client"
+               style="background:#0f766e;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600">
+              Open your portal
+            </a>
+          </p>
+          <p style="color:#94a3b8;font-size:12px">GRAPOUT · GVC Framework</p>
+        </div>`,
+    });
+    this.logger.log(
+      `Validity reminder (stage ${stage}, ${daysLeft}d) sent to ${to} for ${client.name}`,
+    );
+  }
+
   /**
    * Auto-enforcement: any active client whose validity has expired is flipped to
    * inactive and its running cohorts paused. Run at the top of each engine tick.
@@ -1441,7 +1561,7 @@ export class ProgramsService {
         where: { id: clientId },
         data: {
           status: 'active',
-          ...(renew ? { validityStartAt: new Date() } : {}),
+          ...(renew ? { validityStartAt: new Date(), validityNotifyStage: 0 } : {}),
         },
       });
       await this.prisma.cohort.updateMany({
@@ -1479,6 +1599,7 @@ export class ProgramsService {
       data: {
         validityDays,
         validityStartAt: validityDays ? new Date() : null,
+        validityNotifyStage: 0, // fresh window → reminders start over
       },
       select: { id: true, validityDays: true, validityStartAt: true },
     });

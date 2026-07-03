@@ -690,6 +690,7 @@ model Client {
   lastAutoCohortAt  DateTime?                 // guards once-per-month creation
   validityDays      Int?                      // plan validity window in days (30/180/360)
   validityStartAt   DateTime?                 // when the validity window began
+  validityNotifyStage Int    @default(0)      // last expiry-reminder milestone emailed (0..4)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 

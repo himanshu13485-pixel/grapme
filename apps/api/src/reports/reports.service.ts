@@ -22,20 +22,23 @@ export class ReportsService {
   async summary(user: AuthUser) {
     const scope = await this.scopeWhere(user);
 
+    // Tenant-wide staff/approval counts are for admins only (not USER/CLIENT).
+    const isAdmin =
+      user.role === Role.SUPER_ADMIN || user.role === Role.SUB_ADMIN;
     const [campaigns, users, pendingApprovals, eventGroups] = await Promise.all([
       this.prisma.campaign.groupBy({
         by: ['status'],
         where: scope.campaign,
         _count: { _all: true },
       }),
-      user.role === Role.USER
-        ? Promise.resolve(0)
-        : this.prisma.user.count({ where: scope.user }),
-      user.role === Role.USER
-        ? Promise.resolve(0)
-        : this.prisma.approval.count({
+      isAdmin
+        ? this.prisma.user.count({ where: scope.user })
+        : Promise.resolve(0),
+      isAdmin
+        ? this.prisma.approval.count({
             where: { tenantId: user.tenantId, status: 'PENDING' },
-          }),
+          })
+        : Promise.resolve(0),
       this.prisma.emailEvent.groupBy({
         by: ['eventType'],
         where: { campaign: scope.campaign },
@@ -173,6 +176,10 @@ export class ReportsService {
   async recentCohorts(user: AuthUser, take = 8) {
     if (user.role === Role.USER) return [];
     let clientFilter = {};
+    if (user.role === Role.CLIENT) {
+      const ids = await this.ownedClientIds(user.userId);
+      clientFilter = { clientId: { in: ids } };
+    }
     if (user.role === Role.SUB_ADMIN) {
       const sa = await this.prisma.user.findUnique({
         where: { id: user.userId },
@@ -307,6 +314,15 @@ export class ReportsService {
         cohortClientIds: [], // users don't own cohorts
       };
     }
+    if (user.role === Role.CLIENT) {
+      // A client-portal user only ever sees their own profiles' data.
+      const ids = await this.ownedClientIds(user.userId);
+      return {
+        campaign: { tenantId: user.tenantId, clientId: { in: ids } },
+        user: { tenantId: user.tenantId, id: user.userId },
+        cohortClientIds: ids,
+      };
+    }
     if (user.role === Role.SUB_ADMIN) {
       // A full-access sub-admin sees the whole tenant (same as super admin);
       // otherwise scope to their assigned clients.
@@ -341,5 +357,13 @@ export class ReportsService {
       select: { assignedClientId: true },
     });
     return rows.map((r) => r.assignedClientId!).filter(Boolean);
+  }
+
+  private async ownedClientIds(ownerUserId: string): Promise<string[]> {
+    const rows = await this.prisma.client.findMany({
+      where: { ownerUserId },
+      select: { id: true },
+    });
+    return rows.map((r) => r.id);
   }
 }

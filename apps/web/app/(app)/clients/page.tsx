@@ -515,6 +515,29 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
   const [ownerMobile, setOwnerMobile] = useState(client.owner?.contactMobile ?? '');
   const [ownerNote, setOwnerNote] = useState('');
   const [ownerBusy, setOwnerBusy] = useState(false);
+  const [status, setStatus] = useState((client.status ?? 'active').toLowerCase());
+  const [statusBusy, setStatusBusy] = useState(false);
+
+  async function toggleStatus(active: boolean) {
+    if (
+      !active &&
+      !confirm(
+        'Deactivate this client?\n\nAll its running cohorts will be paused and will not send until you reactivate.',
+      )
+    )
+      return;
+    setStatusBusy(true);
+    try {
+      const r = await api.patch<{ status: string }>(`/clients/${client.id}/status`, {
+        active,
+      });
+      setStatus(r.status);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Failed');
+    } finally {
+      setStatusBusy(false);
+    }
+  }
 
   async function saveOwner() {
     setOwnerBusy(true);
@@ -600,8 +623,35 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
     }
   }
 
+  const active = status === 'active';
   return (
     <form onSubmit={submit} className="space-y-4">
+      <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+        <div className="flex items-center gap-2">
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold ${
+              active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'
+            }`}
+          >
+            <span className={`h-2 w-2 rounded-full ${active ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+            {active ? 'Active' : 'Inactive'}
+          </span>
+          <span className="text-xs text-slate-500">
+            {active
+              ? 'Client is running. Deactivate to pause all its cohorts.'
+              : 'Client is paused. Activate to resume its cohorts.'}
+          </span>
+        </div>
+        <button
+          type="button"
+          className={active ? 'btn-ghost text-rose-600' : 'btn-primary'}
+          onClick={() => toggleStatus(!active)}
+          disabled={statusBusy}
+        >
+          {statusBusy ? '…' : active ? 'Deactivate' : 'Activate'}
+        </button>
+      </div>
+
       <div>
         <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
           Client details
