@@ -172,11 +172,14 @@ export default function ClientCockpit() {
 
   return (
     <div>
-      {!isClient && (
-        <div className="mb-2 text-sm">
-          <Link href="/clients" className="text-brand-600 hover:underline">← Clients</Link>
-        </div>
-      )}
+      <div className="mb-2 text-sm">
+        <Link
+          href="/clients"
+          className={isClient ? 'text-emerald-700 hover:underline' : 'text-brand-600 hover:underline'}
+        >
+          {isClient ? '← My profiles' : '← Clients'}
+        </Link>
+      </div>
       <PageHeader
         title={client.name}
         subtitle={`${client.plan} · ${client.dailyBatchSize}/day · ${client.followUpCount} follow-ups · ${client.weekdaysOnly ? 'weekdays only' : 'all days'}`}

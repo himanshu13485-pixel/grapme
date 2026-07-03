@@ -436,7 +436,7 @@ export class InboundMailService {
             <tr><td style="color:#94a3b8;padding-right:12px">Mailbox</td><td>${mailbox.emailAddress}</td></tr>
           </table>
           <p style="margin:20px 0">
-            <a href="${this.webUrl()}/portal"
+            <a href="${this.webUrl()}/client"
                style="background:#0f766e;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600">
               Open your portal
             </a>

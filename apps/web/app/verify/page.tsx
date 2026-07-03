@@ -64,7 +64,7 @@ function VerifyInner() {
             <h2 className="text-lg font-semibold text-slate-800">Confirmation failed</h2>
             <p className="mt-1 text-sm text-slate-600">{message}</p>
             <Link
-              href="/portal"
+              href="/client"
               className="mt-5 inline-block rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-2.5 text-sm font-semibold text-white shadow hover:brightness-110"
             >
               Back to portal

@@ -111,7 +111,7 @@ export default function LoginPage() {
 
         <p className="mt-4 border-t border-slate-100 pt-4 text-center text-sm text-slate-500">
           Are you a client?{' '}
-          <a href="/portal" className="font-medium text-emerald-600 hover:underline">
+          <a href="/client" className="font-medium text-emerald-600 hover:underline">
             Client portal →
           </a>
         </p>

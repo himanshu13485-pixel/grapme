@@ -58,7 +58,7 @@ function ResetInner() {
             <h2 className="text-lg font-semibold text-slate-800">Password updated</h2>
             <p className="text-sm text-slate-600">You can now sign in with your new password.</p>
             <Link
-              href="/portal"
+              href="/client"
               className="inline-block w-full rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-2.5 text-sm font-semibold text-white shadow hover:brightness-110"
             >
               Go to sign in
@@ -68,7 +68,7 @@ function ResetInner() {
           <div className="text-center">
             <p className="text-sm text-slate-600">This reset link is missing its token.</p>
             <Link
-              href="/portal"
+              href="/client"
               className="mt-5 inline-block rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-2.5 text-sm font-semibold text-white shadow hover:brightness-110"
             >
               Back to portal
