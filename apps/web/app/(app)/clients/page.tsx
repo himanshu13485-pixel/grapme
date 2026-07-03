@@ -40,6 +40,8 @@ export default function ClientsPage() {
   const [q, setQ] = useState('');
   const [invoiceQ, setInvoiceQ] = useState('');
   const [emailQ, setEmailQ] = useState('');
+  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [planFilter, setPlanFilter] = useState('ALL');
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 12;
   const canDelete = useCanDelete();
@@ -87,6 +89,10 @@ export default function ClientsPage() {
     const inv = invoiceQ.trim().toLowerCase();
     const em = emailQ.trim().toLowerCase();
     return clients.filter((c) => {
+      const active = (c.status ?? 'active').toLowerCase() === 'active';
+      if (statusFilter === 'ACTIVE' && !active) return false;
+      if (statusFilter === 'INACTIVE' && active) return false;
+      if (planFilter !== 'ALL' && c.plan !== planFilter) return false;
       if (inv && !(c.invoiceNo ?? '').toLowerCase().includes(inv)) return false;
       if (em && !(c.email ?? c.owner?.email ?? '').toLowerCase().includes(em)) return false;
       if (!s) return true;
@@ -94,9 +100,9 @@ export default function ClientsPage() {
         .filter(Boolean)
         .some((v) => v!.toLowerCase().includes(s));
     });
-  }, [clients, q, invoiceQ, emailQ]);
+  }, [clients, q, invoiceQ, emailQ, statusFilter, planFilter]);
 
-  useEffect(() => setPage(1), [q, invoiceQ, emailQ]);
+  useEffect(() => setPage(1), [q, invoiceQ, emailQ, statusFilter, planFilter]);
   const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
@@ -145,6 +151,29 @@ export default function ClientsPage() {
               value={invoiceQ}
               onChange={(e) => setInvoiceQ(e.target.value)}
             />
+          )}
+          {!isClient && (
+            <select
+              className="input w-36"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+            >
+              <option value="ALL">All statuses</option>
+              <option value="ACTIVE">Active</option>
+              <option value="INACTIVE">Inactive</option>
+            </select>
+          )}
+          {!isClient && (
+            <select
+              className="input w-40"
+              value={planFilter}
+              onChange={(e) => setPlanFilter(e.target.value)}
+            >
+              <option value="ALL">All plans</option>
+              <option value="GROWTH">Growth</option>
+              <option value="GROWTH_PLUS">Growth Plus</option>
+              <option value="ENTERPRISE">Enterprise</option>
+            </select>
           )}
           <span className="ml-auto text-sm text-slate-400">
             {filtered.length} of {clients.length}
