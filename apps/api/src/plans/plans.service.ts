@@ -8,7 +8,13 @@ import { Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 
-const DEFAULTS = ['Growth', 'Growth Plus', 'Enterprise'];
+const DEFAULTS: { name: string; color: string }[] = [
+  { name: 'Growth', color: '#0f766e' },
+  { name: 'Growth Plus', color: '#0f766e' },
+  { name: 'Enterprise', color: '#7c3aed' },
+];
+
+const HEX = /^#[0-9a-fA-F]{6}$/;
 
 @Injectable()
 export class PlansService {
@@ -28,9 +34,10 @@ export class PlansService {
     });
     if (plans.length === 0) {
       await this.prisma.plan.createMany({
-        data: DEFAULTS.map((name, i) => ({
+        data: DEFAULTS.map((d, i) => ({
           tenantId: user.tenantId,
-          name,
+          name: d.name,
+          color: d.color,
           sortOrder: i,
         })),
         skipDuplicates: true,
@@ -43,7 +50,7 @@ export class PlansService {
     return plans;
   }
 
-  async create(user: AuthUser, name: string) {
+  async create(user: AuthUser, name: string, color?: string) {
     this.assertAdmin(user);
     const clean = (name ?? '').trim();
     if (!clean) throw new BadRequestException('Plan name is required.');
@@ -59,7 +66,41 @@ export class PlansService {
       data: {
         tenantId: user.tenantId,
         name: clean,
+        color: color && HEX.test(color) ? color : '#0f766e',
         sortOrder: (max._max.sortOrder ?? -1) + 1,
+      },
+    });
+  }
+
+  async update(user: AuthUser, id: string, dto: { name?: string; color?: string }) {
+    this.assertAdmin(user);
+    const plan = await this.prisma.plan.findFirst({
+      where: { id, tenantId: user.tenantId },
+    });
+    if (!plan) throw new NotFoundException('Plan not found');
+    if (dto.color !== undefined && !HEX.test(dto.color)) {
+      throw new BadRequestException('Color must be a hex code like #7c3aed.');
+    }
+    // Renaming keeps existing clients pointed at the plan by name.
+    if (dto.name && dto.name.trim() && dto.name.trim() !== plan.name) {
+      const clash = await this.prisma.plan.findFirst({
+        where: {
+          tenantId: user.tenantId,
+          name: { equals: dto.name.trim(), mode: 'insensitive' },
+          id: { not: id },
+        },
+      });
+      if (clash) throw new BadRequestException('That plan name already exists.');
+      await this.prisma.client.updateMany({
+        where: { tenantId: user.tenantId, plan: plan.name },
+        data: { plan: dto.name.trim() },
+      });
+    }
+    return this.prisma.plan.update({
+      where: { id },
+      data: {
+        ...(dto.name && dto.name.trim() ? { name: dto.name.trim() } : {}),
+        ...(dto.color !== undefined ? { color: dto.color } : {}),
       },
     });
   }

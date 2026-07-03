@@ -14,7 +14,7 @@ const NAV = [
   { href: '/clients', label: 'Clients Workspace', icon: '🏢', admin: true, module: 'clients' },
   { href: '/cohort-schedule', label: 'Cohort Schedule', icon: '📅', admin: true, module: 'cohort-schedule' },
   { href: '/validity', label: 'Validity', icon: '⏳', admin: true, module: 'validity' },
-  { href: '/plans', label: 'Plans', icon: '🏷', admin: true, module: 'plans' },
+  { href: '/plans', label: 'Membership', icon: '🏷', admin: true, module: 'plans' },
   { href: '/greetings', label: 'Greetings', icon: '👋', admin: true, module: 'greetings' },
   { href: '/campaigns', label: 'Campaigns', icon: '✈', module: 'campaigns' },
   { href: '/contacts', label: 'Contacts', icon: '☰', module: 'contacts' },
@@ -38,18 +38,28 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const prevUnread = useRef<number | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [clientProfiles, setClientProfiles] = useState<
-    { id: string; name: string; serviceType?: string | null }[]
+    { id: string; name: string; serviceType?: string | null; plan?: string }[]
   >([]);
+  const [planColors, setPlanColors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!loading && !user) router.replace('/login');
   }, [user, loading, router]);
 
+  // Client portal is themed by the client's membership colour.
+  useEffect(() => {
+    if (user?.role !== 'CLIENT') return;
+    api
+      .get<{ name: string; color: string }[]>('/plans')
+      .then((rows) => setPlanColors(Object.fromEntries(rows.map((p) => [p.name, p.color]))))
+      .catch(() => {});
+  }, [user]);
+
   // Client-portal users: load their owned profiles, and land them on one.
   useEffect(() => {
     if (user?.role !== 'CLIENT') return;
     api
-      .get<{ id: string; name: string; serviceType?: string | null }[]>('/my/clients')
+      .get<{ id: string; name: string; serviceType?: string | null; plan?: string }[]>('/my/clients')
       .then((profiles) => {
         setClientProfiles(profiles);
         // Land them on their dashboard home — but leave them wherever they
@@ -144,152 +154,139 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           ? 'Client'
           : 'User';
 
-  // ── Client portal: a distinct emerald-teal panel scoped to their profiles ──
+  // ── Client portal: themed by the client's membership colour ──
   if (user.role === 'CLIENT') {
+    const activeProfile =
+      clientProfiles.find((p) => pathname.startsWith(`/clients/${p.id}`)) ??
+      clientProfiles[0];
+    const themeColor =
+      (activeProfile?.plan && planColors[activeProfile.plan]) || '#0f766e';
+    const sidebarBg = `linear-gradient(180deg, color-mix(in srgb, ${themeColor} 88%, black), color-mix(in srgb, ${themeColor} 42%, black))`;
+    const mainBg = `color-mix(in srgb, ${themeColor} 7%, #f8fafc)`;
+
     return (
       <div className="flex min-h-screen">
-        <aside className="sticky top-0 flex h-screen w-64 flex-col bg-gradient-to-b from-teal-900 via-emerald-900 to-emerald-800 text-emerald-100 shadow-xl">
+        <aside
+          className="sticky top-0 flex h-screen w-64 flex-col text-white/85 shadow-xl"
+          style={{ background: sidebarBg }}
+        >
           <div className="flex items-center gap-3 px-5 py-6">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/95 text-lg font-black text-emerald-700 shadow-lg">
+            <div
+              className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/95 text-lg font-black shadow-lg"
+              style={{ color: themeColor }}
+            >
               G
             </div>
             <div className="leading-tight">
               <div className="text-base font-extrabold tracking-tight text-white">GRAPOUT</div>
-              <div className="text-[10px] font-medium tracking-wide text-emerald-300">GVC Framework · Client Portal</div>
+              <div className="text-[10px] font-medium tracking-wide text-white/60">GVC Framework · Client Portal</div>
             </div>
           </div>
 
           <nav className="flex-1 space-y-1 overflow-y-auto px-3 pb-4">
-            <Link
+            <ClientNavItem
               href="/client-home"
-              className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all ${
-                pathname === '/client-home'
-                  ? 'bg-white text-emerald-700 shadow-lg'
-                  : 'text-emerald-100 hover:translate-x-0.5 hover:bg-white/10 hover:text-white'
-              }`}
-            >
-              <span
-                className={`flex h-7 w-7 items-center justify-center rounded-lg text-xs ${
-                  pathname === '/client-home' ? 'bg-emerald-600 text-white' : 'bg-white/10 text-emerald-100'
-                }`}
-              >
-                ▦
-              </span>
-              <span className="flex-1">Dashboard</span>
-            </Link>
+              active={pathname === '/client-home'}
+              icon="▦"
+              label="Dashboard"
+              color={themeColor}
+            />
 
-            <div className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-wider text-emerald-400">
+            <div className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-wider text-white/50">
               My workspace{clientProfiles.length > 1 ? 's' : ''}
             </div>
             {clientProfiles.map((p) => {
               const active = pathname.startsWith(`/clients/${p.id}`);
+              const badge = p.serviceType ? (
+                <span
+                  title={
+                    p.serviceType === 'BOTH'
+                      ? 'Export & Import'
+                      : p.serviceType === 'EXPORT'
+                        ? 'Export'
+                        : 'Import'
+                  }
+                  className={`rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${
+                    active ? 'bg-white' : 'bg-white/20 text-white'
+                  }`}
+                  style={active ? { color: themeColor } : undefined}
+                >
+                  {p.serviceType === 'BOTH'
+                    ? 'Export/Import'
+                    : p.serviceType === 'EXPORT'
+                      ? 'Export'
+                      : 'Import'}
+                </span>
+              ) : null;
               return (
-                <Link
+                <ClientNavItem
                   key={p.id}
                   href={`/clients/${p.id}`}
-                  className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all ${
-                    active
-                      ? 'bg-white text-emerald-700 shadow-lg'
-                      : 'text-emerald-100 hover:translate-x-0.5 hover:bg-white/10 hover:text-white'
-                  }`}
-                >
-                  <span
-                    className={`flex h-7 w-7 items-center justify-center rounded-lg text-xs ${
-                      active ? 'bg-emerald-600 text-white' : 'bg-white/10 text-emerald-100'
-                    }`}
-                  >
-                    🏢
-                  </span>
-                  <span className="flex-1 truncate">{p.name}</span>
-                  {p.serviceType && (
-                    <span
-                      title={
-                        p.serviceType === 'BOTH'
-                          ? 'Export & Import'
-                          : p.serviceType === 'EXPORT'
-                            ? 'Export'
-                            : 'Import'
-                      }
-                      className={`rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${
-                        active
-                          ? 'bg-emerald-100 text-emerald-700'
-                          : 'bg-white/20 text-white'
-                      }`}
-                    >
-                      {p.serviceType === 'BOTH'
-                        ? 'Export/Import'
-                        : p.serviceType === 'EXPORT'
-                          ? 'Export'
-                          : 'Import'}
-                    </span>
-                  )}
-                </Link>
+                  active={active}
+                  icon="🏢"
+                  label={p.name}
+                  color={themeColor}
+                  badge={badge}
+                />
               );
             })}
             {clientProfiles.length === 0 && (
-              <div className="px-3 py-2 text-xs text-emerald-300">No workspace assigned yet.</div>
+              <div className="px-3 py-2 text-xs text-white/60">No workspace assigned yet.</div>
             )}
             {clientProfiles.length < (user.profileLimit ?? 1) && (
-              <Link
+              <ClientNavItem
                 href="/clients?new=1"
-                className={`group mt-1 flex items-center gap-3 rounded-xl border border-dashed border-white/20 px-3 py-2.5 text-sm font-medium transition-all ${
-                  pathname === '/clients'
-                    ? 'bg-white text-emerald-700 shadow-lg'
-                    : 'text-emerald-200 hover:bg-white/10 hover:text-white'
-                }`}
-              >
-                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/10 text-xs">＋</span>
-                <span className="flex-1">
-                  {clientProfiles.length === 0 ? 'Set up my workspace' : 'Add profile'}
-                </span>
-              </Link>
+                active={pathname === '/clients'}
+                icon="＋"
+                label={clientProfiles.length === 0 ? 'Set up my workspace' : 'Add profile'}
+                color={themeColor}
+                dashed
+              />
             )}
 
-            <div className="px-3 pb-1 pt-4 text-[10px] font-semibold uppercase tracking-wider text-emerald-400">
+            <div className="px-3 pb-1 pt-4 text-[10px] font-semibold uppercase tracking-wider text-white/50">
               Account
             </div>
-            <Link
+            <ClientNavItem
               href="/my-profile"
-              className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all ${
-                pathname === '/my-profile'
-                  ? 'bg-white text-emerald-700 shadow-lg'
-                  : 'text-emerald-100 hover:translate-x-0.5 hover:bg-white/10 hover:text-white'
-              }`}
-            >
-              <span
-                className={`flex h-7 w-7 items-center justify-center rounded-lg text-xs ${
-                  pathname === '/my-profile' ? 'bg-emerald-600 text-white' : 'bg-white/10 text-emerald-100'
-                }`}
-              >
-                👤
-              </span>
-              <span className="flex-1">My Profile</span>
-            </Link>
+              active={pathname === '/my-profile'}
+              icon="👤"
+              label="My Profile"
+              color={themeColor}
+            />
           </nav>
 
           <div className="border-t border-white/10 p-4">
             <div className="mb-3 flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-600 text-xs font-bold text-white shadow-lg">
+              <div
+                className="flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold text-white shadow-lg"
+                style={{ background: `color-mix(in srgb, ${themeColor} 70%, black)` }}
+              >
                 {initials}
               </div>
               <div className="min-w-0 leading-tight">
                 <div className="truncate text-sm font-semibold text-white">{user.name}</div>
-                <div className="text-[11px] text-emerald-300">Client</div>
+                <div className="text-[11px] text-white/60">
+                  Client{activeProfile?.plan ? ` · ${activeProfile.plan}` : ''}
+                </div>
               </div>
             </div>
             <button
               onClick={logout}
-              className="w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs font-medium text-emerald-100 transition hover:bg-white/15 hover:text-white"
+              className="w-full rounded-lg border border-white/15 bg-white/5 px-3 py-2 text-xs font-medium text-white/85 transition hover:bg-white/15 hover:text-white"
             >
               Sign out
             </button>
           </div>
         </aside>
-        <main className="flex-1 overflow-auto bg-emerald-50/40 px-8 py-8">{children}</main>
+        <main className="flex-1 overflow-auto px-8 py-8" style={{ background: mainBg }}>
+          {children}
+        </main>
         {toast && (
           <button
             onClick={() => setToast('')}
-            className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-xl bg-emerald-700 px-4 py-3 text-sm font-medium text-white shadow-lg"
+            className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-medium text-white shadow-lg"
+            style={{ background: `color-mix(in srgb, ${themeColor} 80%, black)` }}
           >
             {toast}
           </button>
@@ -379,5 +376,48 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </button>
       )}
     </div>
+  );
+}
+
+function ClientNavItem({
+  href,
+  active,
+  icon,
+  label,
+  color,
+  badge,
+  dashed,
+}: {
+  href: string;
+  active: boolean;
+  icon: string;
+  label: string;
+  color: string;
+  badge?: React.ReactNode;
+  dashed?: boolean;
+}) {
+  return (
+    <Link
+      href={href}
+      className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all ${
+        dashed ? 'border border-dashed border-white/20 ' : ''
+      }${
+        active
+          ? 'bg-white shadow-lg'
+          : 'text-white/85 hover:translate-x-0.5 hover:bg-white/10 hover:text-white'
+      }`}
+      style={active ? { color } : undefined}
+    >
+      <span
+        className={`flex h-7 w-7 items-center justify-center rounded-lg text-xs ${
+          active ? 'text-white' : 'bg-white/10 text-white/85'
+        }`}
+        style={active ? { background: color } : undefined}
+      >
+        {icon}
+      </span>
+      <span className="flex-1 truncate">{label}</span>
+      {badge}
+    </Link>
   );
 }

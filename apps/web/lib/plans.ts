@@ -6,6 +6,7 @@ import { api } from './api';
 export interface Plan {
   id: string;
   name: string;
+  color: string;
 }
 
 /**

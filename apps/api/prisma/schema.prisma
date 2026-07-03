@@ -190,6 +190,7 @@ model Plan {
   id        String   @id @default(uuid())
   tenantId  String
   name      String
+  color     String   @default("#0f766e") // theme color for the client portal
   sortOrder Int      @default(0)
   createdAt DateTime @default(now())
 

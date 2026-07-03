@@ -1,4 +1,12 @@
-import { Body, Controller, Delete, Get, Param, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+} from '@nestjs/common';
 import { PlansService } from './plans.service';
 import {
   CurrentUser,
@@ -16,8 +24,20 @@ export class PlansController {
   }
 
   @Post()
-  create(@CurrentUser() user: AuthUser, @Body() dto: { name: string }) {
-    return this.plans.create(user, dto.name);
+  create(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: { name: string; color?: string },
+  ) {
+    return this.plans.create(user, dto.name, dto.color);
+  }
+
+  @Patch(':id')
+  update(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: { name?: string; color?: string },
+  ) {
+    return this.plans.update(user, id, dto);
   }
 
   @Delete(':id')
