@@ -181,8 +181,21 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   </span>
                   <span className="flex-1 truncate">{p.name}</span>
                   {p.serviceType && (
-                    <span className="rounded-full bg-white/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-emerald-100">
-                      {p.serviceType === 'BOTH' ? 'EX/IM' : p.serviceType.slice(0, 2)}
+                    <span
+                      title={
+                        p.serviceType === 'BOTH'
+                          ? 'Export & Import'
+                          : p.serviceType === 'EXPORT'
+                            ? 'Export'
+                            : 'Import'
+                      }
+                      className="rounded-full bg-white/15 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-100"
+                    >
+                      {p.serviceType === 'BOTH'
+                        ? 'Export/Import'
+                        : p.serviceType === 'EXPORT'
+                          ? 'Export'
+                          : 'Import'}
                     </span>
                   )}
                 </Link>
