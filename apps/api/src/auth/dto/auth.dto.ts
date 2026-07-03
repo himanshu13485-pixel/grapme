@@ -98,3 +98,15 @@ export class ChangePasswordDto {
   @MinLength(8)
   newPassword: string;
 }
+
+/** Self-service account update (name / email) for the signed-in user. */
+export class UpdateAccountDto {
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  name?: string;
+
+  @IsOptional()
+  @IsEmail()
+  email?: string;
+}

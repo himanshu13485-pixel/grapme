@@ -26,6 +26,7 @@ const NAV = [
   { href: '/compliance', label: 'Compliance', icon: '⚖', admin: true, module: 'compliance' },
   { href: '/sub-admins', label: 'Sub Admins', icon: '⚇', admin: true, superOnly: true, module: 'sub-admins' },
   { href: '/activity-logs', label: 'Activity Logs', icon: '◷', admin: true, module: 'activity-logs' },
+  { href: '/my-profile', label: 'My Account', icon: '👤', module: 'my-profile' },
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
@@ -135,7 +136,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     if (user.role === 'SUPER_ADMIN') return true;
     if (user.role === 'SUB_ADMIN') {
       if (n.superOnly) return false; // e.g. managing other sub-admins
-      if (n.href === '/dashboard') return true; // always available
+      // Dashboard + own account are always available.
+      if (n.href === '/dashboard' || n.href === '/my-profile') return true;
       if (user.fullAccess) return true;
       return (user.accessModules ?? []).includes(n.module);
     }

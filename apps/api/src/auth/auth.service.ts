@@ -481,6 +481,25 @@ export class AuthService {
     return { success: true };
   }
 
+  /** Self-service update of the signed-in user's own name / email. */
+  async updateAccount(userId: string, dto: { name?: string; email?: string }) {
+    const email = dto.email?.toLowerCase();
+    if (email) {
+      const clash = await this.prisma.user.findFirst({
+        where: { email, id: { not: userId } },
+      });
+      if (clash) throw new BadRequestException('That email is already in use.');
+    }
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(dto.name !== undefined ? { name: dto.name } : {}),
+        ...(email ? { email } : {}),
+      },
+    });
+    return this.me(userId);
+  }
+
   async me(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, HttpCode } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post, HttpCode } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import {
@@ -10,6 +10,7 @@ import {
   ClientRegisterDto,
   ClientVerifyDto,
   ChangePasswordDto,
+  UpdateAccountDto,
 } from './dto/auth.dto';
 import { Public } from '../common/decorators/public.decorator';
 import {
@@ -96,6 +97,14 @@ export class AuthController {
     @Body() dto: ChangePasswordDto,
   ) {
     return this.auth.changePassword(user.userId, dto);
+  }
+
+  @Patch('account')
+  updateAccount(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: UpdateAccountDto,
+  ) {
+    return this.auth.updateAccount(user.userId, dto);
   }
 
   @Get('me')

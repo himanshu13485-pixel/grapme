@@ -9,8 +9,8 @@ export default function LoginPage() {
   const router = useRouter();
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [name, setName] = useState('');
-  const [email, setEmail] = useState('admin@aeo.test');
-  const [password, setPassword] = useState('Password123!');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -102,12 +102,6 @@ export default function LoginPage() {
             {mode === 'login' ? 'Create one' : 'Sign in'}
           </button>
         </p>
-
-        {mode === 'login' && (
-          <p className="mt-4 text-center text-xs text-slate-400">
-            Demo: admin@aeo.test / Password123!
-          </p>
-        )}
 
         <p className="mt-4 border-t border-slate-100 pt-4 text-center text-sm text-slate-500">
           Are you a client?{' '}
