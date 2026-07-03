@@ -58,9 +58,11 @@ export class AuthService {
     });
   }
 
-  /** Whether public "create a new admin workspace" signup is allowed. */
+  /** Whether public "create a new admin workspace" signup is allowed.
+   *  Off by default (admins are preset / seeded); set ALLOW_ADMIN_SIGNUP=true to
+   *  re-enable the "Create workspace" flow. */
   adminSignupAllowed(): boolean {
-    return (this.config.get<string>('ALLOW_ADMIN_SIGNUP') ?? 'true') !== 'false';
+    return this.config.get<string>('ALLOW_ADMIN_SIGNUP') === 'true';
   }
 
   /**
