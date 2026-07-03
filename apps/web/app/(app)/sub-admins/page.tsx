@@ -13,23 +13,6 @@ interface SubAdmin {
   accessModules?: string[];
   canDelete?: boolean;
   lastLoginAt?: string | null;
-  _count?: { assignmentsAsSubAdmin: number };
-}
-interface User {
-  id: string;
-  name: string;
-  email: string;
-  role: string;
-}
-interface ClientRef {
-  id: string;
-  name: string;
-}
-interface Assignment {
-  id: string;
-  assignedUser?: { name: string; email: string };
-  campaign?: { name: string };
-  client?: { id: string; name: string };
 }
 
 // Modules a sub-admin can be granted access to (keys match the left-menu routes).
@@ -49,12 +32,6 @@ const MODULES: { key: string; label: string }[] = [
 
 export default function SubAdminsPage() {
   const [subAdmins, setSubAdmins] = useState<SubAdmin[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
-  const [clients, setClients] = useState<ClientRef[]>([]);
-  const [selected, setSelected] = useState<string | null>(null);
-  const [assignments, setAssignments] = useState<Assignment[]>([]);
-  const [assignUser, setAssignUser] = useState('');
-  const [assignClient, setAssignClient] = useState('');
   const [error, setError] = useState('');
   const [page, setPage] = useState(1);
   const [showCreate, setShowCreate] = useState(false);
@@ -64,62 +41,19 @@ export default function SubAdminsPage() {
 
   function load() {
     api.get<SubAdmin[]>('/sub-admins').then(setSubAdmins).catch((e) => setError(e.message));
-    api.get<User[]>('/users').then(setUsers).catch(() => {});
-    api.get<ClientRef[]>('/clients').then(setClients).catch(() => {});
   }
   useEffect(load, []);
 
-  async function assignClientToSub() {
-    if (!selected || !assignClient) return;
-    try {
-      await api.post(`/sub-admins/${selected}/assignments`, { assignedClientId: assignClient });
-      setAssignClient('');
-      openSubAdmin(selected);
-      load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed');
-    }
-  }
-
-  function openSubAdmin(id: string) {
-    setSelected(id);
-    api.get<Assignment[]>(`/sub-admins/${id}/assignments`).then(setAssignments).catch(() => {});
-  }
-
-  async function assign() {
-    if (!selected || !assignUser) return;
-    try {
-      await api.post(`/sub-admins/${selected}/assignments`, { assignedUserId: assignUser });
-      setAssignUser('');
-      openSubAdmin(selected);
-      load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed');
-    }
-  }
-
-  async function unassign(assignmentId: string) {
-    try {
-      await api.del(`/sub-admins/assignments/${assignmentId}`);
-      if (selected) openSubAdmin(selected);
-      load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed');
-    }
-  }
-
   async function deleteSubAdmin(sa: SubAdmin) {
-    if (!confirm(`Delete sub-admin "${sa.name}" (${sa.email})? Their login and assignments are removed.`)) return;
+    if (!confirm(`Delete sub-admin "${sa.name}" (${sa.email})? Their login is removed.`)) return;
     try {
       await api.del(`/sub-admins/${sa.id}`);
-      if (selected === sa.id) setSelected(null);
       load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed');
     }
   }
 
-  const regularUsers = users.filter((u) => u.role === 'USER');
   const accessLabel = (sa: SubAdmin) =>
     sa.fullAccess
       ? 'Full access'
@@ -129,7 +63,7 @@ export default function SubAdminsPage() {
     <div>
       <PageHeader
         title="Sub Admins"
-        subtitle="Create sub-admin logins, grant access, and delegate users"
+        subtitle="Create sub-admin logins and grant access to modules"
         action={
           <button className="btn-primary" onClick={() => setShowCreate(true)}>
             + New sub-admin
@@ -140,7 +74,7 @@ export default function SubAdminsPage() {
         <p className="mb-4 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-600">{error}</p>
       )}
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div>
         <div className="card overflow-hidden">
           <div className="border-b border-slate-100 px-5 py-3 font-medium">Sub-admins</div>
           {subAdmins.length === 0 ? (
@@ -150,11 +84,9 @@ export default function SubAdminsPage() {
               {pagedSubAdmins.map((sa) => (
                 <li
                   key={sa.id}
-                  className={`flex items-center justify-between border-t border-slate-100 px-5 py-3 text-sm hover:bg-slate-50 ${
-                    selected === sa.id ? 'bg-brand-50' : ''
-                  }`}
+                  className="flex items-center justify-between border-t border-slate-100 px-5 py-3 text-sm hover:bg-slate-50"
                 >
-                  <div className="cursor-pointer" onClick={() => openSubAdmin(sa.id)}>
+                  <div>
                     <div className="flex items-center gap-2">
                       <span className="font-medium">{sa.name}</span>
                       <span
@@ -170,9 +102,7 @@ export default function SubAdminsPage() {
                         </span>
                       )}
                     </div>
-                    <div className="text-xs text-slate-400">
-                      {sa.email} · {sa._count?.assignmentsAsSubAdmin ?? 0} user(s)
-                    </div>
+                    <div className="text-xs text-slate-400">{sa.email}</div>
                   </div>
                   <div className="whitespace-nowrap">
                     <button className="btn-ghost text-xs" onClick={() => setEditing(sa)}>
@@ -189,71 +119,6 @@ export default function SubAdminsPage() {
           <div className="px-5">
             <Pagination page={page} pageSize={PAGE_SIZE} total={subAdmins.length} onPage={setPage} />
           </div>
-        </div>
-
-        <div className="card p-5">
-          <h3 className="mb-3 font-medium">
-            {selected ? 'Assigned clients & users' : 'Select a sub-admin to manage access'}
-          </h3>
-          {selected && (
-            <>
-              <div className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">
-                Assign clients (scopes their dashboard & data)
-              </div>
-              <div className="mb-4 flex gap-2">
-                <select className="input" value={assignClient} onChange={(e) => setAssignClient(e.target.value)}>
-                  <option value="">Assign a client…</option>
-                  {clients.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-                <button className="btn-primary" onClick={assignClientToSub}>
-                  Assign
-                </button>
-              </div>
-              <div className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">
-                Assign users (for approvals delegation)
-              </div>
-              <div className="mb-4 flex gap-2">
-                <select className="input" value={assignUser} onChange={(e) => setAssignUser(e.target.value)}>
-                  <option value="">Assign a user…</option>
-                  {regularUsers.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.name} ({u.email})
-                    </option>
-                  ))}
-                </select>
-                <button className="btn-primary" onClick={assign}>
-                  Assign
-                </button>
-              </div>
-              {assignments.length === 0 ? (
-                <p className="text-sm text-slate-400">Nothing assigned yet.</p>
-              ) : (
-                <ul className="space-y-2">
-                  {assignments.map((a) => (
-                    <li
-                      key={a.id}
-                      className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2 text-sm"
-                    >
-                      <span>
-                        {a.client
-                          ? `🏢 Client · ${a.client.name}`
-                          : a.assignedUser
-                            ? `👤 ${a.assignedUser.name} · ${a.assignedUser.email}`
-                            : a.campaign
-                              ? `Campaign · ${a.campaign.name}`
-                              : 'Assignment'}
-                      </span>
-                      <button className="text-xs text-rose-500 hover:underline" onClick={() => unassign(a.id)}>
-                        Remove
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </>
-          )}
         </div>
       </div>
 
