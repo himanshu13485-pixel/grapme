@@ -745,7 +745,8 @@ model SequenceStep {
   clientId   String
   cohortId   String? // null = client default template; set = that cohort's own sequence
   stageOrder  Int    // 0 = initial, 1 = FU-1, 2 = FU-2, …
-  templateId  String?
+  templateId  String?               // primary variant (= templateIds[0]); kept for back-compat
+  templateIds Json   @default("[]") // per-mailbox template variants (index = mailbox rotation position)
   monthOffset Int    @default(1)  // which month of the cohort this stage sends in (1-based)
   waitDays    Int    @default(10) // derived business-day gap after the previous stage (engine uses this)
 

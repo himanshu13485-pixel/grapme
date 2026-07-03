@@ -66,6 +66,8 @@ export class AssignMailboxDto {
 export class SequenceStepDto {
   @IsInt() @Min(0) stageOrder: number;
   @IsOptional() @IsString() templateId?: string;
+  /** Per-mailbox template variants (index = mailbox rotation position). */
+  @IsOptional() @IsArray() @IsString({ each: true }) templateIds?: string[];
   /** Which cohort-month this stage sends in (1-based). The server derives the
    *  day-gap the engine uses from this. */
   @IsOptional() @IsInt() @Min(1) monthOffset?: number;

@@ -35,6 +35,7 @@ interface SeqStep {
   id: string;
   stageOrder: number;
   templateId?: string;
+  templateIds?: string[];
   waitDays?: number;
   monthOffset?: number;
 }
@@ -521,9 +522,28 @@ function SequenceEditor({
   cohortId?: string; // when set, edits that cohort's OWN sequence
   onChanged: () => void;
 }) {
-  // Each stage = a template + the cohort-month it sends in. Index 0 is the
-  // Initial (Month 1, sends immediately). Plan purely in months.
-  type Row = { templateId: string; monthOffset: number };
+  // Active mailboxes drive how many template variants each stage can hold — one
+  // per mailbox (by rotation slot) so each mailbox sends its own message.
+  const activeMailboxes = (client.mailboxes ?? []).filter(
+    (m) => (m.status ?? '').toUpperCase() === 'ACTIVE',
+  );
+  const slots = Math.max(1, activeMailboxes.length);
+
+  // Each stage = a list of per-mailbox templates + the cohort-month it sends in.
+  type Row = { templateIds: string[]; monthOffset: number };
+
+  function stepToRow(s: SeqStep | undefined, i: number): Row {
+    const src =
+      s?.templateIds && s.templateIds.length
+        ? s.templateIds
+        : s?.templateId
+          ? [s.templateId]
+          : [];
+    return {
+      templateIds: Array.from({ length: slots }, (_, k) => src[k] ?? ''),
+      monthOffset: s?.monthOffset ?? (i === 0 ? 1 : Math.max(1, i)),
+    };
+  }
 
   function rowsFromSteps(steps: SeqStep[]): Row[] {
     const maxStage = steps.reduce(
@@ -531,19 +551,8 @@ function SequenceEditor({
       Math.max(client.followUpCount, 0),
     );
     const len = Math.max(maxStage + 1, 1);
-    const arr: Row[] = Array.from({ length: len }, (_, i) => ({
-      templateId: '',
-      monthOffset: i === 0 ? 1 : Math.max(1, i),
-    }));
-    steps.forEach((s) => {
-      if (s.stageOrder < len)
-        arr[s.stageOrder] = {
-          templateId: s.templateId ?? '',
-          monthOffset:
-            s.monthOffset ?? (s.stageOrder === 0 ? 1 : Math.max(1, s.stageOrder)),
-        };
-    });
-    return arr;
+    const byStage = new Map(steps.map((s) => [s.stageOrder, s]));
+    return Array.from({ length: len }, (_, i) => stepToRow(byStage.get(i), i));
   }
 
   const [rows, setRows] = useState<Row[]>(() =>
@@ -562,10 +571,16 @@ function SequenceEditor({
       .then((steps) => setRows(rowsFromSteps(steps)))
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cohortId, client.sequenceSteps, client.followUpCount]);
+  }, [cohortId, client.sequenceSteps, client.followUpCount, slots]);
 
-  function setTemplate(i: number, v: string) {
-    setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, templateId: v } : r)));
+  function setTemplate(i: number, slot: number, v: string) {
+    setRows((prev) =>
+      prev.map((r, idx) =>
+        idx === i
+          ? { ...r, templateIds: r.templateIds.map((t, s) => (s === slot ? v : t)) }
+          : r,
+      ),
+    );
   }
   function setMonth(i: number, v: number) {
     setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, monthOffset: v } : r)));
@@ -573,7 +588,10 @@ function SequenceEditor({
   function addFollowUp() {
     setRows((prev) => {
       const lastMonth = prev[prev.length - 1]?.monthOffset ?? 1;
-      return [...prev, { templateId: '', monthOffset: lastMonth + 1 }];
+      return [
+        ...prev,
+        { templateIds: Array.from({ length: slots }, () => ''), monthOffset: lastMonth + 1 },
+      ];
     });
   }
   function removeStage(i: number) {
@@ -596,7 +614,8 @@ function SequenceEditor({
     try {
       const steps = rows.map((r, stageOrder) => ({
         stageOrder,
-        templateId: r.templateId || undefined,
+        templateIds: r.templateIds,
+        templateId: r.templateIds.find((t) => t) || undefined,
         monthOffset: stageOrder === 0 ? 1 : r.monthOffset,
       }));
       const url = cohortId
@@ -623,22 +642,54 @@ function SequenceEditor({
           <strong>Default plan — new cohorts start from this.</strong>
         )}
       </p>
+      {slots > 1 && (
+        <p className="rounded-lg border border-emerald-200 bg-emerald-50/60 px-3 py-2 text-xs text-emerald-800">
+          You have <strong>{slots} active mailboxes</strong> — give each its own template per
+          touch. Each mailbox always sends its own variant, so your content differs across
+          mailboxes and protects sender reputation. Leave one blank to reuse another filled variant.
+        </p>
+      )}
       <div className="card divide-y divide-slate-100">
         {rows.map((row, i) => (
-          <div key={i} className="flex items-center gap-3 p-4">
-            <div className="w-24 text-sm font-medium text-slate-700">
+          <div key={i} className="flex items-start gap-3 p-4">
+            <div className="w-24 pt-2 text-sm font-medium text-slate-700">
               {i === 0 ? 'Initial' : `Follow-up ${i}`}
             </div>
-            <select
-              className="input flex-1"
-              value={row.templateId}
-              onChange={(e) => setTemplate(i, e.target.value)}
-            >
-              <option value="">— no template —</option>
-              {templates.map((t) => (
-                <option key={t.id} value={t.id}>{t.name}</option>
-              ))}
-            </select>
+            <div className="flex-1 space-y-2">
+              {slots === 1 ? (
+                <select
+                  className="input w-full"
+                  value={row.templateIds[0] ?? ''}
+                  onChange={(e) => setTemplate(i, 0, e.target.value)}
+                >
+                  <option value="">— no template —</option>
+                  {templates.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              ) : (
+                activeMailboxes.map((mb, slot) => (
+                  <div key={mb.id} className="flex items-center gap-2">
+                    <span
+                      className="w-28 shrink-0 truncate text-xs text-slate-400"
+                      title={mb.emailAddress}
+                    >
+                      {mb.label || mb.emailAddress}
+                    </span>
+                    <select
+                      className="input flex-1"
+                      value={row.templateIds[slot] ?? ''}
+                      onChange={(e) => setTemplate(i, slot, e.target.value)}
+                    >
+                      <option value="">— no template —</option>
+                      {templates.map((t) => (
+                        <option key={t.id} value={t.id}>{t.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                ))
+              )}
+            </div>
             {i === 0 ? (
               <span className="w-40 text-xs text-slate-400">Month 1 · sends immediately</span>
             ) : (

@@ -276,12 +276,21 @@ export class ProgramsService {
         i === 0 ? 1 : Math.max(prevMonth, step.monthOffset ?? prevMonth);
       const waitDays =
         i === 0 ? 0 : month === prevMonth ? 10 : (month - prevMonth) * 21;
+      // Per-mailbox variants: keep empties so a variant maps to its mailbox slot,
+      // but drop trailing blanks. templateId mirrors the first for back-compat.
+      const rawVariants = (step.templateIds ?? []).map((t) => (t ?? '').trim());
+      while (rawVariants.length && !rawVariants[rawVariants.length - 1]) {
+        rawVariants.pop();
+      }
+      const variants =
+        rawVariants.length || !step.templateId ? rawVariants : [step.templateId];
       await this.prisma.sequenceStep.create({
         data: {
           clientId: scope.clientId,
           cohortId: scope.cohortId,
           stageOrder: step.stageOrder,
-          templateId: step.templateId,
+          templateId: variants.find((v) => v) ?? null,
+          templateIds: variants,
           monthOffset: month,
           waitDays,
         },
@@ -475,6 +484,7 @@ export class ProgramsService {
           cohortId: cohort.id,
           stageOrder: s.stageOrder,
           templateId: s.templateId,
+          templateIds: s.templateIds ?? [],
           monthOffset: s.monthOffset,
           waitDays: s.waitDays,
         },
@@ -1177,9 +1187,22 @@ export class ProgramsService {
           });
         };
 
-        const templateId =
-          cohortSteps.find((s) => s.stageOrder === enr.stage)?.templateId ?? null;
-        if (!templateId) {
+        const stepForStage = cohortSteps.find(
+          (s) => s.stageOrder === enr.stage,
+        );
+        // Per-mailbox variants: the array is indexed by mailbox rotation slot.
+        const variantList = (
+          Array.isArray(stepForStage?.templateIds)
+            ? (stepForStage!.templateIds as unknown[])
+            : []
+        ).map((v) => (typeof v === 'string' ? v : ''));
+        const filledVariants = variantList.filter((v) => v);
+        const fallbackVariants = filledVariants.length
+          ? filledVariants
+          : stepForStage?.templateId
+            ? [stepForStage.templateId]
+            : [];
+        if (fallbackVariants.length === 0) {
           // Empty touch (e.g. a skipped month): pass through to the next stage
           // instead of stalling here forever so later filled stages still fire.
           await advanceStage(enr.stage);
@@ -1210,6 +1233,13 @@ export class ProgramsService {
         }
         rot = chosenIdx + 1;
         const mailbox = mailboxes[chosenIdx];
+
+        // Each mailbox sends its OWN variant (by rotation slot) to vary the
+        // sending footprint; fall back to round-robin over the filled variants
+        // when this slot has none set.
+        const templateId =
+          variantList[chosenIdx] ||
+          fallbackVariants[chosenIdx % fallbackVariants.length];
 
         const ok = await this.sendOne(enr, mailbox, templateId);
         if (ok) {
