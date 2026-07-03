@@ -998,6 +998,9 @@ export class ProgramsService {
     let sent = 0;
     let skipped = 0;
 
+    // Expire validity first: flip lapsed clients to inactive + pause cohorts.
+    await this.enforceClientValidity();
+
     const due = await this.prisma.enrollment.findMany({
       where: {
         status: EnrollmentStatus.ACTIVE,
@@ -1020,6 +1023,11 @@ export class ProgramsService {
 
     for (const [clientId, enrollments] of byClient) {
       const client = enrollments[0].client;
+      // Never send for a deactivated or validity-expired client.
+      if (!this.isClientActive(client)) {
+        skipped += enrollments.length;
+        continue;
+      }
       if (client.weekdaysOnly && isWeekend(now)) {
         skipped += enrollments.length;
         continue;
@@ -1360,6 +1368,105 @@ export class ProgramsService {
       after: { email, client: client.name },
     });
     return { ok: true, email };
+  }
+
+  /** True once a client's validity window has elapsed. */
+  private isValidityExpired(client: {
+    validityDays: number | null;
+    validityStartAt: Date | null;
+  }): boolean {
+    if (!client.validityDays || !client.validityStartAt) return false;
+    const expiry =
+      client.validityStartAt.getTime() + client.validityDays * 86_400_000;
+    return expiry < Date.now();
+  }
+
+  /** A client only sends when it's active AND its validity hasn't expired. */
+  private isClientActive(client: {
+    status: string;
+    validityDays: number | null;
+    validityStartAt: Date | null;
+  }): boolean {
+    return (
+      (client.status ?? 'active').toLowerCase() === 'active' &&
+      !this.isValidityExpired(client)
+    );
+  }
+
+  /**
+   * Auto-enforcement: any active client whose validity has expired is flipped to
+   * inactive and its running cohorts paused. Run at the top of each engine tick.
+   */
+  private async enforceClientValidity(): Promise<void> {
+    const candidates = await this.prisma.client.findMany({
+      where: {
+        status: 'active',
+        validityDays: { not: null },
+        validityStartAt: { not: null },
+      },
+      select: {
+        id: true,
+        name: true,
+        validityDays: true,
+        validityStartAt: true,
+      },
+    });
+    for (const c of candidates) {
+      if (!this.isValidityExpired(c)) continue;
+      await this.prisma.client.update({
+        where: { id: c.id },
+        data: { status: 'inactive' },
+      });
+      await this.prisma.cohort.updateMany({
+        where: { clientId: c.id, status: 'RUNNING' },
+        data: { status: 'PAUSED' },
+      });
+      this.logger.log(
+        `Validity expired for "${c.name}" → set inactive, running cohorts paused`,
+      );
+    }
+  }
+
+  /**
+   * Admin: activate / deactivate a client. Deactivating pauses its running
+   * cohorts (they never send until reactivated); activating resumes paused
+   * cohorts, renewing an already-expired validity window so it can run again.
+   */
+  async setClientStatus(user: AuthUser, clientId: string, active: boolean) {
+    this.assertAdmin(user);
+    const client = await this.assertClient(user, clientId);
+    if (active) {
+      const renew = this.isValidityExpired(client);
+      await this.prisma.client.update({
+        where: { id: clientId },
+        data: {
+          status: 'active',
+          ...(renew ? { validityStartAt: new Date() } : {}),
+        },
+      });
+      await this.prisma.cohort.updateMany({
+        where: { clientId, status: 'PAUSED' },
+        data: { status: 'RUNNING' },
+      });
+    } else {
+      await this.prisma.client.update({
+        where: { id: clientId },
+        data: { status: 'inactive' },
+      });
+      await this.prisma.cohort.updateMany({
+        where: { clientId, status: 'RUNNING' },
+        data: { status: 'PAUSED' },
+      });
+    }
+    await this.activity.log({
+      tenantId: user.tenantId,
+      actorId: user.userId,
+      action: active ? 'ACTIVATE_CLIENT' : 'DEACTIVATE_CLIENT',
+      entityType: 'Client',
+      entityId: clientId,
+      after: { client: client.name, status: active ? 'active' : 'inactive' },
+    });
+    return { ok: true, status: active ? 'active' : 'inactive' };
   }
 
   /** Admin: set a client's plan validity window (days). Resets the start date. */

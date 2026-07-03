@@ -158,7 +158,7 @@ export default function ClientsPage() {
             <Link key={c.id} href={`/clients/${c.id}`} className="card p-5 transition hover:border-brand-300 hover:shadow-sm">
               <div className="flex items-center justify-between">
                 <div className="font-medium text-slate-800">{c.name}</div>
-                <StatusBadge status={c.status === 'active' ? 'ACTIVE' : c.status} />
+                <StatusBadge status={(c.status ?? 'active').toLowerCase() === 'active' ? 'ACTIVE' : 'INACTIVE'} />
               </div>
               {(c.email || c.owner?.email) && (
                 <div className="mt-0.5 truncate text-xs text-slate-500">

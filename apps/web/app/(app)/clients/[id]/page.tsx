@@ -171,7 +171,30 @@ export default function ClientCockpit() {
     }
   }
 
+  async function toggleStatus(active: boolean) {
+    if (
+      !active &&
+      !confirm(
+        'Deactivate this client?\n\nAll its running cohorts will be paused and will not send until you reactivate.',
+      )
+    )
+      return;
+    try {
+      await api.patch(`/clients/${id}/status`, { active });
+      flash(
+        active
+          ? 'Client activated — paused cohorts resumed.'
+          : 'Client deactivated — running cohorts paused.',
+      );
+      load();
+    } catch (e) {
+      flash(e instanceof Error ? e.message : 'Failed');
+    }
+  }
+
   if (!client) return <div className="text-slate-400">Loading…</div>;
+
+  const isActive = (client.status ?? 'active').toLowerCase() === 'active';
 
   return (
     <div>
@@ -187,12 +210,32 @@ export default function ClientCockpit() {
         title={client.name}
         subtitle={`${client.plan} · ${client.dailyBatchSize}/day · ${client.followUpCount} follow-ups · ${client.weekdaysOnly ? 'weekdays only' : 'all days'}`}
         action={
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold ${
+                isActive
+                  ? 'bg-emerald-100 text-emerald-700'
+                  : 'bg-slate-200 text-slate-600'
+              }`}
+            >
+              <span
+                className={`h-2 w-2 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-slate-400'}`}
+              />
+              {isActive ? 'Active' : 'Inactive'}
+            </span>
             <ValidityBadge days={client.validityDays} startAt={client.validityStartAt} />
             {!isClient && (
-              <button className="btn-ghost" onClick={runEngine}>
-                ▶ Run engine now
-              </button>
+              <>
+                <button
+                  className={isActive ? 'btn-ghost text-rose-600' : 'btn-primary'}
+                  onClick={() => toggleStatus(!isActive)}
+                >
+                  {isActive ? 'Deactivate' : 'Activate'}
+                </button>
+                <button className="btn-ghost" onClick={runEngine}>
+                  ▶ Run engine now
+                </button>
+              </>
             )}
           </div>
         }

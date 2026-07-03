@@ -10,6 +10,7 @@ const STATUS_STYLES: Record<string, string> = {
   COMPLETED: 'bg-emerald-100 text-emerald-700',
   REJECTED: 'bg-rose-100 text-rose-700',
   ACTIVE: 'bg-emerald-100 text-emerald-700',
+  INACTIVE: 'bg-slate-200 text-slate-600',
   DISABLED: 'bg-rose-100 text-rose-700',
   DONE: 'bg-emerald-100 text-emerald-700',
   STOPPED: 'bg-rose-100 text-rose-700',

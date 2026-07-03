@@ -50,14 +50,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       .get<{ id: string; name: string; serviceType?: string | null }[]>('/my/clients')
       .then((profiles) => {
         setClientProfiles(profiles);
-        // Land them on their first profile — but leave them on the clients
-        // list/add page (create a profile) and on their own account page.
+        // Land them on their dashboard home — but leave them wherever they
+        // already are within their own portal pages.
         if (
-          profiles[0] &&
           !pathname.startsWith('/clients') &&
-          pathname !== '/my-profile'
+          pathname !== '/my-profile' &&
+          pathname !== '/client-home'
         ) {
-          router.replace(`/clients/${profiles[0].id}`);
+          router.replace('/client-home');
         }
       })
       .catch(() => {});
@@ -158,7 +158,25 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
 
           <nav className="flex-1 space-y-1 overflow-y-auto px-3 pb-4">
-            <div className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-emerald-400">
+            <Link
+              href="/client-home"
+              className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all ${
+                pathname === '/client-home'
+                  ? 'bg-white text-emerald-700 shadow-lg'
+                  : 'text-emerald-100 hover:translate-x-0.5 hover:bg-white/10 hover:text-white'
+              }`}
+            >
+              <span
+                className={`flex h-7 w-7 items-center justify-center rounded-lg text-xs ${
+                  pathname === '/client-home' ? 'bg-emerald-600 text-white' : 'bg-white/10 text-emerald-100'
+                }`}
+              >
+                ▦
+              </span>
+              <span className="flex-1">Dashboard</span>
+            </Link>
+
+            <div className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-wider text-emerald-400">
               My workspace{clientProfiles.length > 1 ? 's' : ''}
             </div>
             {clientProfiles.map((p) => {
@@ -190,7 +208,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                             ? 'Export'
                             : 'Import'
                       }
-                      className="rounded-full bg-white/15 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-100"
+                      className={`rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${
+                        active
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : 'bg-white/20 text-white'
+                      }`}
                     >
                       {p.serviceType === 'BOTH'
                         ? 'Export/Import'

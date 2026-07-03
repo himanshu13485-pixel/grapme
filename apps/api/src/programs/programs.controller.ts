@@ -53,6 +53,16 @@ export class ProgramsController {
     return this.programs.setClientLogin(user, id, dto);
   }
 
+  /** Admin: activate / deactivate a client (pauses/resumes its cohorts). */
+  @Patch('clients/:id/status')
+  setClientStatus(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: { active: boolean },
+  ) {
+    return this.programs.setClientStatus(user, id, dto.active);
+  }
+
   /** Admin: set a client's plan validity window (days). */
   @Patch('clients/:id/validity')
   setClientValidity(
