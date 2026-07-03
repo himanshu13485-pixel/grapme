@@ -15,6 +15,7 @@ const NAV = [
   { href: '/cohort-schedule', label: 'Cohort Schedule', icon: '📅', admin: true, module: 'cohort-schedule' },
   { href: '/validity', label: 'Validity', icon: '⏳', admin: true, module: 'validity' },
   { href: '/plans', label: 'Plans', icon: '🏷', admin: true, module: 'plans' },
+  { href: '/greetings', label: 'Greetings', icon: '👋', admin: true, module: 'greetings' },
   { href: '/campaigns', label: 'Campaigns', icon: '✈', module: 'campaigns' },
   { href: '/contacts', label: 'Contacts', icon: '☰', module: 'contacts' },
   { href: '/templates', label: 'Templates', icon: '❏', module: 'templates' },

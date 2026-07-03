@@ -48,6 +48,7 @@ export default function ClientHomePage() {
   const [cohorts, setCohorts] = useState<RecentCohort[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [greeting, setGreeting] = useState<string | null>(null);
 
   useEffect(() => {
     api.get<Summary>('/dashboard/summary').then(setSummary).catch(() => {});
@@ -58,6 +59,30 @@ export default function ClientHomePage() {
       .catch(() => {})
       .finally(() => setLoaded(true));
   }, []);
+
+  // Daily greeting — shown once per day (per browser) on portal open.
+  useEffect(() => {
+    if (!user) return;
+    const today = new Date().toDateString();
+    const key = `grapout-greeting-${user.id}`;
+    if (typeof window !== 'undefined' && localStorage.getItem(key) === today) return;
+    api
+      .get<{ enabled: boolean; message: string | null }>('/greetings/today')
+      .then((r) => {
+        if (r.enabled && r.message) {
+          setGreeting(r.message);
+          try {
+            localStorage.setItem(key, today);
+          } catch {
+            /* ignore storage errors */
+          }
+        }
+      })
+      .catch(() => {});
+  }, [user]);
+
+  const hour = new Date().getHours();
+  const salute = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';
 
   // Same KPI set as the admin dashboard, scoped to this client's data.
   const cards = [
@@ -79,6 +104,23 @@ export default function ClientHomePage() {
         title={`Welcome${user?.name ? `, ${user.name}` : ''}`}
         subtitle="Your outreach at a glance"
       />
+
+      {greeting && (
+        <div className="relative mb-6 overflow-hidden rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 p-5 text-white shadow-lg">
+          <button
+            onClick={() => setGreeting(null)}
+            className="absolute right-3 top-3 text-white/70 hover:text-white"
+            aria-label="Dismiss"
+          >
+            ✕
+          </button>
+          <div className="text-lg font-bold">
+            {salute}
+            {user?.name ? `, ${user.name}` : ''} 👋
+          </div>
+          <div className="mt-1 text-sm text-emerald-50">{greeting}</div>
+        </div>
+      )}
 
       {loaded && clients.length === 0 ? (
         <div className="card p-8 text-center">

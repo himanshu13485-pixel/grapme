@@ -148,6 +148,7 @@ model Tenant {
   plan            String   @default("free")
   status          String   @default("active")
   settings        Json     @default("{}")
+  greetingsEnabled Boolean @default(true) // show a daily login greeting to clients
   reportMailboxId String?  // explicit mailbox client reports are sent from (else auto-resolved)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -168,6 +169,20 @@ model Tenant {
   cohorts         Cohort[]
   enrollments     Enrollment[]
   plans           Plan[]
+  greetings       Greeting[]
+}
+
+// Admin-authored "Happy Business" messages shown in the daily client greeting.
+model Greeting {
+  id        String   @id @default(uuid())
+  tenantId  String
+  message   String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
 }
 
 // Tenant-defined plan names shown in every plan picker/filter.
