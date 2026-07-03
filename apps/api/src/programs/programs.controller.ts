@@ -37,6 +37,29 @@ export class ProgramsController {
     return this.programs.listClients(user);
   }
 
+  /** Paginated + filtered client list (declared before clients/:id). */
+  @Get('clients/paged')
+  listClientsPaged(
+    @CurrentUser() user: AuthUser,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('q') q?: string,
+    @Query('email') email?: string,
+    @Query('invoice') invoice?: string,
+    @Query('status') status?: string,
+    @Query('plan') plan?: string,
+  ) {
+    return this.programs.listClientsPaged(user, {
+      page,
+      pageSize,
+      q,
+      email,
+      invoice,
+      status,
+      plan,
+    });
+  }
+
   /** Profiles the signed-in client-portal user owns (panel switcher). */
   @Get('my/clients')
   myClients(@CurrentUser() user: AuthUser) {

@@ -10,6 +10,7 @@ import * as argon2 from 'argon2';
 import {
   ApprovalEntity,
   Client,
+  Prisma,
   EmailAccount,
   EnrollmentStatus,
   EventType,
@@ -164,6 +165,11 @@ export class ProgramsService {
     return client;
   }
 
+  private readonly clientListInclude = {
+    _count: { select: { mailboxes: true, cohorts: true, enrollments: true } },
+    owner: { select: { id: true, name: true, email: true, contactMobile: true } },
+  } as const;
+
   listClients(user: AuthUser) {
     return this.prisma.client.findMany({
       where: {
@@ -172,11 +178,74 @@ export class ProgramsService {
         ...(user.role === Role.CLIENT ? { ownerUserId: user.userId } : {}),
       },
       orderBy: { createdAt: 'desc' },
-      include: {
-        _count: { select: { mailboxes: true, cohorts: true, enrollments: true } },
-        owner: { select: { id: true, name: true, email: true, contactMobile: true } },
-      },
+      include: this.clientListInclude,
     });
+  }
+
+  /** Server-side paginated + filtered client list for the Workspace. */
+  async listClientsPaged(
+    user: AuthUser,
+    query: {
+      page?: string;
+      pageSize?: string;
+      q?: string;
+      email?: string;
+      invoice?: string;
+      status?: string;
+      plan?: string;
+    },
+  ) {
+    const page = Math.max(1, parseInt(query.page ?? '1', 10) || 1);
+    const pageSize = Math.min(
+      100,
+      Math.max(1, parseInt(query.pageSize ?? '12', 10) || 12),
+    );
+    const ci = (contains: string) =>
+      ({ contains, mode: 'insensitive' }) as const;
+
+    const and: Prisma.ClientWhereInput[] = [
+      {
+        tenantId: user.tenantId,
+        ...(user.role === Role.CLIENT ? { ownerUserId: user.userId } : {}),
+      },
+    ];
+    const status = (query.status ?? '').toLowerCase();
+    if (status === 'active' || status === 'inactive') {
+      and.push({ status: { equals: status, mode: 'insensitive' } });
+    }
+    if (query.plan) and.push({ plan: query.plan });
+    if (query.invoice) and.push({ invoiceNo: ci(query.invoice) });
+    if (query.email) {
+      and.push({
+        OR: [
+          { email: ci(query.email) },
+          { owner: { email: ci(query.email) } },
+        ],
+      });
+    }
+    if (query.q) {
+      and.push({
+        OR: [
+          { name: ci(query.q) },
+          { plan: ci(query.q) },
+          { invoiceNo: ci(query.q) },
+          { email: ci(query.q) },
+        ],
+      });
+    }
+    const where: Prisma.ClientWhereInput = { AND: and };
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.client.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        include: this.clientListInclude,
+      }),
+      this.prisma.client.count({ where }),
+    ]);
+    return { items, total, page, pageSize };
   }
 
   async getClient(user: AuthUser, id: string) {

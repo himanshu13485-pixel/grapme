@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState, FormEvent } from 'react';
+import { useCallback, useEffect, useState, FormEvent } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useCanDelete, useAuth } from '@/lib/auth';
@@ -35,6 +35,8 @@ interface Client {
 
 export default function ClientsPage() {
   const [clients, setClients] = useState<Client[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loaded, setLoaded] = useState(false);
   const [show, setShow] = useState(false);
   const [viewing, setViewing] = useState<Client | null>(null);
   const [editing, setEditing] = useState<Client | null>(null);
@@ -51,12 +53,52 @@ export default function ClientsPage() {
   const isClient = user?.role === 'CLIENT';
   const { planNames } = usePlans();
   // A client may self-create profiles up to their billable limit.
-  const clientCanAdd = isClient && clients.length < (user?.profileLimit ?? 1);
+  const clientCanAdd = isClient && total < (user?.profileLimit ?? 1);
 
-  function load() {
-    api.get<Client[]>('/clients').then(setClients).catch(() => {});
-  }
-  useEffect(load, []);
+  // Debounce the free-text filters so typing doesn't fire a request per keystroke.
+  const [dq, setDq] = useState('');
+  const [dEmail, setDEmail] = useState('');
+  const [dInvoice, setDInvoice] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDq(q.trim()), 300);
+    return () => clearTimeout(t);
+  }, [q]);
+  useEffect(() => {
+    const t = setTimeout(() => setDEmail(emailQ.trim()), 300);
+    return () => clearTimeout(t);
+  }, [emailQ]);
+  useEffect(() => {
+    const t = setTimeout(() => setDInvoice(invoiceQ.trim()), 300);
+    return () => clearTimeout(t);
+  }, [invoiceQ]);
+
+  const hasFilters =
+    !!dq || !!dEmail || !!dInvoice || statusFilter !== 'ALL' || planFilter !== 'ALL';
+
+  const load = useCallback(() => {
+    const params = new URLSearchParams();
+    params.set('page', String(page));
+    params.set('pageSize', String(PAGE_SIZE));
+    if (dq) params.set('q', dq);
+    if (dEmail) params.set('email', dEmail);
+    if (dInvoice && !isClient) params.set('invoice', dInvoice);
+    if (statusFilter !== 'ALL') params.set('status', statusFilter.toLowerCase());
+    if (planFilter !== 'ALL') params.set('plan', planFilter);
+    api
+      .get<{ items: Client[]; total: number }>(`/clients/paged?${params.toString()}`)
+      .then((r) => {
+        setClients(r.items);
+        setTotal(r.total);
+      })
+      .catch(() => {})
+      .finally(() => setLoaded(true));
+  }, [page, dq, dEmail, dInvoice, statusFilter, planFilter, isClient]);
+
+  // Reset to page 1 whenever the filters change, then (re)fetch.
+  useEffect(() => setPage(1), [dq, dEmail, dInvoice, statusFilter, planFilter]);
+  useEffect(() => {
+    load();
+  }, [load]);
 
   // The sidebar "Set up my workspace" links here with ?new=1 to open the form.
   useEffect(() => {
@@ -86,41 +128,20 @@ export default function ClientsPage() {
     }
   }
 
-  const filtered = useMemo(() => {
-    const s = q.trim().toLowerCase();
-    const inv = invoiceQ.trim().toLowerCase();
-    const em = emailQ.trim().toLowerCase();
-    return clients.filter((c) => {
-      const active = (c.status ?? 'active').toLowerCase() === 'active';
-      if (statusFilter === 'ACTIVE' && !active) return false;
-      if (statusFilter === 'INACTIVE' && active) return false;
-      if (planFilter !== 'ALL' && c.plan !== planFilter) return false;
-      if (inv && !(c.invoiceNo ?? '').toLowerCase().includes(inv)) return false;
-      if (em && !(c.email ?? c.owner?.email ?? '').toLowerCase().includes(em)) return false;
-      if (!s) return true;
-      return [c.name, c.plan, c.invoiceNo, c.email]
-        .filter(Boolean)
-        .some((v) => v!.toLowerCase().includes(s));
-    });
-  }, [clients, q, invoiceQ, emailQ, statusFilter, planFilter]);
-
-  useEffect(() => setPage(1), [q, invoiceQ, emailQ, statusFilter, planFilter]);
-  const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-
   return (
     <div>
       <PageHeader
         title={isClient ? 'My Profiles' : 'Clients Workspace'}
         subtitle={
           isClient
-            ? `Each profile runs its own mailbox group, sequence, and monthly cohorts (${clients.length}/${user?.profileLimit ?? 1} used)`
+            ? `Each profile runs its own mailbox group, sequence, and monthly cohorts (${total}/${user?.profileLimit ?? 1} used)`
             : 'Each client runs its own mailbox group, sequence, and monthly cohorts'
         }
         action={
           isAdmin || clientCanAdd ? (
             <button className="btn-primary" onClick={() => setShow(true)}>
               {isClient
-                ? clients.length === 0
+                ? total === 0
                   ? '+ Set up my workspace'
                   : '+ Add profile'
                 : '+ New client'}
@@ -129,11 +150,7 @@ export default function ClientsPage() {
         }
       />
 
-      {clients.length === 0 ? (
-        <EmptyState message="No clients yet. Create one to set up its mailbox group and outreach." />
-      ) : (
-        <>
-        <div className="mb-4 flex flex-wrap items-center gap-3">
+      <div className="mb-4 flex flex-wrap items-center gap-3">
           <input
             className="input max-w-xs"
             placeholder="Search by company / plan…"
@@ -179,15 +196,22 @@ export default function ClientsPage() {
               ))}
             </select>
           )}
-          <span className="ml-auto text-sm text-slate-400">
-            {filtered.length} of {clients.length}
-          </span>
+          <span className="ml-auto text-sm text-slate-400">{total} total</span>
         </div>
-        {filtered.length === 0 ? (
-          <EmptyState message="No clients match your search." />
+        {loaded && total === 0 ? (
+          <EmptyState
+            message={
+              hasFilters
+                ? 'No clients match your search.'
+                : isClient
+                  ? 'No workspace yet — set one up to start your outreach.'
+                  : 'No clients yet. Create one to set up its mailbox group and outreach.'
+            }
+          />
         ) : (
+        <>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {paged.map((c) => (
+          {clients.map((c) => (
             <Link key={c.id} href={`/clients/${c.id}`} className="card p-5 transition hover:border-brand-300 hover:shadow-sm">
               <div className="flex items-center justify-between">
                 <div className="font-medium text-slate-800">{c.name}</div>
@@ -249,10 +273,9 @@ export default function ClientsPage() {
             </Link>
           ))}
         </div>
-        )}
-        <Pagination page={page} pageSize={PAGE_SIZE} total={filtered.length} onPage={setPage} />
+        <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPage={setPage} />
         </>
-      )}
+        )}
 
       <Modal open={show} onClose={() => setShow(false)} title="New client" disableBackdropClose>
         <NewClientForm
