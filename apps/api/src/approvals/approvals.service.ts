@@ -302,9 +302,11 @@ export class ApprovalsService {
     entityId: string,
     approved: boolean,
   ) {
+    // updateMany (not update) so a decision on an approval whose entity was
+    // already deleted finalizes cleanly instead of throwing a 500.
     switch (entityType) {
       case ApprovalEntity.CAMPAIGN:
-        await this.prisma.campaign.update({
+        await this.prisma.campaign.updateMany({
           where: { id: entityId },
           data: {
             status: approved
@@ -314,7 +316,7 @@ export class ApprovalsService {
         });
         break;
       case ApprovalEntity.SMTP:
-        await this.prisma.emailAccount.update({
+        await this.prisma.emailAccount.updateMany({
           where: { id: entityId },
           data: {
             status: approved ? MailboxStatus.ACTIVE : MailboxStatus.DISABLED,
@@ -325,14 +327,14 @@ export class ApprovalsService {
         if (approved) {
           await this.processImport(entityId);
         } else {
-          await this.prisma.importJob.update({
+          await this.prisma.importJob.updateMany({
             where: { id: entityId },
             data: { status: ImportStatus.REJECTED },
           });
         }
         break;
       case ApprovalEntity.SCHEDULE:
-        await this.prisma.schedule.update({
+        await this.prisma.schedule.updateMany({
           where: { id: entityId },
           data: {
             status: approved ? ScheduleStatus.APPROVED : ScheduleStatus.PENDING,
@@ -359,7 +361,7 @@ export class ApprovalsService {
       case ApprovalEntity.CLIENT_ACTIVATION:
         // Approve = confirm the client's email so they can sign in; reject =
         // suspend the pending login so it can't be used.
-        await this.prisma.user.update({
+        await this.prisma.user.updateMany({
           where: { id: entityId },
           data: approved
             ? {
