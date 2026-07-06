@@ -1,0 +1,36 @@
+name: Build & push image
+
+# Builds the Docker image on GitHub's servers (NOT your production server) and
+# pushes it to GitHub Container Registry. Your server then only pulls + runs it.
+on:
+  push:
+    branches: [master]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/himanshu13485-pixel/grapme:latest
+          # The browser bundle bakes this at build time — set it as a repo
+          # variable (Settings → Secrets and variables → Actions → Variables).
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL }}

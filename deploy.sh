@@ -58,9 +58,12 @@ else
   say ".env already exists — using it as-is."
 fi
 
-# ── 3. Build + start ────────────────────────────────────────────────────────
-say "Building images and starting the stack (this takes a few minutes the first time)…"
-docker compose -f "$COMPOSE_FILE" up -d --build
+# ── 3. Pull the pre-built image + start ─────────────────────────────────────
+# The image is built by GitHub CI (never on this server). For a PRIVATE image,
+# log in first:  echo <GHCR_TOKEN> | docker login ghcr.io -u <github-user> --password-stdin
+say "Pulling the pre-built image and starting the stack…"
+docker compose -f "$COMPOSE_FILE" pull
+docker compose -f "$COMPOSE_FILE" up -d
 
 say "Done. Containers:"
 docker compose -f "$COMPOSE_FILE" ps

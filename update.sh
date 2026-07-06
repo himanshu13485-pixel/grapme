@@ -6,11 +6,14 @@ set -euo pipefail
 cd "$(dirname "$0")"
 COMPOSE_FILE="docker-compose.prod.yml"
 
-echo "==> Pulling latest code…"
+echo "==> Pulling latest config…"
 git pull --ff-only
 
-echo "==> Rebuilding & restarting (DB migrations apply automatically on api boot)…"
-docker compose -f "$COMPOSE_FILE" up -d --build
+echo "==> Pulling the pre-built image (built by GitHub, not here)…"
+docker compose -f "$COMPOSE_FILE" pull
+
+echo "==> Restarting (DB migrations apply automatically on api boot)…"
+docker compose -f "$COMPOSE_FILE" up -d
 
 echo "==> Cleaning up old images…"
 docker image prune -f >/dev/null 2>&1 || true

@@ -25,11 +25,9 @@ services:
       - aeo_redisdata:/data
 
   api:
-    build:
-      context: .
-      args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
-    image: aeo-app
+    # Pre-built image from GitHub Container Registry (built by CI, NOT on this
+    # server). Override with APP_IMAGE in .env to pin a specific version/tag.
+    image: ${APP_IMAGE:-ghcr.io/himanshu13485-pixel/grapme:latest}
     restart: unless-stopped
     depends_on:
       postgres:
@@ -67,7 +65,7 @@ services:
       - '${BIND_HOST:-0.0.0.0}:4000:4000'
 
   web:
-    image: aeo-app # reuses the image built by the api service
+    image: ${APP_IMAGE:-ghcr.io/himanshu13485-pixel/grapme:latest}
     restart: unless-stopped
     depends_on:
       - api
