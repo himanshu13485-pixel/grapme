@@ -33,4 +33,5 @@ ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=build /app /app
 EXPOSE 3000 4000
 # Overridden by compose per service (api runs migrations then boots; web serves).
-CMD ["node", "apps/api/dist/main.js"]
+# nest build nests the entry under dist/src (prisma/ is compiled too).
+CMD ["node", "apps/api/dist/src/main.js"]

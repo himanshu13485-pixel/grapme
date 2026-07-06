@@ -60,7 +60,7 @@ services:
     # Apply DB migrations on boot, then start the API.
     command: >
       sh -c "npx prisma migrate deploy --schema=/app/apps/api/prisma/schema.prisma &&
-             node apps/api/dist/main.js"
+             node apps/api/dist/src/main.js"
     # BIND_HOST=127.0.0.1 (in .env) exposes it only to a local reverse proxy
     # (cPanel/nginx). Default 0.0.0.0 = reachable directly on the server IP.
     ports:
