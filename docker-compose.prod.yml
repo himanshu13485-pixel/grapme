@@ -61,8 +61,10 @@ services:
     command: >
       sh -c "npx prisma migrate deploy --schema=/app/apps/api/prisma/schema.prisma &&
              node apps/api/dist/main.js"
+    # BIND_HOST=127.0.0.1 (in .env) exposes it only to a local reverse proxy
+    # (cPanel/nginx). Default 0.0.0.0 = reachable directly on the server IP.
     ports:
-      - '4000:4000'
+      - '${BIND_HOST:-0.0.0.0}:4000:4000'
 
   web:
     image: aeo-app # reuses the image built by the api service
@@ -74,7 +76,7 @@ services:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
     command: sh -c "npm run start --workspace apps/web"
     ports:
-      - '3000:3000'
+      - '${BIND_HOST:-0.0.0.0}:3000:3000'
 
 volumes:
   aeo_pgdata:
