@@ -29,7 +29,10 @@ jobs:
         with:
           context: .
           push: true
-          tags: ghcr.io/himanshu13485-pixel/grapme:latest
+          # :latest = newest; :<commit-sha> = pin/rollback to an exact version.
+          tags: |
+            ghcr.io/himanshu13485-pixel/grapme:latest
+            ghcr.io/himanshu13485-pixel/grapme:${{ github.sha }}
           # The browser bundle bakes this at build time — set it as a repo
           # variable (Settings → Secrets and variables → Actions → Variables).
           build-args: |
