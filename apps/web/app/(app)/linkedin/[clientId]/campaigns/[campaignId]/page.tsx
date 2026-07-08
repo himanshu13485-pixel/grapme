@@ -119,13 +119,22 @@ function Details({ campaignId }: { campaignId: string }) {
   const [data, setData] = useState<LiLeadsPage | null>(null);
   const [importing, setImporting] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  const [q, setQ] = useState('');
+  const [dq, setDq] = useState('');
+
+  // Debounce the search box.
+  useEffect(() => {
+    const t = setTimeout(() => { setDq(q.trim()); setPage(1); }, 300);
+    return () => clearTimeout(t);
+  }, [q]);
 
   useEffect(() => {
     const status = LEAD_TABS.find((t) => t.key === tab)?.status;
     const qs = new URLSearchParams({ page: String(page) });
     if (status) qs.set('status', status);
+    if (dq) qs.set('search', dq);
     api.get<LiLeadsPage>(`/linkedin/campaigns/${campaignId}/leads?${qs}`).then(setData);
-  }, [campaignId, tab, page, reloadKey]);
+  }, [campaignId, tab, page, dq, reloadKey]);
 
   const tabs = LEAD_TABS.map((t) => ({
     key: t.key, label: t.label,
@@ -133,10 +142,18 @@ function Details({ campaignId }: { campaignId: string }) {
   }));
 
   return (
-    <div>
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <div className="text-sm text-slate-500">{data?.total ?? 0} lead{data?.total === 1 ? '' : 's'}</div>
-        <button className="btn-primary" onClick={() => setImporting(true)}>⭳ Import leads</button>
+    <div className="card p-5">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <h3 className="text-lg font-semibold text-slate-800">Target Audience</h3>
+        <div className="flex items-center gap-2">
+          <input
+            className="input w-56"
+            placeholder="Search targets…"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+          <button className="btn-primary whitespace-nowrap" onClick={() => setImporting(true)}>⭳ Import leads</button>
+        </div>
       </div>
       {importing && (
         <LiImportLeadsModal
@@ -147,17 +164,26 @@ function Details({ campaignId }: { campaignId: string }) {
         />
       )}
       <Tabs tabs={tabs} active={tab} onChange={(k) => { setTab(k); setPage(1); }} />
-      <div className="card overflow-hidden">
+      <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="border-b border-slate-100 text-left text-slate-400">
-            <tr><th className="p-3 font-medium">Name</th><th className="p-3 font-medium">Title</th>
-              <th className="p-3 font-medium">Company</th><th className="p-3 font-medium">Status</th><th className="p-3 font-medium">Step</th></tr>
+            <tr>
+              <th className="p-3 font-medium">Name</th>
+              <th className="p-3 font-medium">Profile</th>
+              <th className="p-3 font-medium">Title</th>
+              <th className="p-3 font-medium">Company</th>
+              <th className="p-3 font-medium">Status</th>
+              <th className="p-3 font-medium">Step</th>
+            </tr>
           </thead>
           <tbody>
             {data?.items.map((l) => (
               <tr key={l.id} className="border-b border-slate-50">
-                <td className="p-3 font-medium text-slate-800">
-                  {l.profileUrl ? <a href={l.profileUrl} target="_blank" className="hover:text-brand-700">{l.fullName}</a> : l.fullName}
+                <td className="p-3 font-medium text-slate-800">{l.fullName}</td>
+                <td className="p-3">
+                  {l.profileUrl
+                    ? <a href={l.profileUrl} target="_blank" rel="noreferrer" className="text-brand-600 hover:text-brand-800 hover:underline">View Profile</a>
+                    : <span className="text-slate-300">—</span>}
                 </td>
                 <td className="p-3 text-slate-600">{l.title ?? '—'}</td>
                 <td className="p-3 text-slate-600">{l.company ?? '—'}</td>
@@ -165,7 +191,7 @@ function Details({ campaignId }: { campaignId: string }) {
                 <td className="p-3 text-slate-500">{l.currentStep}</td>
               </tr>
             ))}
-            {data && data.items.length === 0 && <tr><td colSpan={5} className="p-8 text-center text-slate-400">No leads in this view.</td></tr>}
+            {data && data.items.length === 0 && <tr><td colSpan={6} className="p-8 text-center text-slate-400">{dq ? 'No targets match your search.' : 'No leads in this view.'}</td></tr>}
           </tbody>
         </table>
       </div>
