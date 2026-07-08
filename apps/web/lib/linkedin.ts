@@ -13,15 +13,40 @@ export interface LiSubscription {
   timezone: string;
 }
 
+export type LinkedInAccountStatus = 'PENDING' | 'CONNECTED' | 'CREDENTIALS' | 'DISCONNECTED' | 'ERROR';
+
 export interface LinkedInAccount {
   id: string;
-  status: 'PENDING' | 'CONNECTED' | 'CREDENTIALS' | 'DISCONNECTED' | 'ERROR';
+  status: LinkedInAccountStatus;
   fullName?: string | null;
   headline?: string | null;
   avatarUrl?: string | null;
   profileUrl?: string | null;
   connectionsCount?: number | null;
+  lastSyncedAt?: string | null;
   createdAt: string;
+}
+
+/** Visual health for a connected LinkedIn account. `healthy` = able to send. */
+export function accountHealth(status: LinkedInAccountStatus): { label: string; dot: string; text: string; healthy: boolean; attention: boolean } {
+  switch (status) {
+    case 'CONNECTED':    return { label: 'Connected', dot: 'bg-emerald-500', text: 'text-emerald-700', healthy: true, attention: false };
+    case 'PENDING':      return { label: 'Pending auth', dot: 'bg-amber-400', text: 'text-amber-700', healthy: false, attention: false };
+    case 'CREDENTIALS':  return { label: 'Needs re-auth', dot: 'bg-amber-500', text: 'text-amber-700', healthy: false, attention: true };
+    case 'DISCONNECTED': return { label: 'Disconnected', dot: 'bg-rose-500', text: 'text-rose-700', healthy: false, attention: true };
+    case 'ERROR':        return { label: 'Error', dot: 'bg-rose-600', text: 'text-rose-700', healthy: false, attention: true };
+    default:             return { label: status, dot: 'bg-slate-400', text: 'text-slate-600', healthy: false, attention: false };
+  }
+}
+
+/** "3m ago" style relative time. */
+export function timeAgo(iso?: string | null): string {
+  if (!iso) return 'never';
+  const s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+  if (s < 60) return 'just now';
+  const m = Math.floor(s / 60); if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24); return `${d}d ago`;
 }
 
 export interface LiCampaign {

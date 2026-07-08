@@ -7,7 +7,8 @@ import { EmptyState, StatusBadge, Tabs, Pagination, PageHeader } from '@/compone
 import { LiInbox } from '@/components/LiInbox';
 import { LiRegularWizard } from '@/components/LiRegularWizard';
 import { LiAiWizard } from '@/components/LiAiWizard';
-import { LiSubscription, LiKnowledgeStats, LiCampaign, LiCampaignStats, LiLeadsPage } from '@/lib/linkedin';
+import { LiImportLeadsModal } from '@/components/LiImportLeadsModal';
+import { LiSubscription, LiKnowledgeStats, LiCampaign, LiCampaignStats, LiLeadsPage, LinkedInAccount, accountHealth } from '@/lib/linkedin';
 
 const BASE = '/linkedin/portal';
 const STATUS_LABEL: Record<string, string> = {
@@ -18,22 +19,36 @@ const STATUS_LABEL: Record<string, string> = {
 export function ClientLinkedIn({ clientId }: { clientId: string }) {
   const [sub, setSub] = useState<LiSubscription | null>(null);
   const [stats, setStats] = useState<LiKnowledgeStats | null>(null);
+  const [accounts, setAccounts] = useState<LinkedInAccount[]>([]);
   const [view, setView] = useState('campaigns');
 
   useEffect(() => {
     api.get<LiSubscription>(`${BASE}/clients/${clientId}/subscription`).then(setSub).catch(() => {});
     api.get<LiKnowledgeStats>(`${BASE}/clients/${clientId}/knowledge-stats`).then(setStats).catch(() => {});
+    api.get<LinkedInAccount[]>(`${BASE}/clients/${clientId}/linkedin-accounts`).then(setAccounts).catch(() => {});
   }, [clientId]);
+
+  const connected = accounts.filter((a) => a.status === 'CONNECTED').length;
+  const attention = accounts.filter((a) => accountHealth(a.status).attention).length;
 
   return (
     <div>
       {/* Subscription strip (read-only; managed by your account team) */}
-      <div className="mb-5 grid grid-cols-2 gap-4 md:grid-cols-4">
+      <div className="mb-3 grid grid-cols-2 gap-4 md:grid-cols-4">
         <Stat label="Seats" value={sub?.seats ?? '—'} />
         <Stat label="Credits" value={sub?.creditsBalance ?? '—'} />
         <Stat label="Validity (days)" value={sub?.validityDays ?? '—'} />
         <Stat label="AI Knowledge" value={`${stats?.aiKnowledgePct ?? 0}%`} sub={`${stats?.profileCount ?? 0} profiles`} />
       </div>
+
+      {/* LinkedIn account health */}
+      {accounts.length > 0 && (
+        <div className={`mb-5 flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${attention > 0 ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-slate-200 bg-slate-50 text-slate-600'}`}>
+          <span className={`h-2 w-2 rounded-full ${attention > 0 ? 'bg-rose-500' : 'bg-emerald-500'}`} />
+          {connected} of {accounts.length} LinkedIn account{accounts.length === 1 ? '' : 's'} connected
+          {attention > 0 && ' — one needs attention; your account team has been notified.'}
+        </div>
+      )}
 
       <Tabs tabs={[{ key: 'campaigns', label: 'Campaigns' }, { key: 'inbox', label: 'Inbox' }]} active={view} onChange={setView} />
       {view === 'campaigns' ? <ClientCampaigns clientId={clientId} /> : <LiInbox clientId={clientId} base={BASE} />}
@@ -126,7 +141,7 @@ function ClientCampaigns({ clientId }: { clientId: string }) {
               {c.status === 'PAUSED' && <button className="btn-primary px-2 py-1" disabled={busy !== ''} onClick={() => act(c.id, 'resume')}>▶ Resume</button>}
             </div>
           </div>
-          {openId === c.id && <CampaignDetail campaignId={c.id} />}
+          {openId === c.id && <CampaignDetail campaignId={c.id} onChanged={load} />}
         </div>
       ))}
       </div>
@@ -135,13 +150,15 @@ function ClientCampaigns({ clientId }: { clientId: string }) {
   );
 }
 
-function CampaignDetail({ campaignId }: { campaignId: string }) {
+function CampaignDetail({ campaignId, onChanged }: { campaignId: string; onChanged?: () => void }) {
   const [stats, setStats] = useState<LiCampaignStats | null>(null);
   const [leads, setLeads] = useState<LiLeadsPage | null>(null);
   const [page, setPage] = useState(1);
+  const [importing, setImporting] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
-  useEffect(() => { api.get<LiCampaignStats>(`${BASE}/campaigns/${campaignId}/stats`).then(setStats); }, [campaignId]);
-  useEffect(() => { api.get<LiLeadsPage>(`${BASE}/campaigns/${campaignId}/leads?page=${page}`).then(setLeads); }, [campaignId, page]);
+  useEffect(() => { api.get<LiCampaignStats>(`${BASE}/campaigns/${campaignId}/stats`).then(setStats); }, [campaignId, reloadKey]);
+  useEffect(() => { api.get<LiLeadsPage>(`${BASE}/campaigns/${campaignId}/leads?page=${page}`).then(setLeads); }, [campaignId, page, reloadKey]);
 
   return (
     <div className="border-t border-slate-100 bg-slate-50/60 p-4">
@@ -152,6 +169,18 @@ function CampaignDetail({ campaignId }: { campaignId: string }) {
           <Mini label="Reply Rate" value={`${stats.replyRate}%`} />
           <Mini label="Messages" value={stats.totalMessages} />
         </div>
+      )}
+      <div className="mb-2 flex items-center justify-between">
+        <div className="text-sm text-slate-500">{leads?.total ?? 0} lead{leads?.total === 1 ? '' : 's'}</div>
+        <button className="btn-ghost px-2 py-1 text-sm" onClick={() => setImporting(true)}>⭳ Import leads</button>
+      </div>
+      {importing && (
+        <LiImportLeadsModal
+          campaignId={campaignId}
+          base={BASE}
+          onClose={() => setImporting(false)}
+          onImported={() => { setImporting(false); setPage(1); setReloadKey((k) => k + 1); onChanged?.(); }}
+        />
       )}
       <div className="card overflow-hidden">
         <table className="w-full text-sm">

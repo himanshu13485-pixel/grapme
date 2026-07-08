@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { PageHeader, EmptyState, StatusBadge, Tabs, Modal } from '@/components/ui';
-import { LiSubscription, LinkedInAccount, LiCampaign, LiKnowledgeStats } from '@/lib/linkedin';
+import { LiSubscription, LinkedInAccount, LiCampaign, LiKnowledgeStats, accountHealth, timeAgo } from '@/lib/linkedin';
 import { LiInbox } from '@/components/LiInbox';
 
 export default function ClientLinkedInPage() {
@@ -178,25 +178,57 @@ function AccountsTab({ clientId }: { clientId: string }) {
       {!loaded ? <EmptyState message="Loading…" /> : accounts.length === 0 ? (
         <EmptyState message="No LinkedIn accounts connected yet." />
       ) : (
-        <div className="card divide-y divide-slate-100">
-          {accounts.map((a) => (
-            <div key={a.id} className="flex items-center justify-between p-4">
-              <div className="flex items-center gap-3">
-                <img src={a.avatarUrl || 'https://placehold.co/40x40/ede9fe/6d28d9?text=in'} alt="" className="h-10 w-10 rounded-full bg-brand-50 object-cover" />
-                <div>
-                  <div className="font-medium text-slate-800">{a.fullName ?? 'Pending connection…'}</div>
-                  <div className="line-clamp-1 text-xs text-slate-500">
-                    {a.headline ?? 'Awaiting LinkedIn auth'}{a.connectionsCount != null && ` · ${a.connectionsCount} connections`}
+        <>
+          <AccountHealthSummary accounts={accounts} />
+          <div className="card divide-y divide-slate-100">
+            {accounts.map((a) => {
+              const h = accountHealth(a.status);
+              return (
+                <div key={a.id} className="flex items-center justify-between p-4">
+                  <div className="flex items-center gap-3">
+                    <img src={a.avatarUrl || 'https://placehold.co/40x40/ede9fe/6d28d9?text=in'} alt="" className="h-10 w-10 rounded-full bg-brand-50 object-cover" />
+                    <div>
+                      <div className="font-medium text-slate-800">{a.fullName ?? 'Pending connection…'}</div>
+                      <div className="line-clamp-1 text-xs text-slate-500">
+                        {a.headline ?? 'Awaiting LinkedIn auth'}
+                        {a.connectionsCount != null && ` · ${a.connectionsCount} connections`}
+                        {a.status === 'CONNECTED' && ` · synced ${timeAgo(a.lastSyncedAt)}`}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className={`inline-flex items-center gap-1.5 rounded-full bg-slate-50 px-2.5 py-1 text-xs font-medium ${h.text}`}>
+                      <span className={`h-2 w-2 rounded-full ${h.dot}`} />{h.label}
+                    </span>
+                    <button className="text-sm text-slate-500 hover:text-slate-800" onClick={async () => { await api.post(`/linkedin/linkedin-accounts/${a.id}/sync`); load(); }}>Sync</button>
+                    {h.attention && <button className="text-sm text-brand-600 hover:text-brand-800" onClick={connect}>Reconnect</button>}
+                    <button className="text-sm text-rose-500 hover:text-rose-700" onClick={async () => { if (confirm('Remove this account?')) { await api.del(`/linkedin/linkedin-accounts/${a.id}`); load(); } }}>Remove</button>
                   </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <StatusBadge status={a.status} />
-                <button className="text-sm text-slate-500 hover:text-slate-800" onClick={async () => { await api.post(`/linkedin/linkedin-accounts/${a.id}/sync`); load(); }}>Sync</button>
-                <button className="text-sm text-rose-500 hover:text-rose-700" onClick={async () => { if (confirm('Remove this account?')) { await api.del(`/linkedin/linkedin-accounts/${a.id}`); load(); } }}>Remove</button>
-              </div>
-            </div>
-          ))}
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Roll-up of account connection health for the client's seats. */
+function AccountHealthSummary({ accounts }: { accounts: LinkedInAccount[] }) {
+  const connected = accounts.filter((a) => a.status === 'CONNECTED').length;
+  const attention = accounts.filter((a) => accountHealth(a.status).attention);
+  return (
+    <div className="mb-3 space-y-2">
+      <div className="flex items-center gap-2 text-sm text-slate-600">
+        <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-emerald-500" />{connected} connected</span>
+        <span className="text-slate-300">·</span>
+        <span>{accounts.length} seat{accounts.length === 1 ? '' : 's'} used</span>
+      </div>
+      {attention.length > 0 && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          ⚠ {attention.length} account{attention.length === 1 ? '' : 's'} need{attention.length === 1 ? 's' : ''} attention — reconnect to resume sending.
+          {' '}This campaign&apos;s sends pause for any account that isn&apos;t connected.
         </div>
       )}
     </div>

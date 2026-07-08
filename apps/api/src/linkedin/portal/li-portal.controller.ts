@@ -5,7 +5,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
 import { LiPortalService } from './li-portal.service';
 import {
-  CreateLiCampaignDto, UpdateLiCampaignDto, UpdateLiSequenceDto, UpsertLiAudienceDto, UpdateLiScheduleDto,
+  CreateLiCampaignDto, UpdateLiCampaignDto, UpdateLiSequenceDto, UpsertLiAudienceDto, UpdateLiScheduleDto, ImportLiLeadsDto,
 } from '../campaigns/dto/campaign.dto';
 
 class NameDto { @IsString() @MinLength(2) name!: string; }
@@ -59,6 +59,8 @@ export class LiPortalController {
   leads(@CurrentUser() u: AuthUser, @Param('id') id: string, @Query('status') status?: LiLeadStatus, @Query('page') page?: string, @Query('pageSize') pageSize?: string, @Query('search') search?: string) {
     return this.portal.campaignLeads(u.userId, id, { status, search, page: page ? Number(page) : undefined, pageSize: pageSize ? Number(pageSize) : undefined });
   }
+  @Post('campaigns/:id/leads')
+  importLeads(@CurrentUser() u: AuthUser, @Param('id') id: string, @Body() dto: ImportLiLeadsDto) { return this.portal.importLeads(u.userId, id, dto); }
   @Patch('campaigns/:id/audience')
   audience(@CurrentUser() u: AuthUser, @Param('id') id: string, @Body() dto: UpsertLiAudienceDto) { return this.portal.updateAudience(u.userId, id, dto); }
   @Patch('campaigns/:id/sequence')

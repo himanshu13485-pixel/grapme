@@ -9,7 +9,7 @@ import { LiKnowledgeService } from '../knowledge/li-knowledge.service';
 import { LiInboxService, InboxTab } from '../inbox/li-inbox.service';
 import { ApprovalsService } from '../../approvals/approvals.service';
 import {
-  CreateLiCampaignDto, UpdateLiCampaignDto, UpdateLiSequenceDto, UpsertLiAudienceDto, UpdateLiScheduleDto,
+  CreateLiCampaignDto, UpdateLiCampaignDto, UpdateLiSequenceDto, UpsertLiAudienceDto, UpdateLiScheduleDto, ImportLiLeadsDto,
 } from '../campaigns/dto/campaign.dto';
 
 /**
@@ -78,6 +78,7 @@ export class LiPortalService {
   async getCampaign(userId: string, id: string) { await this.assertCampaign(userId, id); return this.campaigns.get(id); }
   async campaignStats(userId: string, id: string) { await this.assertCampaign(userId, id); return this.campaigns.stats(id); }
   async campaignLeads(userId: string, id: string, opts: any) { await this.assertCampaign(userId, id); return this.campaigns.leads(id, opts); }
+  async importLeads(userId: string, id: string, dto: ImportLiLeadsDto) { await this.assertCampaign(userId, id); return this.campaigns.importLeads(id, dto); }
   async updateAudience(userId: string, id: string, dto: UpsertLiAudienceDto) { await this.assertCampaign(userId, id); return this.campaigns.upsertAudience(id, dto); }
   async updateSequence(userId: string, id: string, dto: UpdateLiSequenceDto) { await this.assertCampaign(userId, id); return this.campaigns.updateSequence(id, dto); }
   async updateSchedule(userId: string, id: string, dto: UpdateLiScheduleDto) { await this.assertCampaign(userId, id); return this.campaigns.updateSchedule(id, dto); }
