@@ -61,7 +61,8 @@ export class LiOutreachProcessor extends WorkerHost {
 
   private async doSendConnection(actionId: string, ctx: LeadWithContext) {
     const sentToday = await this.scheduler.invitesSentTodayForCampaign(ctx.campaign.id);
-    if (sentToday >= ctx.campaign.dailyConnectionLimit) return this.scheduler.rearm(actionId, this.scheduler.tomorrow());
+    const cap = this.scheduler.effectiveConnectionCap(ctx.campaign);
+    if (sentToday >= cap) return this.scheduler.rearm(actionId, this.scheduler.tomorrow());
 
     const step1 = ctx.steps.find((s) => s.order === 1);
     const memberId = await this.ensureMemberId(ctx);

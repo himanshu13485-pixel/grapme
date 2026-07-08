@@ -57,6 +57,9 @@ export class UpdateLiScheduleDto {
   @IsOptional() @IsArray() @IsInt({ each: true }) @Min(0, { each: true }) @Max(6, { each: true }) workDays?: number[];
   @IsOptional() @IsInt() @Min(1) dailyConnectionLimit?: number;
   @IsOptional() @IsInt() @Min(1) dailyMessageLimit?: number;
+  @IsOptional() @IsBoolean() warmupEnabled?: boolean;
+  @IsOptional() @IsInt() @Min(1) warmupStartLimit?: number;
+  @IsOptional() @IsInt() @Min(1) @Max(60) warmupDays?: number;
 }
 
 export class ImportLiLeadDto {

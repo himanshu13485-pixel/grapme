@@ -180,7 +180,13 @@ export class LiCampaignsService {
 
   async setStatus(id: string, status: LiCampaignStatus) {
     await this.assertExists(id);
-    const campaign = await this.prisma.liCampaign.update({ where: { id }, data: { status } });
+    const data: { status: LiCampaignStatus; warmupStartedAt?: Date } = { status };
+    if (status === LiCampaignStatus.RUNNING) {
+      // Anchor the warm-up ramp the first time the campaign starts sending.
+      const c = await this.prisma.liCampaign.findUnique({ where: { id }, select: { warmupStartedAt: true } });
+      if (!c?.warmupStartedAt) data.warmupStartedAt = new Date();
+    }
+    const campaign = await this.prisma.liCampaign.update({ where: { id }, data });
     const STOP: LiCampaignStatus[] = [
       LiCampaignStatus.PAUSED, LiCampaignStatus.ARCHIVED, LiCampaignStatus.DELETED, LiCampaignStatus.COMPLETED,
     ];

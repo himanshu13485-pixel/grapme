@@ -1032,6 +1032,12 @@ model LiCampaign {
   workDays             Int[]            @default([1, 2, 3, 4, 5])
   dailyConnectionLimit Int              @default(20)
   dailyMessageLimit    Int              @default(20)
+  // Warm-up ramp: start low and grow the daily connection cap to the target over
+  // warmupDays, to protect the account from LinkedIn's invite limits / bans.
+  warmupEnabled        Boolean          @default(true)
+  warmupStartLimit     Int              @default(5)   // connections/day on day 0
+  warmupDays           Int              @default(14)  // days to reach dailyConnectionLimit
+  warmupStartedAt      DateTime?                       // set when the campaign first goes RUNNING
   businessProfileId    String?
   businessProfile      LiKnowledgeProfile? @relation("LiCampaignBusiness", fields: [businessProfileId], references: [id])
   strategyId           String?

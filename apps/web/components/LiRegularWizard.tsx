@@ -54,6 +54,7 @@ export function LiRegularWizard({
   const [sched, setSched] = useState({
     timezone: 'Asia/Kolkata', run247: false, workStartHour: 9, workEndHour: 18,
     workDays: [1, 2, 3, 4, 5] as number[], dailyConnectionLimit: 20, dailyMessageLimit: 20,
+    warmupEnabled: true, warmupStartLimit: 5, warmupDays: 14,
   });
 
   useEffect(() => {
@@ -246,8 +247,29 @@ export function LiRegularWizard({
               </div>
             </Field>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              <Field label="Daily connections"><input type="number" min={1} className="input" value={sched.dailyConnectionLimit} onChange={(e) => setSched({ ...sched, dailyConnectionLimit: Number(e.target.value) })} /></Field>
+              <Field label="Daily connections (target)"><input type="number" min={1} className="input" value={sched.dailyConnectionLimit} onChange={(e) => setSched({ ...sched, dailyConnectionLimit: Number(e.target.value) })} /></Field>
               <Field label="Daily messages"><input type="number" min={1} className="input" value={sched.dailyMessageLimit} onChange={(e) => setSched({ ...sched, dailyMessageLimit: Number(e.target.value) })} /></Field>
+            </div>
+
+            {/* Warm-up ramp — protect the account from LinkedIn invite limits/bans */}
+            <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50/50 p-4">
+              <label className="flex items-center gap-2 text-sm font-medium text-slate-800">
+                <input type="checkbox" checked={sched.warmupEnabled} onChange={(e) => setSched({ ...sched, warmupEnabled: e.target.checked })} />
+                Warm-up ramp (recommended)
+              </label>
+              <p className="mt-1 text-xs text-slate-500">
+                Start with fewer connection requests per day and ramp up to the target gradually — this mimics human
+                behaviour and protects the account from LinkedIn&apos;s invite limits and bans.
+              </p>
+              {sched.warmupEnabled && (
+                <div className="mt-3 grid gap-4 sm:grid-cols-2">
+                  <Field label="Start at (connections/day)"><input type="number" min={1} className="input" value={sched.warmupStartLimit} onChange={(e) => setSched({ ...sched, warmupStartLimit: Number(e.target.value) })} /></Field>
+                  <Field label="Ramp to target over (days)"><input type="number" min={1} max={60} className="input" value={sched.warmupDays} onChange={(e) => setSched({ ...sched, warmupDays: Number(e.target.value) })} /></Field>
+                  <div className="sm:col-span-2 text-xs text-slate-500">
+                    e.g. day 1 ≈ {Math.min(sched.warmupStartLimit, sched.dailyConnectionLimit)}/day → day {sched.warmupDays}+ = {sched.dailyConnectionLimit}/day.
+                  </div>
+                </div>
+              )}
             </div>
           </Step>
         )}

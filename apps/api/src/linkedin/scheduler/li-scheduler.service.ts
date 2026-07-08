@@ -55,13 +55,13 @@ export class LiSchedulerService {
       await this.attachJob(a.id, a.type, a.leadId, a.stepOrder ?? undefined, a.runAt);
     }
 
-    // Enqueue the first action per fresh lead, paced by the daily limit.
+    // Enqueue the first action per fresh lead, paced by the daily limit (warm-up aware).
     const direct = campaign.outreachType === 'DIRECT_MESSAGES';
     const freshLeads = await this.prisma.liLead.findMany({
       where: { campaignId, status: LiLeadStatus.PENDING, scheduled: { none: {} } },
       select: { id: true },
     });
-    const limit = Math.max(1, direct ? campaign.dailyMessageLimit : campaign.dailyConnectionLimit);
+    const limit = Math.max(1, direct ? campaign.dailyMessageLimit : this.effectiveConnectionCap(campaign));
     let index = 0;
     for (const lead of freshLeads) {
       const day = Math.floor(index / limit);
@@ -147,6 +147,25 @@ export class LiSchedulerService {
   }
 
   tomorrow(): Date { const d = this.startOfToday(); d.setDate(d.getDate() + 1); return d; }
+
+  /**
+   * Warm-up-aware daily connection cap: ramps from warmupStartLimit up to
+   * dailyConnectionLimit over warmupDays, so a (new) account isn't hit with full
+   * volume on day one. Returns dailyConnectionLimit once warm-up is complete/off.
+   */
+  effectiveConnectionCap(c: {
+    warmupEnabled?: boolean; warmupStartedAt?: Date | null; warmupStartLimit?: number;
+    warmupDays?: number; dailyConnectionLimit: number;
+  }): number {
+    const target = c.dailyConnectionLimit;
+    if (!c.warmupEnabled || !c.warmupStartedAt) return target;
+    const days = Math.floor((Date.now() - new Date(c.warmupStartedAt).getTime()) / 864e5);
+    const rampDays = Math.max(1, c.warmupDays ?? 14);
+    if (days >= rampDays) return target;
+    const start = Math.min(c.warmupStartLimit ?? 5, target);
+    const cap = Math.round(start + (target - start) * (days / rampDays));
+    return Math.max(start, Math.min(target, cap));
+  }
 
   // ── working-hours gating ─────────────────────────────────────────────
   private async gate(leadId: string, runAt: Date): Promise<Date> {
