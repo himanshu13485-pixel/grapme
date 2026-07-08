@@ -190,7 +190,7 @@ function AccountsTab({ clientId }: { clientId: string }) {
                     <div>
                       <div className="font-medium text-slate-800">{a.fullName ?? 'Pending connection…'}</div>
                       <div className="line-clamp-1 text-xs text-slate-500">
-                        {a.headline ?? 'Awaiting LinkedIn auth'}
+                        {a.headline ?? (a.status === 'CONNECTED' ? 'LinkedIn account' : 'Awaiting LinkedIn auth')}
                         {a.connectionsCount != null && ` · ${a.connectionsCount} connections`}
                         {a.status === 'CONNECTED' && ` · synced ${timeAgo(a.lastSyncedAt)}`}
                       </div>

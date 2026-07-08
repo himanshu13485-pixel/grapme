@@ -30,8 +30,13 @@ import { HealthController } from './health.controller';
 
 // The sending engine needs Redis. Set QUEUE_ENABLED=false to run the rest of
 // the platform (auth, campaigns, approvals, …) with only Postgres.
+// EMAIL_ENGINE_ENABLED=false keeps the queue (so the LinkedIn engine runs) but
+// disables the email sending engine — e.g. to test LinkedIn without touching email.
 const queueEnabled = process.env.QUEUE_ENABLED !== 'false';
-const engineModules = queueEnabled ? [QueueModule, SendingModule] : [];
+const emailEngineEnabled = process.env.EMAIL_ENGINE_ENABLED !== 'false';
+const engineModules = queueEnabled
+  ? [QueueModule, ...(emailEngineEnabled ? [SendingModule] : [])]
+  : [];
 
 @Module({
   imports: [
