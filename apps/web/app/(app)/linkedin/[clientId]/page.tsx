@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { PageHeader, EmptyState, StatusBadge, Tabs } from '@/components/ui';
@@ -10,11 +10,16 @@ import { LiInbox } from '@/components/LiInbox';
 
 export default function ClientLinkedInPage() {
   const { clientId } = useParams<{ clientId: string }>();
+  const router = useRouter();
   const [clientName, setClientName] = useState('');
+  const [emailOn, setEmailOn] = useState(true);
+  const [linkedInOn, setLinkedInOn] = useState<boolean | null>(null);
   const [tab, setTab] = useState('subscription');
 
   useEffect(() => {
-    api.get<{ name: string }>(`/clients/${clientId}`).then((c) => setClientName(c.name)).catch(() => {});
+    api.get<{ name: string; emailEnabled?: boolean; linkedInEnabled?: boolean }>(`/clients/${clientId}`)
+      .then((c) => { setClientName(c.name); setEmailOn(c.emailEnabled !== false); setLinkedInOn(!!c.linkedInEnabled); })
+      .catch(() => setLinkedInOn(false));
   }, [clientId]);
 
   return (
@@ -22,21 +27,50 @@ export default function ClientLinkedInPage() {
       <Link href="/linkedin" className="text-sm text-slate-500 hover:text-slate-800">← LinkedIn Outreach</Link>
       <PageHeader title={`${clientName || 'Client'} · LinkedIn`} subtitle="Subscription, connected accounts, and campaigns for this client." />
 
-      <Tabs
-        tabs={[
-          { key: 'subscription', label: 'Subscription' },
-          { key: 'accounts', label: 'Accounts' },
-          { key: 'campaigns', label: 'Campaigns' },
-          { key: 'inbox', label: 'Inbox' },
-        ]}
-        active={tab}
-        onChange={setTab}
-      />
+      {/* Channel switcher — jump back to this client's Email workspace. */}
+      <div className="mb-5 inline-flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
+        <button
+          type="button"
+          onClick={() => router.push(`/clients/${clientId}?channel=email`)}
+          className="flex items-center gap-2 rounded-lg px-5 py-2 text-sm font-medium text-slate-500 transition hover:text-slate-700"
+        >
+          📧 Email
+          {!emailOn && <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-400">Not subscribed</span>}
+        </button>
+        <button type="button" className="rounded-lg bg-brand-600 px-5 py-2 text-sm font-semibold text-white shadow-sm">
+          🔗 LinkedIn
+        </button>
+      </div>
 
-      {tab === 'subscription' && <SubscriptionTab clientId={clientId} />}
-      {tab === 'accounts' && <AccountsTab clientId={clientId} />}
-      {tab === 'campaigns' && <CampaignsTab clientId={clientId} />}
-      {tab === 'inbox' && <LiInbox clientId={clientId} />}
+      {linkedInOn === null ? (
+        <EmptyState message="Loading…" />
+      ) : linkedInOn === false ? (
+        <div className="card flex flex-col items-center justify-center gap-3 py-16 text-center">
+          <div className="text-4xl opacity-70">🔗</div>
+          <div className="text-lg font-semibold text-slate-700">LinkedIn channel — not subscribed</div>
+          <p className="max-w-md text-sm text-slate-500">
+            This client isn&apos;t subscribed to the LinkedIn outreach channel. Edit the client and set its Outreach channels to enable it.
+          </p>
+        </div>
+      ) : (
+        <>
+          <Tabs
+            tabs={[
+              { key: 'subscription', label: 'Subscription' },
+              { key: 'accounts', label: 'Accounts' },
+              { key: 'campaigns', label: 'Campaigns' },
+              { key: 'inbox', label: 'Inbox' },
+            ]}
+            active={tab}
+            onChange={setTab}
+          />
+
+          {tab === 'subscription' && <SubscriptionTab clientId={clientId} />}
+          {tab === 'accounts' && <AccountsTab clientId={clientId} />}
+          {tab === 'campaigns' && <CampaignsTab clientId={clientId} />}
+          {tab === 'inbox' && <LiInbox clientId={clientId} />}
+        </>
+      )}
     </div>
   );
 }

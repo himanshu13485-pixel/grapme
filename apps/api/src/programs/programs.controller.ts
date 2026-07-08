@@ -48,6 +48,7 @@ export class ProgramsController {
     @Query('invoice') invoice?: string,
     @Query('status') status?: string,
     @Query('plan') plan?: string,
+    @Query('linkedInEnabled') linkedInEnabled?: string,
   ) {
     return this.programs.listClientsPaged(user, {
       page,
@@ -57,6 +58,7 @@ export class ProgramsController {
       invoice,
       status,
       plan,
+      linkedInEnabled,
     });
   }
 

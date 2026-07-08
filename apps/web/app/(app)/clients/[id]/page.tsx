@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useMemo, useState, FormEvent, Fragment } from 'react';
-import { useParams } from 'next/navigation';
+import { useEffect, useMemo, useRef, useState, FormEvent, Fragment } from 'react';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useCanDelete, useAuth } from '@/lib/auth';
 import { downloadCsv } from '@/lib/csv';
 import { PageHeader, EmptyState, StatusBadge, Tabs, Modal } from '@/components/ui';
+import { ClientLinkedIn } from '@/components/ClientLinkedIn';
 import { ContactsManager } from '@/components/ContactsManager';
 import { TemplatesManager } from '@/components/TemplatesManager';
 import { CampaignsManager } from '@/components/CampaignsManager';
@@ -62,6 +63,8 @@ interface Client {
   mobile?: string;
   productCategory?: string;
   serviceType?: string;
+  emailEnabled?: boolean;
+  linkedInEnabled?: boolean;
   reportDaily: boolean;
   reportWeekly: boolean;
   reportMonthly: boolean;
@@ -125,6 +128,8 @@ interface CohortMetrics {
 
 export default function ClientCockpit() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { user } = useAuth();
   const isClient = user?.role === 'CLIENT';
   const [client, setClient] = useState<Client | null>(null);
@@ -133,6 +138,9 @@ export default function ClientCockpit() {
   const [lists, setLists] = useState<ContactList[]>([]);
   const [cohorts, setCohorts] = useState<CohortStat[]>([]);
   const [tab, setTab] = useState('mailboxes');
+  // Client portal splits its workspace into two channels; admins only see Email here
+  // (their LinkedIn lives in the top-level "LinkedIn Outreach" nav).
+  const [channel, setChannel] = useState<'email' | 'linkedin'>('email');
   const [notice, setNotice] = useState('');
   const [inboxUnread, setInboxUnread] = useState(0);
   const [showDetails, setShowDetails] = useState(false);
@@ -166,6 +174,30 @@ export default function ClientCockpit() {
     api.get<ContactList[]>('/contact-lists').then(setLists).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  // Land on a channel the client is actually subscribed to (once, on first load).
+  const channelInit = useRef(false);
+  useEffect(() => {
+    if (client && !channelInit.current) {
+      channelInit.current = true;
+      // An explicit ?channel= wins (e.g. "Email" from the LinkedIn workspace switcher);
+      // otherwise land on Email, falling back to LinkedIn when Email isn't subscribed.
+      const forced = searchParams.get('channel');
+      setChannel(
+        forced === 'email' || forced === 'linkedin'
+          ? forced
+          : client.emailEnabled !== false ? 'email' : 'linkedin',
+      );
+    }
+  }, [client]);
+
+  // Admins manage a subscribed client's LinkedIn in the dedicated workspace — redirect
+  // there instead of rendering the client-portal LinkedIn view (which uses CLIENT-only APIs).
+  useEffect(() => {
+    if (client && !isClient && channel === 'linkedin' && client.linkedInEnabled) {
+      router.push(`/linkedin/${client.id}`);
+    }
+  }, [channel, client, isClient, router]);
 
   async function runEngine() {
     try {
@@ -201,6 +233,9 @@ export default function ClientCockpit() {
   if (!client) return <div className="text-slate-400">Loading…</div>;
 
   const isActive = (client.status ?? 'active').toLowerCase() === 'active';
+  // Channel subscriptions (emailEnabled defaults true for legacy clients).
+  const emailOn = client.emailEnabled !== false;
+  const linkedInOn = !!client.linkedInEnabled;
 
   return (
     <div>
@@ -258,7 +293,7 @@ export default function ClientCockpit() {
         <ClientDetails client={client} />
       </Modal>
 
-      {(() => {
+      {channel === 'email' && (() => {
         const next = cohorts
           .filter((c) => c.status === 'RUNNING' && c.nextSendAt)
           .map((c) => c.nextSendAt as string)
@@ -285,35 +320,100 @@ export default function ClientCockpit() {
         </div>
       )}
 
-      <Tabs
-        active={tab}
-        onChange={setTab}
-        tabs={[
-          { key: 'mailboxes', label: 'Mailboxes', count: client.mailboxes.length },
-          { key: 'rotation', label: 'Mailbox Group', count: client.mailboxes.length },
-          { key: 'sequence', label: 'Sequence', count: client.followUpCount + 1 },
-          { key: 'cohorts', label: 'Cohorts', count: cohorts.length },
-          { key: 'contacts', label: 'Contacts & Lists', count: client._count?.contacts ?? 0 },
-          { key: 'templates', label: 'Templates', count: client._count?.templates ?? 0 },
-          { key: 'campaigns', label: 'Campaigns', count: client._count?.campaigns ?? 0 },
-          { key: 'inbox', label: 'Inbox & Sent', count: inboxUnread || undefined },
-        ]}
-      />
+      {/* Client portal: pick a channel first, then its own tabs. Admins see Email only. */}
+      {/* Channel switcher (admin + client). Unsubscribed channels are marked and gate their content. */}
+      <div className="mb-5 inline-flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
+        {([
+          ['email', '📧 Email', emailOn],
+          ['linkedin', '🔗 LinkedIn', linkedInOn],
+        ] as ['email' | 'linkedin', string, boolean][]).map(([key, label, on]) => (
+          <button
+            key={key}
+            type="button"
+            // Admins jump straight to the LinkedIn workspace — but only if subscribed.
+            onClick={() => (key === 'linkedin' && !isClient && on ? router.push(`/linkedin/${client.id}`) : setChannel(key))}
+            className={`flex items-center gap-2 rounded-lg px-5 py-2 text-sm transition ${
+              channel === key
+                ? 'bg-brand-600 font-semibold text-white shadow-sm'
+                : 'font-medium text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            {label}
+            {!on && (
+              <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${channel === key ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-400'}`}>
+                Not subscribed
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
 
-      {tab === 'mailboxes' && <MailboxesManager clientId={client.id} />}
-      {tab === 'inbox' && <MailboxManager clientId={client.id} />}
-      {tab === 'rotation' && (
-        <MailboxGroup client={client} allMailboxes={allMailboxes} onChanged={() => { load(); flash('Mailbox group updated.'); }} />
+      {(channel === 'email' ? emailOn : linkedInOn) ? (
+        channel === 'linkedin' ? (
+          isClient ? (
+            <ClientLinkedIn clientId={client.id} />
+          ) : (
+            <div className="py-16 text-center text-slate-400">Opening LinkedIn workspace…</div>
+          )
+        ) : (
+          <>
+            <Tabs
+              active={tab}
+              onChange={setTab}
+              tabs={[
+                { key: 'mailboxes', label: 'Mailboxes', count: client.mailboxes.length },
+                { key: 'rotation', label: 'Mailbox Group', count: client.mailboxes.length },
+                { key: 'sequence', label: 'Sequence', count: client.followUpCount + 1 },
+                { key: 'cohorts', label: 'Cohorts', count: cohorts.length },
+                { key: 'contacts', label: 'Contacts & Lists', count: client._count?.contacts ?? 0 },
+                { key: 'templates', label: 'Templates', count: client._count?.templates ?? 0 },
+                { key: 'campaigns', label: 'Campaigns', count: client._count?.campaigns ?? 0 },
+                { key: 'inbox', label: 'Inbox & Sent', count: inboxUnread || undefined },
+              ]}
+            />
+
+            {tab === 'mailboxes' && <MailboxesManager clientId={client.id} />}
+            {tab === 'inbox' && <MailboxManager clientId={client.id} />}
+            {tab === 'rotation' && (
+              <MailboxGroup client={client} allMailboxes={allMailboxes} onChanged={() => { load(); flash('Mailbox group updated.'); }} />
+            )}
+            {tab === 'sequence' && (
+              <SequenceEditor client={client} templates={templates} onChanged={() => { load(); flash('Sequence saved.'); }} />
+            )}
+            {tab === 'cohorts' && (
+              <Cohorts client={client} cohorts={cohorts} lists={lists} templates={templates} onChanged={() => { load(); flash('Cohort uploaded & enrolled.'); }} />
+            )}
+            {tab === 'contacts' && <ContactsManager clientId={client.id} />}
+            {tab === 'templates' && <TemplatesManager clientId={client.id} />}
+            {tab === 'campaigns' && <CampaignsManager clientId={client.id} />}
+          </>
+        )
+      ) : (
+        <ChannelNotSubscribed channel={channel} isClient={isClient} />
       )}
-      {tab === 'sequence' && (
-        <SequenceEditor client={client} templates={templates} onChanged={() => { load(); flash('Sequence saved.'); }} />
-      )}
-      {tab === 'cohorts' && (
-        <Cohorts client={client} cohorts={cohorts} lists={lists} templates={templates} onChanged={() => { load(); flash('Cohort uploaded & enrolled.'); }} />
-      )}
-      {tab === 'contacts' && <ContactsManager clientId={client.id} />}
-      {tab === 'templates' && <TemplatesManager clientId={client.id} />}
-      {tab === 'campaigns' && <CampaignsManager clientId={client.id} />}
+    </div>
+  );
+}
+
+/** Shown when the selected channel isn't part of the client's subscription. */
+function ChannelNotSubscribed({
+  channel,
+  isClient,
+}: {
+  channel: 'email' | 'linkedin';
+  isClient: boolean;
+}) {
+  const name = channel === 'email' ? 'Email' : 'LinkedIn';
+  const icon = channel === 'email' ? '📧' : '🔗';
+  return (
+    <div className="card flex flex-col items-center justify-center gap-3 py-16 text-center">
+      <div className="text-4xl opacity-70">{icon}</div>
+      <div className="text-lg font-semibold text-slate-700">{name} channel — not subscribed</div>
+      <p className="max-w-md text-sm text-slate-500">
+        {isClient
+          ? `This workspace isn't subscribed to the ${name} outreach channel. Contact your account team to enable it.`
+          : `This client isn't subscribed to the ${name} outreach channel. Edit the client and set its Outreach channels to enable it.`}
+      </p>
     </div>
   );
 }
@@ -1687,6 +1787,7 @@ function ClientDetails({ client }: { client: Client }) {
     { label: 'Mobile no.', value: client.mobile || '—' },
     { label: 'Product / Category', value: client.productCategory || '—' },
     { label: 'Service type', value: serviceLabel(client.serviceType) },
+    { label: 'Outreach channels', value: client.linkedInEnabled ? (client.emailEnabled !== false ? '📧 Email + 🔗 LinkedIn' : '🔗 LinkedIn only') : '📧 Email only' },
     { label: 'Plan', value: client.plan },
     { label: 'Status', value: active ? 'Active' : 'Inactive' },
     { label: 'Plan validity', value: client.validityDays ? `${client.validityDays} days` : '—' },

@@ -18,6 +18,8 @@ export class CreateClientDto {
   @IsOptional() @IsString() mobile?: string;
   @IsOptional() @IsString() productCategory?: string;
   @IsOptional() @IsString() serviceType?: string;
+  @IsOptional() @IsBoolean() emailEnabled?: boolean;
+  @IsOptional() @IsBoolean() linkedInEnabled?: boolean;
   @IsOptional() @IsString() plan?: string;
   @IsOptional() @IsInt() @Min(1) monthlyQuota?: number;
   @IsOptional() @IsInt() @Min(1) dailyBatchSize?: number;
@@ -38,6 +40,8 @@ export class UpdateClientDto {
   @IsOptional() @IsString() mobile?: string;
   @IsOptional() @IsString() productCategory?: string;
   @IsOptional() @IsString() serviceType?: string;
+  @IsOptional() @IsBoolean() emailEnabled?: boolean;
+  @IsOptional() @IsBoolean() linkedInEnabled?: boolean;
   @IsOptional() @IsString() status?: string;
   @IsOptional() @IsString() plan?: string;
   @IsOptional() @IsInt() @Min(1) monthlyQuota?: number;

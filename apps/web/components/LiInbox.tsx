@@ -11,7 +11,7 @@ const SENTIMENT_CLS: Record<string, string> = {
   NEGATIVE: 'bg-rose-100 text-rose-700',
 };
 
-export function LiInbox({ clientId }: { clientId: string }) {
+export function LiInbox({ clientId, base = '/linkedin' }: { clientId: string; base?: string }) {
   const [tab, setTab] = useState('all');
   const [items, setItems] = useState<LiInboxItem[]>([]);
   const [counts, setCounts] = useState<LiInboxCounts | null>(null);
@@ -20,11 +20,11 @@ export function LiInbox({ clientId }: { clientId: string }) {
 
   const load = useCallback(async () => {
     const [list, cnt] = await Promise.all([
-      api.get<{ items: LiInboxItem[] }>(`/linkedin/clients/${clientId}/inbox?tab=${tab}`),
-      api.get<LiInboxCounts>(`/linkedin/clients/${clientId}/inbox/counts`),
+      api.get<{ items: LiInboxItem[] }>(`${base}/clients/${clientId}/inbox?tab=${tab}`),
+      api.get<LiInboxCounts>(`${base}/clients/${clientId}/inbox/counts`),
     ]);
     setItems(list.items); setCounts(cnt); setLoaded(true);
-  }, [clientId, tab]);
+  }, [clientId, tab, base]);
   useEffect(() => { load(); }, [load]);
 
   const tabs = [
@@ -62,12 +62,12 @@ export function LiInbox({ clientId }: { clientId: string }) {
         </div>
       )}
 
-      {openId && <ThreadModal conversationId={openId} onClose={() => { setOpenId(null); load(); }} />}
+      {openId && <ThreadModal base={base} conversationId={openId} onClose={() => { setOpenId(null); load(); }} />}
     </div>
   );
 }
 
-function ThreadModal({ conversationId, onClose }: { conversationId: string; onClose: () => void }) {
+function ThreadModal({ conversationId, onClose, base }: { conversationId: string; onClose: () => void; base: string }) {
   const [thread, setThread] = useState<LiThread | null>(null);
   const [text, setText] = useState('');
   const [usedAi, setUsedAi] = useState(false);
@@ -75,9 +75,9 @@ function ThreadModal({ conversationId, onClose }: { conversationId: string; onCl
   const [err, setErr] = useState('');
 
   const load = useCallback(async () => {
-    const t = await api.get<LiThread>(`/linkedin/conversations/${conversationId}`);
+    const t = await api.get<LiThread>(`${base}/conversations/${conversationId}`);
     setThread(t);
-    await api.post(`/linkedin/conversations/${conversationId}/read`).catch(() => {});
+    await api.post(`${base}/conversations/${conversationId}/read`).catch(() => {});
     const draft = t.lead.aiFetches?.[0]?.draftReply;
     if (draft && !text) { setText(draft); setUsedAi(true); }
   }, [conversationId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -86,7 +86,7 @@ function ThreadModal({ conversationId, onClose }: { conversationId: string; onCl
   async function aiFetch() {
     setBusy('ai'); setErr('');
     try {
-      const f = await api.post<{ draftReply?: string; intent?: string; sentiment?: string }>(`/linkedin/conversations/${conversationId}/ai-fetch`);
+      const f = await api.post<{ draftReply?: string; intent?: string; sentiment?: string }>(`${base}/conversations/${conversationId}/ai-fetch`);
       if (f.draftReply) { setText(f.draftReply); setUsedAi(true); }
       await load();
     } catch (e: any) { setErr(e.message ?? 'AI Fetch failed'); }
@@ -96,7 +96,7 @@ function ThreadModal({ conversationId, onClose }: { conversationId: string; onCl
     if (!text.trim()) return;
     setBusy('send'); setErr('');
     try {
-      await api.post(`/linkedin/conversations/${conversationId}/reply`, { text, source: usedAi ? 'AI' : 'MANUAL' });
+      await api.post(`${base}/conversations/${conversationId}/reply`, { text, source: usedAi ? 'AI' : 'MANUAL' });
       setText(''); setUsedAi(false);
       await load();
     } catch (e: any) { setErr(e.message ?? 'Send failed'); }

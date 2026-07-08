@@ -111,6 +111,7 @@ enum ApprovalEntity {
   MESSAGE_DELETE
   CLIENT_DELETE
   CLIENT_ACTIVATION
+  LI_CAMPAIGN
 }
 
 enum ApprovalStatus {
@@ -712,6 +713,8 @@ model Client {
   mobile            String?  // client mobile incl. country code
   productCategory   String?  // product / category being exported/imported
   serviceType       String?  // EXPORT | IMPORT | BOTH
+  emailEnabled      Boolean  @default(true)  // subscribed to the Email outreach channel
+  linkedInEnabled   Boolean  @default(false) // subscribed to the LinkedIn outreach channel
   status            String   @default("active")
   plan              String   @default("Growth")
   reportDaily       Boolean  @default(false) // email a daily performance report

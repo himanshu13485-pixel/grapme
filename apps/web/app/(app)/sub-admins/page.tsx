@@ -25,6 +25,7 @@ const MODULES: { key: string; label: string }[] = [
   { key: 'mailbox', label: 'Inbox & Sent' },
   { key: 'mailboxes', label: 'Mailboxes' },
   { key: 'deliverability', label: 'Deliverability' },
+  { key: 'linkedin', label: 'LinkedIn Outreach' },
   { key: 'approvals', label: 'Approvals' },
   { key: 'compliance', label: 'Compliance' },
   { key: 'activity-logs', label: 'Activity Logs' },

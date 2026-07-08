@@ -5,7 +5,7 @@ import { api } from '@/lib/api';
 import { Modal, Tabs } from '@/components/ui';
 import { LiChatState, LiKnowledgeDetails } from '@/lib/linkedin';
 
-export function LiKnowledgeModal({ profileId, title, onClose }: { profileId: string; title: string; onClose: () => void }) {
+export function LiKnowledgeModal({ profileId, title, onClose, base = '/linkedin' }: { profileId: string; title: string; onClose: () => void; base?: string }) {
   const [tab, setTab] = useState('chat');
   const [chat, setChat] = useState<LiChatState | null>(null);
   const [details, setDetails] = useState<LiKnowledgeDetails | null>(null);
@@ -13,11 +13,11 @@ export function LiKnowledgeModal({ profileId, title, onClose }: { profileId: str
   const [busy, setBusy] = useState(false);
 
   const loadChat = useCallback(async () => {
-    setChat(await api.get<LiChatState>(`/linkedin/knowledge-profiles/${profileId}/chat`));
-  }, [profileId]);
+    setChat(await api.get<LiChatState>(`${base}/knowledge-profiles/${profileId}/chat`));
+  }, [profileId, base]);
   const loadDetails = useCallback(async () => {
-    setDetails(await api.get<LiKnowledgeDetails>(`/linkedin/knowledge-profiles/${profileId}/details`));
-  }, [profileId]);
+    setDetails(await api.get<LiKnowledgeDetails>(`${base}/knowledge-profiles/${profileId}/details`));
+  }, [profileId, base]);
 
   useEffect(() => { loadChat(); }, [loadChat]);
   useEffect(() => { if (tab === 'details') loadDetails(); }, [tab, loadDetails]);
@@ -25,7 +25,7 @@ export function LiKnowledgeModal({ profileId, title, onClose }: { profileId: str
   async function answer(value: string) {
     if (!value.trim() || busy) return;
     setBusy(true);
-    try { await api.post(`/linkedin/knowledge-profiles/${profileId}/chat`, { text: value }); setText(''); await loadChat(); }
+    try { await api.post(`${base}/knowledge-profiles/${profileId}/chat`, { text: value }); setText(''); await loadChat(); }
     finally { setBusy(false); }
   }
 

@@ -22,7 +22,7 @@ export default function LinkedInHomePage() {
   }, [q]);
 
   useEffect(() => {
-    const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
+    const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE), linkedInEnabled: 'true' });
     if (dq) params.set('q', dq);
     api
       .get<{ items: ClientRow[]; total: number }>(`/clients/paged?${params.toString()}`)

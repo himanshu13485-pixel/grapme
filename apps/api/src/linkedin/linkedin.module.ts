@@ -57,6 +57,7 @@ const queueEnabled = process.env.QUEUE_ENABLED !== 'false';
   exports: [
     LINKEDIN_PROVIDER, LiAiService, LinkedInSubscriptionService,
     LinkedInAccountsService, LiSchedulerService, LiCampaignsService,
+    LiGenerationService, LiKnowledgeService, LiInboxService,
   ],
 })
 export class LinkedinModule {}

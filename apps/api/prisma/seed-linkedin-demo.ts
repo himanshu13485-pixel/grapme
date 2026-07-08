@@ -34,6 +34,9 @@ async function main() {
   }
   const tenantId = tenant.id, clientId = client.id;
 
+  // Demo client is subscribed to BOTH outreach channels.
+  await prisma.client.update({ where: { id: clientId }, data: { emailEnabled: true, linkedInEnabled: true } });
+
   if (await prisma.liCampaign.findFirst({ where: { clientId, name: 'Q3 Founders Outreach (Demo)' } })) {
     console.log(`Demo LinkedIn campaign already exists on client "${client.name}" — skipping.`);
     return;

@@ -16,6 +16,8 @@ interface Client {
   mobile?: string;
   productCategory?: string;
   serviceType?: string;
+  emailEnabled?: boolean;
+  linkedInEnabled?: boolean;
   plan: string;
   status: string;
   monthlyQuota: number;
@@ -322,6 +324,13 @@ function serviceLabel(s?: string): string {
   return '—';
 }
 
+function channelLabel(c: { emailEnabled?: boolean; linkedInEnabled?: boolean }): string {
+  const email = c.emailEnabled !== false;
+  if (c.linkedInEnabled && email) return '📧 Email + 🔗 LinkedIn';
+  if (c.linkedInEnabled) return '🔗 LinkedIn only';
+  return '📧 Email only';
+}
+
 function ClientDetailView({ client }: { client: Client }) {
   const rows: { label: string; value: string }[] = [
     { label: 'Company name', value: client.name },
@@ -331,6 +340,7 @@ function ClientDetailView({ client }: { client: Client }) {
     { label: 'Mobile no.', value: client.mobile || '—' },
     { label: 'Product / Category', value: client.productCategory || '—' },
     { label: 'Service type', value: serviceLabel(client.serviceType) },
+    { label: 'Outreach channels', value: channelLabel(client) },
     { label: 'Plan', value: client.plan },
     { label: 'Plan validity', value: client.validityDays ? `${client.validityDays} days` : '—' },
     { label: 'Status', value: client.status },
@@ -392,6 +402,8 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
     sendWindowEnd: 17,
     stageIntervalJitterDays: 2,
   });
+  // Which outreach channels this client is subscribed to (admin decides at creation).
+  const [channels, setChannels] = useState<'EMAIL' | 'LINKEDIN' | 'BOTH'>('EMAIL');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -416,6 +428,8 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
         mobile: form.mobile || undefined,
         productCategory: form.productCategory || undefined,
         serviceType: form.serviceType || undefined,
+        emailEnabled: channels === 'EMAIL' || channels === 'BOTH',
+        linkedInEnabled: channels === 'LINKEDIN' || channels === 'BOTH',
         monthlyQuota: Number(form.monthlyQuota),
         dailyBatchSize: Number(form.dailyBatchSize),
         batchWindowDays: Number(form.batchWindowDays),
@@ -441,6 +455,32 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
 
   return (
     <form onSubmit={submit} className="space-y-4">
+      {!isClient && (
+        <div>
+          <label className="label">Outreach channels *</label>
+          <div className="grid grid-cols-3 gap-2">
+            {([
+              ['EMAIL', '📧 Email', 'Email outreach only'],
+              ['LINKEDIN', '🔗 LinkedIn', 'LinkedIn outreach only'],
+              ['BOTH', '📧 + 🔗 Both', 'Email and LinkedIn'],
+            ] as ['EMAIL' | 'LINKEDIN' | 'BOTH', string, string][]).map(([key, label, desc]) => (
+              <button
+                type="button"
+                key={key}
+                onClick={() => setChannels(key)}
+                className={`rounded-xl border p-3 text-left transition ${
+                  channels === key
+                    ? 'border-brand-500 bg-brand-50 ring-2 ring-brand-100'
+                    : 'border-slate-200 hover:border-brand-300'
+                }`}
+              >
+                <div className="text-sm font-semibold text-slate-800">{label}</div>
+                <div className="text-xs text-slate-500">{desc}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
           <label className="label">Company name *</label>
@@ -570,6 +610,11 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
     sendWindowEnd: client.sendWindowEnd,
     stageIntervalJitterDays: client.stageIntervalJitterDays,
   });
+  const [channels, setChannels] = useState<'EMAIL' | 'LINKEDIN' | 'BOTH'>(
+    client.linkedInEnabled
+      ? (client.emailEnabled !== false ? 'BOTH' : 'LINKEDIN')
+      : 'EMAIL',
+  );
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [loginEmail, setLoginEmail] = useState(client.owner?.email ?? client.email ?? '');
@@ -674,6 +719,8 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
         mobile: form.mobile || undefined,
         productCategory: form.productCategory || undefined,
         serviceType: form.serviceType || undefined,
+        emailEnabled: channels === 'EMAIL' || channels === 'BOTH',
+        linkedInEnabled: channels === 'LINKEDIN' || channels === 'BOTH',
         plan: form.plan,
         monthlyQuota: Number(form.monthlyQuota),
         dailyBatchSize: Number(form.dailyBatchSize),
@@ -765,6 +812,30 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
               <option value="IMPORT">Import</option>
               <option value="BOTH">Both</option>
             </select>
+          </div>
+          <div className="sm:col-span-2">
+            <label className="label">Outreach channels</label>
+            <div className="grid grid-cols-3 gap-2">
+              {([
+                ['EMAIL', '📧 Email', 'Email only'],
+                ['LINKEDIN', '🔗 LinkedIn', 'LinkedIn only'],
+                ['BOTH', '📧 + 🔗 Both', 'Email and LinkedIn'],
+              ] as ['EMAIL' | 'LINKEDIN' | 'BOTH', string, string][]).map(([key, label, desc]) => (
+                <button
+                  type="button"
+                  key={key}
+                  onClick={() => setChannels(key)}
+                  className={`rounded-xl border p-3 text-left transition ${
+                    channels === key
+                      ? 'border-brand-500 bg-brand-50 ring-2 ring-brand-100'
+                      : 'border-slate-200 hover:border-brand-300'
+                  }`}
+                >
+                  <div className="text-sm font-semibold text-slate-800">{label}</div>
+                  <div className="text-xs text-slate-500">{desc}</div>
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </div>

@@ -4,6 +4,7 @@ import {
   ApprovalStatus,
   CampaignStatus,
   ImportStatus,
+  LiCampaignStatus,
   MailboxStatus,
   Role,
   ScheduleStatus,
@@ -12,6 +13,7 @@ import { createHash } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActivityService } from '../common/services/activity.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
+import { LiCampaignsService } from '../linkedin/campaigns/li-campaigns.service';
 import { ListApprovalsQuery } from './dto/approvals.dto';
 
 @Injectable()
@@ -19,6 +21,7 @@ export class ApprovalsService {
   constructor(
     private prisma: PrismaService,
     private activity: ActivityService,
+    private liCampaigns: LiCampaignsService,
   ) {}
 
   /** Called by other modules when a user submits an entity for review. */
@@ -356,6 +359,14 @@ export class ApprovalsService {
         // mailboxes/contacts/lists/templates/campaigns are kept + unlinked).
         if (approved) {
           await this.prisma.client.deleteMany({ where: { id: entityId } });
+        }
+        break;
+      case ApprovalEntity.LI_CAMPAIGN:
+        // Approve = launch the LinkedIn campaign (RUNNING + scheduler picks it up);
+        // reject = leave it DRAFT so the client can edit and resubmit.
+        if (approved) {
+          const exists = await this.prisma.liCampaign.count({ where: { id: entityId } });
+          if (exists) await this.liCampaigns.setStatus(entityId, LiCampaignStatus.RUNNING);
         }
         break;
       case ApprovalEntity.CLIENT_ACTIVATION:

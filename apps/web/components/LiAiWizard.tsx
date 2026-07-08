@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { LiTagInput } from '@/components/LiTagInput';
 import { LiKnowledgeModal } from '@/components/LiKnowledgeModal';
@@ -17,8 +16,7 @@ const emptyAudience: Audience = {
   companyKeywordsInclude: [], companyKeywordsExclude: [], personKeywordsInclude: [], personKeywordsExclude: [],
 };
 
-export function LiAiWizard({ clientId }: { clientId: string }) {
-  const router = useRouter();
+export function LiAiWizard({ clientId, base = '/linkedin', launchMode = 'resume', onDone }: { clientId: string; base?: string; launchMode?: 'resume' | 'submit'; onDone: () => void }) {
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
   const [gen, setGen] = useState(false);
@@ -40,17 +38,17 @@ export function LiAiWizard({ clientId }: { clientId: string }) {
   const [sched, setSched] = useState({ timezone: 'Asia/Kolkata', run247: false, workStartHour: 9, workEndHour: 18, workDays: [1, 2, 3, 4, 5] as number[], dailyConnectionLimit: 20, dailyMessageLimit: 20 });
   const [campaignId, setCampaignId] = useState<string | null>(null);
 
-  useEffect(() => { api.get<LinkedInAccount[]>(`/linkedin/clients/${clientId}/linkedin-accounts`).then((a) => setAccounts(a.filter((x) => x.status === 'CONNECTED'))); }, [clientId]);
-  const loadBusinesses = () => api.get<LiKnowledgeSummary[]>(`/linkedin/clients/${clientId}/business-profiles`).then(setBusinesses);
-  const loadStrategies = (bid: string) => api.get<LiKnowledgeSummary[]>(`/linkedin/business-profiles/${bid}/strategies`).then(setStrategies);
+  useEffect(() => { api.get<LinkedInAccount[]>(`${base}/clients/${clientId}/linkedin-accounts`).then((a) => setAccounts(a.filter((x) => x.status === 'CONNECTED'))); }, [clientId]);
+  const loadBusinesses = () => api.get<LiKnowledgeSummary[]>(`${base}/clients/${clientId}/business-profiles`).then(setBusinesses);
+  const loadStrategies = (bid: string) => api.get<LiKnowledgeSummary[]>(`${base}/business-profiles/${bid}/strategies`).then(setStrategies);
   useEffect(() => { if (step === 1) loadBusinesses(); }, [step]); // eslint-disable-line
   useEffect(() => { if (step === 2 && businessId) loadStrategies(businessId); }, [step, businessId]); // eslint-disable-line
 
   const setAud = (k: string, v: string[]) => setAudience((a) => ({ ...a, [k]: v }));
 
   async function ensureCampaign() {
-    if (campaignId) { await api.patch(`/linkedin/campaigns/${campaignId}`, { name }); return campaignId; }
-    const c = await api.post<{ id: string }>('/linkedin/campaigns', { clientId, linkedInAccountId: accountId, name, mode: 'AI', outreachType, businessProfileId: businessId, strategyId });
+    if (campaignId) { await api.patch(`${base}/campaigns/${campaignId}`, { name }); return campaignId; }
+    const c = await api.post<{ id: string }>(`${base}/campaigns`, { clientId, linkedInAccountId: accountId, name, mode: 'AI', outreachType, businessProfileId: businessId, strategyId });
     setCampaignId(c.id); return c.id;
   }
   function buildSteps() {
@@ -63,15 +61,15 @@ export function LiAiWizard({ clientId }: { clientId: string }) {
   async function createProfile(kind: 'business' | 'strategy') {
     const nm = prompt(kind === 'business' ? 'Business / company name:' : 'Campaign strategy name:');
     if (!nm) return;
-    if (kind === 'business') { const p = await api.post<{ id: string; name: string }>(`/linkedin/clients/${clientId}/business-profiles`, { name: nm }); await loadBusinesses(); setBusinessId(p.id); setModal({ id: p.id, title: p.name }); }
-    else { const p = await api.post<{ id: string; name: string }>(`/linkedin/business-profiles/${businessId}/strategies`, { name: nm }); await loadStrategies(businessId); setStrategyId(p.id); setModal({ id: p.id, title: p.name }); }
+    if (kind === 'business') { const p = await api.post<{ id: string; name: string }>(`${base}/clients/${clientId}/business-profiles`, { name: nm }); await loadBusinesses(); setBusinessId(p.id); setModal({ id: p.id, title: p.name }); }
+    else { const p = await api.post<{ id: string; name: string }>(`${base}/business-profiles/${businessId}/strategies`, { name: nm }); await loadStrategies(businessId); setStrategyId(p.id); setModal({ id: p.id, title: p.name }); }
   }
 
   async function generateAudience() {
     setGen(true); setError('');
     try {
       const cid = await ensureCampaign();
-      const spec = await api.post<Audience>(`/linkedin/campaigns/${cid}/generate-audience`);
+      const spec = await api.post<Audience>(`${base}/campaigns/${cid}/generate-audience`);
       setAudience({ ...emptyAudience, ...Object.fromEntries(Object.keys(emptyAudience).map((k) => [k, (spec as any)[k] ?? []])) });
     } catch (e: any) { setError(e.message ?? 'Generation failed'); } finally { setGen(false); }
   }
@@ -79,7 +77,7 @@ export function LiAiWizard({ clientId }: { clientId: string }) {
     setGen(true); setError('');
     try {
       const cid = await ensureCampaign();
-      const camp = await api.post<{ steps: { type: string; waitHours: number; body?: string; note?: string }[] }>(`/linkedin/campaigns/${cid}/generate-messages`, { outreachType, followUps: Math.max(1, followUps.length) });
+      const camp = await api.post<{ steps: { type: string; waitHours: number; body?: string; note?: string }[] }>(`${base}/campaigns/${cid}/generate-messages`, { outreachType, followUps: Math.max(1, followUps.length) });
       const conn = camp.steps.find((s) => s.type === 'CONNECTION_REQUEST');
       const msgs = camp.steps.filter((s) => s.type === 'MESSAGE');
       setNote(conn?.note ?? '');
@@ -93,16 +91,19 @@ export function LiAiWizard({ clientId }: { clientId: string }) {
       if (step === 0 && !accountId) throw new Error('Select an account');
       if (step === 1 && !businessId) throw new Error('Select or create a business profile');
       if (step === 2 && !strategyId) throw new Error('Select or create a strategy');
-      if (step === 3) { if (!name.trim()) throw new Error('Campaign name is required'); const cid = await ensureCampaign(); await api.patch(`/linkedin/campaigns/${cid}/audience`, audience); }
-      if (step === 4) { if (followUps.some((f) => !f.body.trim())) throw new Error('Each message needs content'); const cid = await ensureCampaign(); await api.patch(`/linkedin/campaigns/${cid}/sequence`, { steps: buildSteps() }); }
-      if (step === 5) { const cid = await ensureCampaign(); await api.patch(`/linkedin/campaigns/${cid}/schedule`, sched); }
+      if (step === 3) { if (!name.trim()) throw new Error('Campaign name is required'); const cid = await ensureCampaign(); await api.patch(`${base}/campaigns/${cid}/audience`, audience); }
+      if (step === 4) { if (followUps.some((f) => !f.body.trim())) throw new Error('Each message needs content'); const cid = await ensureCampaign(); await api.patch(`${base}/campaigns/${cid}/sequence`, { steps: buildSteps() }); }
+      if (step === 5) { const cid = await ensureCampaign(); await api.patch(`${base}/campaigns/${cid}/schedule`, sched); }
       setStep((s) => Math.min(STEPS.length - 1, s + 1));
     } catch (e: any) { setError(e.message ?? 'Something went wrong'); } finally { setSaving(false); }
   }
   async function launch() {
     setSaving(true); setError('');
-    try { const cid = await ensureCampaign(); await api.post(`/linkedin/campaigns/${cid}/resume`); router.push(`/linkedin/${clientId}`); }
-    catch (e: any) { setError(e.message ?? 'Launch failed'); setSaving(false); }
+    try {
+      const cid = await ensureCampaign();
+      await api.post(`${base}/campaigns/${cid}/${launchMode === 'submit' ? 'submit' : 'resume'}`);
+      onDone();
+    } catch (e: any) { setError(e.message ?? 'Launch failed'); setSaving(false); }
   }
 
   return (
@@ -210,10 +211,10 @@ export function LiAiWizard({ clientId }: { clientId: string }) {
         <button className="btn-ghost" disabled={step === 0 || saving} onClick={() => setStep((s) => s - 1)}>← Back</button>
         {step < STEPS.length - 1
           ? <button className="btn-primary" disabled={saving} onClick={next}>{saving ? 'Saving…' : 'Next Step →'}</button>
-          : <button className="btn-primary" disabled={saving} onClick={launch}>{saving ? 'Launching…' : '✓ Launch Campaign'}</button>}
+          : <button className="btn-primary" disabled={saving} onClick={launch}>{saving ? 'Submitting…' : launchMode === 'submit' ? '✓ Submit for Approval' : '✓ Launch Campaign'}</button>}
       </div>
 
-      {modal && <LiKnowledgeModal profileId={modal.id} title={modal.title} onClose={() => { setModal(null); if (step === 1) loadBusinesses(); if (step === 2 && businessId) loadStrategies(businessId); }} />}
+      {modal && <LiKnowledgeModal profileId={modal.id} title={modal.title} base={base} onClose={() => { setModal(null); if (step === 1) loadBusinesses(); if (step === 2 && businessId) loadStrategies(businessId); }} />}
     </div>
   );
 }
