@@ -113,9 +113,9 @@ export function LiRegularWizard({
       const cid = await ensureCampaign();
       // Make sure the audience the user just defined is saved before searching.
       await api.patch(`${base}/campaigns/${cid}/audience`, audience);
-      const r = await api.post<{ sourced: number; keywords: string }>(`${base}/campaigns/${cid}/source-leads?limit=25`, {});
+      const r = await api.post<{ sourced: number; keywords: string; creditsCharged?: number }>(`${base}/campaigns/${cid}/source-leads?limit=25`, {});
       setSourceMsg(r.sourced > 0
-        ? `✓ Added ${r.sourced} lead${r.sourced === 1 ? '' : 's'} to the Target Audience (query: “${r.keywords}”). Pull more anytime on the campaign page.`
+        ? `✓ Added ${r.sourced} lead${r.sourced === 1 ? '' : 's'} to the Target Audience (query: “${r.keywords}”).${r.creditsCharged ? ' 1 credit used.' : ''} Pull more anytime on the campaign page.`
         : `No leads found for “${r.keywords}”. Broaden the audience above, or import leads manually on the campaign page.`);
     } catch (e: any) { setError(e.message ?? 'Sourcing failed'); }
     finally { setSourcing(false); }

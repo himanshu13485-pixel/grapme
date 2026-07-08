@@ -1,8 +1,9 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
-import { LiLeadStatus, LiOutreachType, LiStepType, Prisma } from '@prisma/client';
+import { LiCreditReason, LiLeadStatus, LiOutreachType, LiStepType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LiAiService } from '../ai/ai.service';
 import { LiCampaignsService } from './li-campaigns.service';
+import { LinkedInSubscriptionService } from '../subscription/linkedin-subscription.service';
 import { LINKEDIN_PROVIDER, LinkedInProvider } from '../provider/linkedin-provider.interface';
 import { UpsertLiAudienceDto, LiSequenceStepDto } from './dto/campaign.dto';
 
@@ -15,6 +16,7 @@ export class LiGenerationService {
     private readonly prisma: PrismaService,
     private readonly ai: LiAiService,
     private readonly campaigns: LiCampaignsService,
+    private readonly subs: LinkedInSubscriptionService,
     @Inject(LINKEDIN_PROVIDER) private readonly provider: LinkedInProvider,
   ) {}
 
@@ -53,6 +55,14 @@ export class LiGenerationService {
     const keywords = this.audienceKeywords(campaign.audienceSpec);
     if (!keywords) throw new BadRequestException('Add audience criteria (job titles, industries, or keywords) before sourcing leads.');
 
+    // Optional per-client credit metering: each sourcing run costs 1 credit.
+    const client = await this.prisma.client.findUnique({ where: { id: campaign.clientId }, select: { linkedInCreditMetering: true } });
+    const metered = !!client?.linkedInCreditMetering;
+    if (metered) {
+      const sub = await this.subs.getOrCreate(campaign.tenantId, campaign.clientId);
+      if (sub.creditsBalance < 1) throw new BadRequestException('Insufficient LinkedIn credits to source leads.');
+    }
+
     const cap = Math.min(100, Math.max(1, limit));
     const existing = await this.prisma.liLead.findMany({ where: { campaignId }, select: { profileUrl: true } });
     const seen = new Set(existing.map((l) => this.leadSlug(l.profileUrl)).filter(Boolean) as string[]);
@@ -76,9 +86,15 @@ export class LiGenerationService {
       if (!res.cursor || res.people.length === 0) break;
       cursor = res.cursor;
     }
-    if (rows.length === 0) return { sourced: 0, keywords };
+    if (rows.length === 0) return { sourced: 0, keywords, creditsCharged: 0 };
     const r = await this.prisma.liLead.createMany({ data: rows });
-    return { sourced: r.count, keywords };
+
+    let creditsCharged = 0;
+    if (metered) {
+      await this.subs.debit(campaign.tenantId, campaign.clientId, 1, LiCreditReason.LEAD_SOURCING, { refType: 'LiCampaign', refId: campaignId });
+      creditsCharged = 1;
+    }
+    return { sourced: r.count, keywords, creditsCharged };
   }
 
   async generateAudience(campaignId: string) {

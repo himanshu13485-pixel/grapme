@@ -18,6 +18,7 @@ interface Client {
   serviceType?: string;
   emailEnabled?: boolean;
   linkedInEnabled?: boolean;
+  linkedInCreditMetering?: boolean;
   plan: string;
   status: string;
   monthlyQuota: number;
@@ -341,6 +342,7 @@ function ClientDetailView({ client }: { client: Client }) {
     { label: 'Product / Category', value: client.productCategory || '—' },
     { label: 'Service type', value: serviceLabel(client.serviceType) },
     { label: 'Outreach channels', value: channelLabel(client) },
+    ...(client.linkedInEnabled ? [{ label: 'LinkedIn sourcing credits', value: client.linkedInCreditMetering ? 'Metered — 1 credit per run' : 'Not metered (free)' }] : []),
     { label: 'Plan', value: client.plan },
     { label: 'Plan validity', value: client.validityDays ? `${client.validityDays} days` : '—' },
     { label: 'Status', value: client.status },
@@ -404,6 +406,7 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
   });
   // Which outreach channels this client is subscribed to (admin decides at creation).
   const [channels, setChannels] = useState<'EMAIL' | 'LINKEDIN' | 'BOTH'>('EMAIL');
+  const [creditMetering, setCreditMetering] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -430,6 +433,7 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
         serviceType: form.serviceType || undefined,
         emailEnabled: channels === 'EMAIL' || channels === 'BOTH',
         linkedInEnabled: channels === 'LINKEDIN' || channels === 'BOTH',
+        linkedInCreditMetering: channels !== 'EMAIL' ? creditMetering : false,
         monthlyQuota: Number(form.monthlyQuota),
         dailyBatchSize: Number(form.dailyBatchSize),
         batchWindowDays: Number(form.batchWindowDays),
@@ -479,6 +483,12 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
               </button>
             ))}
           </div>
+          {channels !== 'EMAIL' && (
+            <label className="mt-3 flex items-center gap-2 text-sm text-slate-700">
+              <input type="checkbox" checked={creditMetering} onChange={(e) => setCreditMetering(e.target.checked)} />
+              Charge <strong>1 credit</strong> per LinkedIn lead-sourcing run (leave off to source without deducting credits)
+            </label>
+          )}
         </div>
       )}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -615,6 +625,7 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
       ? (client.emailEnabled !== false ? 'BOTH' : 'LINKEDIN')
       : 'EMAIL',
   );
+  const [creditMetering, setCreditMetering] = useState(!!client.linkedInCreditMetering);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [loginEmail, setLoginEmail] = useState(client.owner?.email ?? client.email ?? '');
@@ -721,6 +732,7 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
         serviceType: form.serviceType || undefined,
         emailEnabled: channels === 'EMAIL' || channels === 'BOTH',
         linkedInEnabled: channels === 'LINKEDIN' || channels === 'BOTH',
+        linkedInCreditMetering: channels !== 'EMAIL' ? creditMetering : false,
         plan: form.plan,
         monthlyQuota: Number(form.monthlyQuota),
         dailyBatchSize: Number(form.dailyBatchSize),
@@ -836,6 +848,12 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
                 </button>
               ))}
             </div>
+            {channels !== 'EMAIL' && (
+              <label className="mt-3 flex items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" checked={creditMetering} onChange={(e) => setCreditMetering(e.target.checked)} />
+                Charge <strong>1 credit</strong> per LinkedIn lead-sourcing run (leave off to source without deducting credits)
+              </label>
+            )}
           </div>
         </div>
       </div>

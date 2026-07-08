@@ -126,9 +126,9 @@ function Details({ campaignId }: { campaignId: string }) {
   async function sourceFromAudience() {
     setSourcing(true);
     try {
-      const r = await api.post<{ sourced: number; keywords: string }>(`/linkedin/campaigns/${campaignId}/source-leads?limit=25`, {});
+      const r = await api.post<{ sourced: number; keywords: string; creditsCharged?: number }>(`/linkedin/campaigns/${campaignId}/source-leads?limit=25`, {});
       alert(r.sourced > 0
-        ? `Added ${r.sourced} lead${r.sourced === 1 ? '' : 's'} from LinkedIn search (query: "${r.keywords}").`
+        ? `Added ${r.sourced} lead${r.sourced === 1 ? '' : 's'} from LinkedIn search (query: "${r.keywords}").${r.creditsCharged ? ' · 1 credit used.' : ''}`
         : `No new leads found for "${r.keywords}". Try broadening the campaign's audience.`);
       setTab('all'); setPage(1); setReloadKey((k) => k + 1);
     } catch (e: any) { alert(e.message ?? 'Sourcing failed'); }
