@@ -19,6 +19,12 @@ export class UnipileProvider implements LinkedInProvider {
 
   constructor(private readonly config: ConfigService) {}
 
+  /** Full base URL, tolerant of a DSN that already includes the scheme. */
+  private baseUrl(): string {
+    const dsn = (this.config.get<string>('UNIPILE_DSN') ?? '').replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+    return `https://${dsn}`;
+  }
+
   private getClient() {
     if (this.client) return this.client;
     const dsn = this.config.get<string>('UNIPILE_DSN');
@@ -26,7 +32,7 @@ export class UnipileProvider implements LinkedInProvider {
     if (!dsn || !apiKey) throw new Error('Unipile not configured (UNIPILE_DSN / UNIPILE_API_KEY)');
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { UnipileClient } = require('unipile-node-sdk');
-    this.client = new UnipileClient(`https://${dsn}`, apiKey);
+    this.client = new UnipileClient(this.baseUrl(), apiKey);
     return this.client;
   }
 
@@ -35,7 +41,7 @@ export class UnipileProvider implements LinkedInProvider {
     const res = await client.account.createHostedAuthLink({
       type: 'create',
       providers: ['LINKEDIN'],
-      api_url: `https://${this.config.get('UNIPILE_DSN')}`,
+      api_url: this.baseUrl(),
       expiresOn: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
       name: params.name,
       success_redirect_url: params.successRedirect,

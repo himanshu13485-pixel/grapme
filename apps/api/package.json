@@ -14,6 +14,7 @@
     "prisma:seed": "ts-node prisma/seed.ts",
     "prisma:seed:linkedin": "ts-node prisma/seed-linkedin-demo.ts",
     "prisma:seed:linkedin-login": "ts-node prisma/seed-linkedin-login.ts",
+    "unipile:ping": "ts-node --transpile-only scripts/unipile-ping.ts",
     "db:embedded": "ts-node --transpile-only scripts/dev-db.ts",
     "dev:smtp": "ts-node --transpile-only scripts/dev-smtp.ts",
     "lint": "eslint \"src/**/*.ts\""
