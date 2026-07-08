@@ -39,8 +39,20 @@ export class UnipileProvider implements LinkedInProvider {
       expiresOn: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
       name: params.name,
       success_redirect_url: params.successRedirect,
+      // Per-link callback so Unipile tells us when THIS account finishes connecting
+      // (flips PENDING → CONNECTED). Requires a public base URL.
+      ...(this.accountNotifyUrl() ? { notify_url: this.accountNotifyUrl() } : {}),
     });
     return { url: res.url, requestId: params.name };
+  }
+
+  /** Public webhook URL Unipile calls when a hosted-auth account connects. */
+  private accountNotifyUrl(): string | undefined {
+    const publicUrl = this.config.get<string>('APP_PUBLIC_URL');
+    if (!publicUrl) return undefined;
+    const secret = this.config.get<string>('UNIPILE_WEBHOOK_SECRET');
+    const base = publicUrl.replace(/\/$/, '');
+    return `${base}/api/v1/linkedin/webhooks/unipile/accounts${secret ? `?secret=${encodeURIComponent(secret)}` : ''}`;
   }
 
   async getAccount(accountId: string): Promise<ProviderAccount> {
@@ -48,9 +60,8 @@ export class UnipileProvider implements LinkedInProvider {
     const a = await client.account.getOne(accountId);
     return {
       accountId,
-      status: this.mapStatus(a?.sources?.[0]?.status ?? a?.status),
+      status: this.mapStatus(a?.sources?.[0]?.status),
       fullName: a?.name,
-      connectionsCount: a?.connections_count,
     };
   }
 
@@ -64,7 +75,8 @@ export class UnipileProvider implements LinkedInProvider {
       firstName: p?.first_name,
       lastName: p?.last_name,
       title: p?.headline,
-      company: p?.company,
+      // Company lives on the current work experience, not at the top level.
+      company: p?.work_experience?.[0]?.company ?? p?.company,
       location: p?.location,
       profileUrl,
       avatarUrl: p?.profile_picture_url,
@@ -94,12 +106,12 @@ export class UnipileProvider implements LinkedInProvider {
   async isConnectionAccepted(params: { accountId: string; memberId: string }): Promise<boolean> {
     const client = this.getClient();
     const p = await client.users.getProfile({ account_id: params.accountId, identifier: params.memberId });
-    return p?.network_distance === 'DISTANCE_1' || p?.is_relationship === true;
+    return p?.network_distance === 'FIRST_DEGREE' || p?.is_relationship === true;
   }
 
   async listMessages(params: { accountId: string; chatId: string }): Promise<ProviderMessage[]> {
     const client = this.getClient();
-    const res = await client.messaging.getAllMessagesFromChat({ account_id: params.accountId, chat_id: params.chatId });
+    const res = await client.messaging.getAllMessagesFromChat({ chat_id: params.chatId });
     const items = res?.items ?? res ?? [];
     return items.map((m: any) => ({
       messageId: m.id,
@@ -110,14 +122,17 @@ export class UnipileProvider implements LinkedInProvider {
     }));
   }
 
+  // Maps Unipile LinkedIn source status → our account status.
+  // Real values: OK | STOPPED | ERROR | CREDENTIALS | PERMISSIONS | CONNECTING.
   private mapStatus(s?: string): ProviderAccount['status'] {
     switch ((s ?? '').toUpperCase()) {
       case 'OK':
       case 'CONNECTED': return 'CONNECTED';
       case 'CREDENTIALS':
-      case 'CHECKPOINT': return 'CREDENTIALS';
-      case 'DISCONNECTED': return 'DISCONNECTED';
+      case 'PERMISSIONS': return 'CREDENTIALS';
+      case 'STOPPED': return 'DISCONNECTED';
       case 'ERROR': return 'ERROR';
+      case 'CONNECTING': return 'PENDING';
       default: return 'PENDING';
     }
   }
