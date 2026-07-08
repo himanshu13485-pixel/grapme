@@ -60,6 +60,9 @@ export class UpdateLiScheduleDto {
   @IsOptional() @IsBoolean() warmupEnabled?: boolean;
   @IsOptional() @IsInt() @Min(1) warmupStartLimit?: number;
   @IsOptional() @IsInt() @Min(1) @Max(60) warmupDays?: number;
+  @IsOptional() @IsBoolean() dripEnabled?: boolean;
+  @IsOptional() @IsInt() @Min(1) @Max(200) dripDailyTarget?: number;
+  @IsOptional() @IsInt() @Min(1) @Max(1000) dripBuffer?: number;
 }
 
 export class ImportLiLeadDto {

@@ -1040,6 +1040,11 @@ model LiCampaign {
   warmupStartLimit     Int              @default(5)   // connections/day on day 0
   warmupDays           Int              @default(14)  // days to reach dailyConnectionLimit
   warmupStartedAt      DateTime?                       // set when the campaign first goes RUNNING
+  // Background drip-sourcer: auto-refill the Target Audience from LinkedIn search.
+  dripEnabled          Boolean          @default(false)
+  dripDailyTarget      Int              @default(25)  // max leads to source per day
+  dripBuffer           Int              @default(50)  // only refill when PENDING is below this
+  lastDripAt           DateTime?                       // last successful auto-source
   businessProfileId    String?
   businessProfile      LiKnowledgeProfile? @relation("LiCampaignBusiness", fields: [businessProfileId], references: [id])
   strategyId           String?

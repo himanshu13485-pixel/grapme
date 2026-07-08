@@ -55,6 +55,7 @@ export function LiRegularWizard({
     timezone: 'Asia/Kolkata', run247: false, workStartHour: 9, workEndHour: 18,
     workDays: [1, 2, 3, 4, 5] as number[], dailyConnectionLimit: 20, dailyMessageLimit: 20,
     warmupEnabled: true, warmupStartLimit: 5, warmupDays: 14,
+    dripEnabled: false, dripDailyTarget: 25, dripBuffer: 50,
   });
 
   useEffect(() => {
@@ -267,6 +268,27 @@ export function LiRegularWizard({
                   <Field label="Ramp to target over (days)"><input type="number" min={1} max={60} className="input" value={sched.warmupDays} onChange={(e) => setSched({ ...sched, warmupDays: Number(e.target.value) })} /></Field>
                   <div className="sm:col-span-2 text-xs text-slate-500">
                     e.g. day 1 ≈ {Math.min(sched.warmupStartLimit, sched.dailyConnectionLimit)}/day → day {sched.warmupDays}+ = {sched.dailyConnectionLimit}/day.
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Background drip-sourcer — auto-refill the Target Audience from LinkedIn search */}
+            <div className="mt-2 rounded-xl border border-brand-200 bg-brand-50/50 p-4">
+              <label className="flex items-center gap-2 text-sm font-medium text-slate-800">
+                <input type="checkbox" checked={sched.dripEnabled} onChange={(e) => setSched({ ...sched, dripEnabled: e.target.checked })} />
+                Auto-source leads daily (drip)
+              </label>
+              <p className="mt-1 text-xs text-slate-500">
+                Automatically pull fresh leads from LinkedIn each day (matching this campaign&apos;s audience) so the
+                Target Audience refills as the engine works through it — no manual sourcing needed.
+              </p>
+              {sched.dripEnabled && (
+                <div className="mt-3 grid gap-4 sm:grid-cols-2">
+                  <Field label="Source up to (leads/day)"><input type="number" min={1} max={200} className="input" value={sched.dripDailyTarget} onChange={(e) => setSched({ ...sched, dripDailyTarget: Number(e.target.value) })} /></Field>
+                  <Field label="Keep pending buffer at"><input type="number" min={1} max={1000} className="input" value={sched.dripBuffer} onChange={(e) => setSched({ ...sched, dripBuffer: Number(e.target.value) })} /></Field>
+                  <div className="sm:col-span-2 text-xs text-slate-500">
+                    Refills only when pending leads drop below {sched.dripBuffer}, up to {sched.dripDailyTarget}/day. If credit metering is on, that&apos;s 1 credit/day.
                   </div>
                 </div>
               )}

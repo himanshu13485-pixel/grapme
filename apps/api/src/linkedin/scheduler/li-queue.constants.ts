@@ -2,7 +2,10 @@ export enum LiJob {
   SendConnection = 'li_send_connection',
   CheckAcceptance = 'li_check_acceptance',
   SendMessage = 'li_send_message',
+  DripSource = 'li_drip_source', // repeatable tick: auto-refill campaign audiences
 }
+
+export const DRIP_SCAN_MS = 60 * 60 * 1000; // sweep drip campaigns hourly
 
 export interface LiJobData {
   scheduledActionId: string;

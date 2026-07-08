@@ -1,4 +1,4 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, Optional } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import {
@@ -6,7 +6,7 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { QUEUE_LINKEDIN } from '../../queue/queue.constants';
-import { LiJob, LiJobData, jitterMs } from './li-queue.constants';
+import { LiJob, LiJobData, jitterMs, DRIP_SCAN_MS } from './li-queue.constants';
 
 const TYPE_TO_JOB: Record<LiScheduledActionType, LiJob> = {
   SEND_CONNECTION: LiJob.SendConnection,
@@ -15,7 +15,7 @@ const TYPE_TO_JOB: Record<LiScheduledActionType, LiJob> = {
 };
 
 @Injectable()
-export class LiSchedulerService {
+export class LiSchedulerService implements OnModuleInit {
   private readonly logger = new Logger(LiSchedulerService.name);
 
   constructor(
@@ -23,6 +23,13 @@ export class LiSchedulerService {
     // Optional so the platform boots without Redis (scheduler no-ops when absent).
     @Optional() @InjectQueue(QUEUE_LINKEDIN) private readonly queue?: Queue,
   ) {}
+
+  /** Register the repeatable drip-sourcer tick (no-op without Redis). */
+  async onModuleInit() {
+    if (!this.queue) return;
+    await this.queue.add(LiJob.DripSource, {}, { repeat: { every: DRIP_SCAN_MS }, removeOnComplete: true, removeOnFail: true });
+    this.logger.log(`LinkedIn drip-sourcer registered (every ${DRIP_SCAN_MS}ms)`);
+  }
 
   /** Launch or resume a campaign: enqueue the first action per lead + re-attach orphans. */
   async startCampaign(campaignId: string) {

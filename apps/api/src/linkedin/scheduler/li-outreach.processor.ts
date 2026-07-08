@@ -9,6 +9,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { QUEUE_LINKEDIN } from '../../queue/queue.constants';
 import { LINKEDIN_PROVIDER, LinkedInProvider } from '../provider/linkedin-provider.interface';
 import { LiSchedulerService } from './li-scheduler.service';
+import { LiGenerationService } from '../campaigns/li-generation.service';
 import {
   LiJob, LiJobData, FIRST_ACCEPTANCE_CHECK_MS, RECHECK_INTERVAL_MS,
   MAX_ACCEPTANCE_CHECKS, renderTemplate,
@@ -23,12 +24,16 @@ export class LiOutreachProcessor extends WorkerHost {
   constructor(
     private readonly prisma: PrismaService,
     private readonly scheduler: LiSchedulerService,
+    private readonly generation: LiGenerationService,
     @Inject(LINKEDIN_PROVIDER) private readonly provider: LinkedInProvider,
   ) {
     super();
   }
 
   async process(job: Job<LiJobData>): Promise<void> {
+    // Repeatable drip tick — no scheduled action; refill campaign audiences.
+    if (job.name === LiJob.DripSource) { await this.dripSweep(); return; }
+
     const { scheduledActionId } = job.data;
     const action = await this.prisma.liScheduledAction.findUnique({ where: { id: scheduledActionId } });
     if (!action || action.status === LiScheduledActionStatus.DONE || action.status === LiScheduledActionStatus.CANCELLED) return;
@@ -137,6 +142,32 @@ export class LiOutreachProcessor extends WorkerHost {
     });
     ctx.lead.unipileMemberId = member.memberId;
     return member.memberId;
+  }
+
+  /** Drip-sourcer: top up each RUNNING drip campaign's PENDING list to its buffer, once/day. */
+  private async dripSweep() {
+    const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
+    const campaigns = await this.prisma.liCampaign.findMany({
+      where: { status: LiCampaignStatus.RUNNING, dripEnabled: true },
+      select: { id: true, dripDailyTarget: true, dripBuffer: true, lastDripAt: true },
+    });
+    for (const c of campaigns) {
+      try {
+        if (c.lastDripAt && c.lastDripAt >= startOfDay) continue; // already dripped today
+        const pending = await this.prisma.liLead.count({ where: { campaignId: c.id, status: LiLeadStatus.PENDING } });
+        const need = Math.min(c.dripDailyTarget, c.dripBuffer - pending);
+        if (need <= 0) continue; // buffer already full
+        const res = await this.generation.sourceLeads(c.id, need);
+        if (res.sourced > 0) {
+          await this.prisma.liCampaign.update({ where: { id: c.id }, data: { lastDripAt: new Date() } });
+          // Enqueue the first action for the freshly-sourced PENDING leads.
+          await this.scheduler.startCampaign(c.id);
+          this.logger.log(`Drip sourced ${res.sourced} lead(s) for campaign ${c.id}`);
+        }
+      } catch (e) {
+        this.logger.warn(`Drip skipped for campaign ${c.id}: ${(e as Error).message}`);
+      }
+    }
   }
 
   async loadContext(leadId: string) {
