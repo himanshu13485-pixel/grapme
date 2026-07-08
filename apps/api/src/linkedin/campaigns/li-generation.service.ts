@@ -1,8 +1,9 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
-import { LiOutreachType, LiStepType } from '@prisma/client';
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import { LiLeadStatus, LiOutreachType, LiStepType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LiAiService } from '../ai/ai.service';
 import { LiCampaignsService } from './li-campaigns.service';
+import { LINKEDIN_PROVIDER, LinkedInProvider } from '../provider/linkedin-provider.interface';
 import { UpsertLiAudienceDto, LiSequenceStepDto } from './dto/campaign.dto';
 
 type Content = Record<string, any>;
@@ -14,7 +15,71 @@ export class LiGenerationService {
     private readonly prisma: PrismaService,
     private readonly ai: LiAiService,
     private readonly campaigns: LiCampaignsService,
+    @Inject(LINKEDIN_PROVIDER) private readonly provider: LinkedInProvider,
   ) {}
+
+  // ── Audience-based lead sourcing (LinkedIn search → Target Audience) ──────
+  private leadSlug(url?: string | null): string | null {
+    const m = (url ?? '').match(/\/in\/([^/?#]+)/i);
+    return m ? decodeURIComponent(m[1]).toLowerCase() : null;
+  }
+  private nameFromSlug(slug: string): string {
+    return slug.replace(/-[a-z0-9]{6,}$/i, '').split('-').filter(Boolean)
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') || slug;
+  }
+  /** Build a LinkedIn keyword query from the campaign's audience spec. */
+  private audienceKeywords(spec: any): string {
+    if (!spec) return '';
+    const parts = [
+      ...(spec.jobTitles ?? []).slice(0, 3),
+      ...(spec.industries ?? []).slice(0, 2),
+      ...(spec.personKeywordsInclude ?? []).slice(0, 2),
+      ...(spec.countries ?? []).slice(0, 1),
+    ];
+    return parts.filter(Boolean).join(' ').trim();
+  }
+
+  /** Search LinkedIn for people matching the campaign's audience and add them as PENDING leads. */
+  async sourceLeads(campaignId: string, limit = 25) {
+    const campaign = await this.prisma.liCampaign.findUnique({
+      where: { id: campaignId },
+      include: { audienceSpec: true, linkedInAccount: true },
+    });
+    if (!campaign) throw new BadRequestException('Campaign not found');
+    const account = campaign.linkedInAccount;
+    if (!account?.unipileAccountId || account.status !== 'CONNECTED') {
+      throw new BadRequestException('This campaign needs a CONNECTED LinkedIn account before sourcing leads.');
+    }
+    const keywords = this.audienceKeywords(campaign.audienceSpec);
+    if (!keywords) throw new BadRequestException('Add audience criteria (job titles, industries, or keywords) before sourcing leads.');
+
+    const cap = Math.min(100, Math.max(1, limit));
+    const existing = await this.prisma.liLead.findMany({ where: { campaignId }, select: { profileUrl: true } });
+    const seen = new Set(existing.map((l) => this.leadSlug(l.profileUrl)).filter(Boolean) as string[]);
+
+    const rows: Prisma.LiLeadCreateManyInput[] = [];
+    let cursor: string | undefined;
+    for (let page = 0; page < 12 && rows.length < cap; page++) {
+      const res = await this.provider.searchPeople({ accountId: account.unipileAccountId, keywords, cursor });
+      for (const p of res.people) {
+        const s = this.leadSlug(p.profileUrl);
+        if (!s || seen.has(s)) continue;
+        seen.add(s);
+        rows.push({
+          campaignId, fullName: p.fullName ?? this.nameFromSlug(s),
+          firstName: p.firstName ?? undefined, lastName: p.lastName ?? undefined,
+          title: p.title ?? undefined, company: p.company ?? undefined, location: p.location ?? undefined,
+          profileUrl: p.profileUrl, status: LiLeadStatus.PENDING, currentStep: 0,
+        });
+        if (rows.length >= cap) break;
+      }
+      if (!res.cursor || res.people.length === 0) break;
+      cursor = res.cursor;
+    }
+    if (rows.length === 0) return { sourced: 0, keywords };
+    const r = await this.prisma.liLead.createMany({ data: rows });
+    return { sourced: r.count, keywords };
+  }
 
   async generateAudience(campaignId: string) {
     const { business, strategy } = await this.loadKnowledge(campaignId);

@@ -18,6 +18,7 @@
     "link:unipile": "ts-node --transpile-only scripts/link-unipile-account.ts",
     "unipile:resolve": "ts-node --transpile-only scripts/unipile-resolve.ts",
     "unipile:webhook": "ts-node --transpile-only scripts/unipile-webhook.ts",
+    "unipile:search": "ts-node --transpile-only scripts/unipile-search.ts",
     "db:embedded": "ts-node --transpile-only scripts/dev-db.ts",
     "dev:smtp": "ts-node --transpile-only scripts/dev-smtp.ts",
     "lint": "eslint \"src/**/*.ts\""

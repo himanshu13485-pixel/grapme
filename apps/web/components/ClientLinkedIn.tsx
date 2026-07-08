@@ -155,7 +155,20 @@ function CampaignDetail({ campaignId, onChanged }: { campaignId: string; onChang
   const [leads, setLeads] = useState<LiLeadsPage | null>(null);
   const [page, setPage] = useState(1);
   const [importing, setImporting] = useState(false);
+  const [sourcing, setSourcing] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+
+  async function sourceFromAudience() {
+    setSourcing(true);
+    try {
+      const r = await api.post<{ sourced: number; keywords: string }>(`${BASE}/campaigns/${campaignId}/source-leads?limit=25`, {});
+      alert(r.sourced > 0
+        ? `Added ${r.sourced} lead${r.sourced === 1 ? '' : 's'} from LinkedIn search.`
+        : `No new leads found. Try broadening the audience, or use Import leads.`);
+      setReloadKey((k) => k + 1); onChanged?.();
+    } catch (e: any) { alert(e.message ?? 'Sourcing failed'); }
+    finally { setSourcing(false); }
+  }
 
   useEffect(() => { api.get<LiCampaignStats>(`${BASE}/campaigns/${campaignId}/stats`).then(setStats); }, [campaignId, reloadKey]);
   useEffect(() => { api.get<LiLeadsPage>(`${BASE}/campaigns/${campaignId}/leads?page=${page}`).then(setLeads); }, [campaignId, page, reloadKey]);
@@ -172,7 +185,12 @@ function CampaignDetail({ campaignId, onChanged }: { campaignId: string; onChang
       )}
       <div className="mb-2 flex items-center justify-between">
         <div className="text-sm text-slate-500">{leads?.total ?? 0} lead{leads?.total === 1 ? '' : 's'}</div>
-        <button className="btn-ghost px-2 py-1 text-sm" onClick={() => setImporting(true)}>⭳ Import leads</button>
+        <div className="flex items-center gap-2">
+          <button className="btn-primary px-2 py-1 text-sm" disabled={sourcing} onClick={sourceFromAudience}>
+            {sourcing ? 'Sourcing…' : '✦ Source from audience'}
+          </button>
+          <button className="btn-ghost px-2 py-1 text-sm" onClick={() => setImporting(true)}>⭳ Import leads</button>
+        </div>
       </div>
       {importing && (
         <LiImportLeadsModal

@@ -87,6 +87,11 @@ export class LiCampaignsController {
     return this.generation.generateMessages(id, dto);
   }
 
+  @Post(':id/source-leads')
+  sourceLeads(@Param('id') id: string, @Query('limit') limit?: string) {
+    return this.generation.sourceLeads(id, limit ? Number(limit) : undefined);
+  }
+
   @Post(':id/pause')
   pause(@Param('id') id: string) {
     return this.campaigns.setStatus(id, LiCampaignStatus.PAUSED);

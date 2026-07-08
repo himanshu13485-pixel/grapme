@@ -6,6 +6,7 @@ import {
   ProviderAccount,
   ProviderMember,
   ProviderMessage,
+  ProviderSearchResult,
 } from './linkedin-provider.interface';
 
 /**
@@ -130,6 +131,33 @@ export class UnipileProvider implements LinkedInProvider {
 
   // Maps Unipile LinkedIn source status → our account status.
   // Real values: OK | STOPPED | ERROR | CREDENTIALS | PERMISSIONS | CONNECTING.
+  /** LinkedIn people search (classic). Not in the SDK — raw REST. */
+  async searchPeople(params: { accountId: string; keywords: string; cursor?: string }): Promise<ProviderSearchResult> {
+    const key = (this.config.get<string>('UNIPILE_API_KEY') ?? '').trim();
+    const qs = new URLSearchParams({ account_id: params.accountId });
+    if (params.cursor) qs.set('cursor', params.cursor);
+    const res = await fetch(`${this.baseUrl()}/api/v1/linkedin/search?${qs}`, {
+      method: 'POST',
+      headers: { 'X-API-KEY': key, 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ api: 'classic', category: 'people', keywords: params.keywords }),
+    });
+    if (!res.ok) throw new Error(`Unipile search failed (${res.status}): ${(await res.text()).slice(0, 200)}`);
+    const data: any = await res.json();
+    const items: any[] = data?.items ?? data?.results ?? [];
+    const people = items
+      .filter((p) => p?.public_profile_url || p?.profile_url)
+      .map((p) => ({
+        fullName: p.name ?? ([p.first_name, p.last_name].filter(Boolean).join(' ') || undefined),
+        firstName: p.first_name,
+        lastName: p.last_name,
+        title: p.headline ?? undefined,
+        company: p.current_positions?.[0]?.company ?? p.work_experience?.[0]?.company ?? undefined,
+        location: p.location ?? undefined,
+        profileUrl: String(p.public_profile_url ?? p.profile_url).split('?')[0],
+      }));
+    return { people, cursor: data?.cursor };
+  }
+
   private mapStatus(s?: string): ProviderAccount['status'] {
     switch ((s ?? '').toUpperCase()) {
       case 'OK':

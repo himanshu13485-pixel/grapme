@@ -118,9 +118,22 @@ function Details({ campaignId }: { campaignId: string }) {
   const [page, setPage] = useState(1);
   const [data, setData] = useState<LiLeadsPage | null>(null);
   const [importing, setImporting] = useState(false);
+  const [sourcing, setSourcing] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [q, setQ] = useState('');
   const [dq, setDq] = useState('');
+
+  async function sourceFromAudience() {
+    setSourcing(true);
+    try {
+      const r = await api.post<{ sourced: number; keywords: string }>(`/linkedin/campaigns/${campaignId}/source-leads?limit=25`, {});
+      alert(r.sourced > 0
+        ? `Added ${r.sourced} lead${r.sourced === 1 ? '' : 's'} from LinkedIn search (query: "${r.keywords}").`
+        : `No new leads found for "${r.keywords}". Try broadening the campaign's audience.`);
+      setTab('all'); setPage(1); setReloadKey((k) => k + 1);
+    } catch (e: any) { alert(e.message ?? 'Sourcing failed'); }
+    finally { setSourcing(false); }
+  }
 
   // Debounce the search box.
   useEffect(() => {
@@ -152,7 +165,10 @@ function Details({ campaignId }: { campaignId: string }) {
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
-          <button className="btn-primary whitespace-nowrap" onClick={() => setImporting(true)}>⭳ Import leads</button>
+          <button className="btn-primary whitespace-nowrap" disabled={sourcing} onClick={sourceFromAudience}>
+            {sourcing ? 'Sourcing…' : '✦ Source from audience'}
+          </button>
+          <button className="btn-ghost whitespace-nowrap" onClick={() => setImporting(true)}>⭳ Import leads</button>
         </div>
       </div>
       {importing && (

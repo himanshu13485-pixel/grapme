@@ -39,6 +39,21 @@ export interface ProviderMessage {
   timestamp: string;
 }
 
+export interface ProviderSearchPerson {
+  fullName?: string;
+  firstName?: string;
+  lastName?: string;
+  title?: string;
+  company?: string;
+  location?: string;
+  profileUrl: string;
+}
+
+export interface ProviderSearchResult {
+  people: ProviderSearchPerson[];
+  cursor?: string;
+}
+
 export const LINKEDIN_PROVIDER = Symbol('LINKEDIN_PROVIDER');
 
 export interface LinkedInProvider {
@@ -49,4 +64,5 @@ export interface LinkedInProvider {
   sendMessage(params: { accountId: string; memberId: string; text: string }): Promise<{ chatId: string; messageId: string }>;
   isConnectionAccepted(params: { accountId: string; memberId: string }): Promise<boolean>;
   listMessages(params: { accountId: string; chatId: string }): Promise<ProviderMessage[]>;
+  searchPeople(params: { accountId: string; keywords: string; cursor?: string }): Promise<ProviderSearchResult>;
 }
