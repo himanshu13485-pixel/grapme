@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
-import { PageHeader, EmptyState, StatusBadge, Tabs } from '@/components/ui';
+import { PageHeader, EmptyState, StatusBadge, Tabs, Modal } from '@/components/ui';
 import { LiSubscription, LinkedInAccount, LiCampaign, LiKnowledgeStats } from '@/lib/linkedin';
 import { LiInbox } from '@/components/LiInbox';
 
@@ -151,6 +151,7 @@ function AccountsTab({ clientId }: { clientId: string }) {
   const [accounts, setAccounts] = useState<LinkedInAccount[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [connectUrl, setConnectUrl] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setAccounts(await api.get<LinkedInAccount[]>(`/linkedin/clients/${clientId}/linkedin-accounts`));
@@ -162,8 +163,7 @@ function AccountsTab({ clientId }: { clientId: string }) {
     setBusy(true);
     try {
       const res = await api.post<{ accountId: string; url: string }>(`/linkedin/clients/${clientId}/linkedin-accounts/connect`, {});
-      window.open(res.url, '_blank');
-      alert('Complete the LinkedIn auth in the new tab, then click "Sync" on the account.');
+      setConnectUrl(res.url); // show a shareable link; the account row is already created (PENDING)
       load();
     } catch (e: any) { alert(e.message ?? 'Failed to start connect'); }
     finally { setBusy(false); }
@@ -174,6 +174,7 @@ function AccountsTab({ clientId }: { clientId: string }) {
       <div className="mb-3 flex justify-end">
         <button className="btn-primary" disabled={busy} onClick={connect}>{busy ? 'Starting…' : '+ Connect Account'}</button>
       </div>
+      {connectUrl && <ConnectLinkModal url={connectUrl} onClose={() => { setConnectUrl(null); load(); }} />}
       {!loaded ? <EmptyState message="Loading…" /> : accounts.length === 0 ? (
         <EmptyState message="No LinkedIn accounts connected yet." />
       ) : (
@@ -199,6 +200,38 @@ function AccountsTab({ clientId }: { clientId: string }) {
         </div>
       )}
     </div>
+  );
+}
+
+/** Shareable Unipile hosted-auth link. Send it to the client, or open it yourself. */
+function ConnectLinkModal({ url, onClose }: { url: string; onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    try { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 2000); }
+    catch { /* clipboard blocked — user can select the field manually */ }
+  }
+  return (
+    <Modal open onClose={onClose} title="Connect a LinkedIn account" wide disableBackdropClose>
+      <div className="space-y-4">
+        <p className="text-sm text-slate-500">
+          Whoever opens this link logs into the <strong>LinkedIn account to connect</strong> on Unipile&apos;s secure page
+          (we never see the password). Send it to the client, or open it yourself if you have their login.
+          The link expires in about <strong>60 minutes</strong>.
+        </p>
+        <div className="flex gap-2">
+          <input readOnly value={url} onFocus={(e) => e.currentTarget.select()} className="input flex-1 font-mono text-xs" />
+          <button className="btn-ghost whitespace-nowrap" onClick={copy}>{copied ? '✓ Copied' : 'Copy link'}</button>
+        </div>
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+          Once they finish, the account appears as <strong>Connected</strong> automatically. If it still shows
+          “Pending”, click <strong>Sync</strong> on the account row.
+        </div>
+        <div className="flex justify-end gap-2">
+          <button className="btn-ghost" onClick={onClose}>Done</button>
+          <a href={url} target="_blank" rel="noreferrer" className="btn-primary">Open now →</a>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
