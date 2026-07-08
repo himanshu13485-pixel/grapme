@@ -1,0 +1,184 @@
+import { Injectable, Logger, Optional } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
+import {
+  LiCampaignStatus, LiLeadStatus, LiScheduledActionStatus, LiScheduledActionType,
+} from '@prisma/client';
+import { PrismaService } from '../../prisma/prisma.service';
+import { QUEUE_LINKEDIN } from '../../queue/queue.constants';
+import { LiJob, LiJobData, jitterMs } from './li-queue.constants';
+
+const TYPE_TO_JOB: Record<LiScheduledActionType, LiJob> = {
+  SEND_CONNECTION: LiJob.SendConnection,
+  CHECK_ACCEPTANCE: LiJob.CheckAcceptance,
+  SEND_MESSAGE: LiJob.SendMessage,
+};
+
+@Injectable()
+export class LiSchedulerService {
+  private readonly logger = new Logger(LiSchedulerService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    // Optional so the platform boots without Redis (scheduler no-ops when absent).
+    @Optional() @InjectQueue(QUEUE_LINKEDIN) private readonly queue?: Queue,
+  ) {}
+
+  /** Launch or resume a campaign: enqueue the first action per lead + re-attach orphans. */
+  async startCampaign(campaignId: string) {
+    if (!this.queue) {
+      this.logger.warn(`Scheduler disabled (no Redis) — campaign ${campaignId} marked RUNNING but will not execute`);
+      return;
+    }
+    const campaign = await this.prisma.liCampaign.findUnique({
+      where: { id: campaignId },
+      include: { steps: { orderBy: { order: 'asc' } }, linkedInAccount: true },
+    });
+    if (!campaign || campaign.status !== LiCampaignStatus.RUNNING) return;
+    if (campaign.steps.length === 0) {
+      this.logger.warn(`Campaign ${campaignId} has no sequence steps; nothing to run`);
+      return;
+    }
+    if (campaign.linkedInAccount.status !== 'CONNECTED') {
+      this.logger.warn(`Campaign ${campaignId} account not connected; cannot run`);
+      return;
+    }
+
+    // Re-attach any orphaned pending actions (resume case).
+    const pending = await this.prisma.liScheduledAction.findMany({
+      where: {
+        status: { in: [LiScheduledActionStatus.PENDING, LiScheduledActionStatus.QUEUED] },
+        lead: { campaignId },
+      },
+    });
+    for (const a of pending) {
+      await this.attachJob(a.id, a.type, a.leadId, a.stepOrder ?? undefined, a.runAt);
+    }
+
+    // Enqueue the first action per fresh lead, paced by the daily limit.
+    const direct = campaign.outreachType === 'DIRECT_MESSAGES';
+    const freshLeads = await this.prisma.liLead.findMany({
+      where: { campaignId, status: LiLeadStatus.PENDING, scheduled: { none: {} } },
+      select: { id: true },
+    });
+    const limit = Math.max(1, direct ? campaign.dailyMessageLimit : campaign.dailyConnectionLimit);
+    let index = 0;
+    for (const lead of freshLeads) {
+      const day = Math.floor(index / limit);
+      const runAt = new Date(Date.now() + day * 864e5 + (index % limit) * jitterMs());
+      if (direct) await this.schedule(lead.id, LiScheduledActionType.SEND_MESSAGE, 1, runAt);
+      else await this.schedule(lead.id, LiScheduledActionType.SEND_CONNECTION, undefined, runAt);
+      index++;
+    }
+    this.logger.log(`Campaign ${campaignId} (${campaign.outreachType}): resumed ${pending.length}, queued ${freshLeads.length}`);
+  }
+
+  async pauseCampaign(campaignId: string) {
+    if (!this.queue) return;
+    const actions = await this.prisma.liScheduledAction.findMany({
+      where: {
+        status: { in: [LiScheduledActionStatus.PENDING, LiScheduledActionStatus.QUEUED] },
+        jobId: { not: null },
+        lead: { campaignId },
+      },
+      select: { id: true, jobId: true },
+    });
+    for (const a of actions) if (a.jobId) await this.queue.remove(a.jobId).catch(() => undefined);
+    await this.prisma.liScheduledAction.updateMany({
+      where: { id: { in: actions.map((a) => a.id) } },
+      data: { status: LiScheduledActionStatus.PENDING, jobId: null },
+    });
+    this.logger.log(`Campaign ${campaignId} paused: removed ${actions.length} jobs`);
+  }
+
+  /** Create a ScheduledAction row and enqueue its delayed job (used by the processor too). */
+  async schedule(leadId: string, type: LiScheduledActionType, stepOrder: number | undefined, runAt: Date) {
+    const finalRunAt = await this.gate(leadId, runAt);
+    const action = await this.prisma.liScheduledAction.create({
+      data: { leadId, type, stepOrder, runAt: finalRunAt, status: LiScheduledActionStatus.PENDING },
+    });
+    await this.attachJob(action.id, type, leadId, stepOrder, finalRunAt);
+    return action;
+  }
+
+  async rearm(actionId: string, runAt: Date) {
+    const existing = await this.prisma.liScheduledAction.findUniqueOrThrow({ where: { id: actionId }, select: { leadId: true } });
+    const finalRunAt = await this.gate(existing.leadId, runAt);
+    const action = await this.prisma.liScheduledAction.update({
+      where: { id: actionId },
+      data: { status: LiScheduledActionStatus.PENDING, runAt: finalRunAt, attempts: { increment: 1 } },
+    });
+    await this.attachJob(action.id, action.type, action.leadId, action.stepOrder ?? undefined, finalRunAt);
+  }
+
+  private async attachJob(scheduledActionId: string, type: LiScheduledActionType, leadId: string, stepOrder: number | undefined, runAt: Date) {
+    if (!this.queue) return;
+    const delay = Math.max(0, runAt.getTime() - Date.now());
+    const data: LiJobData = { scheduledActionId, leadId, stepOrder };
+    const job = await this.queue.add(TYPE_TO_JOB[type], data, {
+      delay, removeOnComplete: 1000, removeOnFail: 5000, attempts: 3,
+      backoff: { type: 'exponential', delay: 60_000 },
+    });
+    await this.prisma.liScheduledAction.update({
+      where: { id: scheduledActionId },
+      data: { status: LiScheduledActionStatus.QUEUED, jobId: job.id ?? null },
+    });
+  }
+
+  // ── daily-cap helpers (per campaign) ─────────────────────────────────
+  private startOfToday(): Date { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }
+
+  invitesSentTodayForCampaign(campaignId: string): Promise<number> {
+    return this.prisma.liScheduledAction.count({
+      where: {
+        type: LiScheduledActionType.SEND_CONNECTION, status: LiScheduledActionStatus.DONE,
+        updatedAt: { gte: this.startOfToday() }, lead: { campaignId },
+      },
+    });
+  }
+
+  messagesSentTodayForCampaign(campaignId: string): Promise<number> {
+    return this.prisma.liScheduledAction.count({
+      where: {
+        type: LiScheduledActionType.SEND_MESSAGE, status: LiScheduledActionStatus.DONE,
+        updatedAt: { gte: this.startOfToday() }, lead: { campaignId },
+      },
+    });
+  }
+
+  tomorrow(): Date { const d = this.startOfToday(); d.setDate(d.getDate() + 1); return d; }
+
+  // ── working-hours gating ─────────────────────────────────────────────
+  private async gate(leadId: string, runAt: Date): Promise<Date> {
+    const lead = await this.prisma.liLead.findUnique({
+      where: { id: leadId },
+      select: { campaign: { select: { run247: true, timezone: true, workStartHour: true, workEndHour: true, workDays: true } } },
+    });
+    if (!lead) return runAt;
+    return this.nextAllowedSlot(lead.campaign, runAt);
+  }
+
+  private nextAllowedSlot(
+    c: { run247: boolean; timezone: string; workStartHour: number; workEndHour: number; workDays: number[] },
+    desired: Date,
+  ): Date {
+    if (c.run247) return desired;
+    let d = new Date(desired);
+    for (let i = 0; i < 14 * 24; i++) {
+      const { hour, day } = this.localParts(d, c.timezone);
+      if (c.workDays.includes(day) && hour >= c.workStartHour && hour < c.workEndHour) return d;
+      d = new Date(d.getTime() + 60 * 60 * 1000);
+    }
+    return d;
+  }
+
+  private localParts(date: Date, tz: string): { hour: number; day: number } {
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour12: false, weekday: 'short', hour: '2-digit' }).formatToParts(date);
+    const hourStr = parts.find((p) => p.type === 'hour')?.value ?? '0';
+    const wd = parts.find((p) => p.type === 'weekday')?.value ?? 'Sun';
+    const dayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+    let hour = parseInt(hourStr, 10);
+    if (Number.isNaN(hour) || hour === 24) hour = 0;
+    return { hour, day: dayMap[wd] ?? 0 };
+  }
+}

@@ -22,6 +22,7 @@ const NAV = [
   { href: '/mailbox', label: 'Inbox & Sent', icon: '📥', inboxBadge: true, module: 'mailbox' },
   { href: '/mailboxes', label: 'Mailboxes', icon: '✉', module: 'mailboxes' },
   { href: '/deliverability', label: 'Deliverability', icon: '◎', module: 'deliverability' },
+  { href: '/linkedin', label: 'LinkedIn Outreach', icon: '🔗', admin: true, module: 'linkedin' },
   { href: '/approvals', label: 'Approvals', icon: '✓', admin: true, module: 'approvals' },
   { href: '/compliance', label: 'Compliance', icon: '⚖', admin: true, module: 'compliance' },
   { href: '/sub-admins', label: 'Sub Admins', icon: '⚇', admin: true, superOnly: true, module: 'sub-admins' },

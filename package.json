@@ -16,7 +16,8 @@
     "dev:smtp": "npm run dev:smtp --workspace apps/api",
     "db:migrate": "npm run prisma:migrate --workspace apps/api",
     "db:generate": "npm run prisma:generate --workspace apps/api",
-    "db:seed": "npm run prisma:seed --workspace apps/api"
+    "db:seed": "npm run prisma:seed --workspace apps/api",
+    "db:seed:linkedin": "npm run prisma:seed:linkedin --workspace apps/api"
   },
   "engines": {
     "node": ">=20"

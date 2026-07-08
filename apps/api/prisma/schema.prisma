@@ -816,3 +816,359 @@ model Enrollment {
   @@index([tenantId])
   @@index([status, nextTouchAt])
 }
+
+// ═══════════════════════ LinkedIn Outreach channel (additive) ═══════════════════════
+// Self-contained module for the LinkedIn channel. It references the shared Tenant /
+// Client / User by SCALAR id only (no Prisma relations into them), so no existing model
+// or table is modified — this migration is purely additive (CREATE TABLE only).
+// All names/enums are Li*-prefixed to avoid colliding with the email models above.
+
+enum LinkedInAccountStatus {
+  PENDING       // awaiting Unipile hosted-auth completion
+  CONNECTED
+  CREDENTIALS   // needs re-auth (cookie expired / checkpoint)
+  DISCONNECTED
+  ERROR
+}
+
+enum LiKnowledgeKind {
+  BUSINESS
+  STRATEGY
+}
+
+enum LiCampaignType {
+  AUTOMATIC
+  MANUAL
+}
+
+enum LiCampaignMode {
+  REGULAR
+  AI
+}
+
+enum LiOutreachType {
+  WITH_CONNECTION
+  DIRECT_MESSAGES
+}
+
+enum LiCampaignStatus {
+  DRAFT
+  RUNNING
+  PAUSED
+  COMPLETED
+  ARCHIVED
+  DELETED
+}
+
+enum LiStepType {
+  CONNECTION_REQUEST
+  MESSAGE
+}
+
+enum LiLeadStatus {
+  PENDING
+  CONNECTION_PENDING
+  CONNECTED
+  MESSAGED
+  REPLIED
+  BOUNCED
+  EXCLUDED
+}
+
+enum LiSentiment {
+  POSITIVE
+  NEUTRAL
+  NEGATIVE
+}
+
+enum LiMessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum LiMessageSource {
+  AUTO
+  MANUAL
+  AI
+}
+
+enum LiScheduledActionType {
+  SEND_CONNECTION
+  CHECK_ACCEPTANCE
+  SEND_MESSAGE
+}
+
+enum LiScheduledActionStatus {
+  PENDING
+  QUEUED
+  RUNNING
+  DONE
+  FAILED
+  CANCELLED
+}
+
+enum LiCreditReason {
+  AI_FETCH
+  TOPUP
+  ADJUSTMENT
+  REFUND
+}
+
+// Separate LinkedIn subscription block for a shared Client — seats / validity / credits
+// filled INDEPENDENTLY of the email plan. 1:1 with Client via a unique scalar clientId.
+model LinkedInSubscription {
+  id              String   @id @default(uuid())
+  tenantId        String
+  clientId        String   @unique
+  planName        String?
+  seats           Int      @default(1)
+  creditsBalance  Int      @default(0)
+  validityDays    Int?
+  validityStartAt DateTime?
+  whatsappEnabled Boolean  @default(false)
+  whatsappNumber  String?
+  timezone        String   @default("Asia/Kolkata")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  creditTxns LiCreditTransaction[]
+
+  @@index([tenantId])
+}
+
+model LiCreditTransaction {
+  id             String               @id @default(uuid())
+  subscriptionId String
+  subscription   LinkedInSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  amount         Int
+  reason         LiCreditReason
+  balanceAfter   Int
+  refType        String?
+  refId          String?
+  note           String?
+  createdAt      DateTime             @default(now())
+
+  @@index([subscriptionId])
+}
+
+// A LinkedIn "seat" — one connected account (references shared Client by scalar id).
+model LinkedInAccount {
+  id                String                @id @default(uuid())
+  tenantId          String
+  clientId          String
+  unipileAccountId  String?               @unique
+  status            LinkedInAccountStatus @default(PENDING)
+  fullName          String?
+  headline          String?
+  profileUrl        String?
+  avatarUrl         String?
+  connectionsCount  Int?
+  dailyInviteLimit  Int                   @default(20)
+  dailyMessageLimit Int                   @default(40)
+  lastSyncedAt      DateTime?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  campaigns LiCampaign[]
+
+  @@index([tenantId])
+  @@index([clientId])
+  @@index([status])
+}
+
+model LiKnowledgeProfile {
+  id           String          @id @default(uuid())
+  tenantId     String
+  clientId     String
+  kind         LiKnowledgeKind
+  parentId     String?
+  parent       LiKnowledgeProfile?  @relation("LiKnowledgeHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children     LiKnowledgeProfile[] @relation("LiKnowledgeHierarchy")
+  name         String
+  slug         String?
+  content      Json            @default("{}")
+  completeness Int             @default(0)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  messages             LiKnowledgeChatMessage[]
+  businessForCampaigns LiCampaign[] @relation("LiCampaignBusiness")
+  strategyForCampaigns LiCampaign[] @relation("LiCampaignStrategy")
+
+  @@index([clientId, kind])
+  @@index([parentId])
+}
+
+model LiKnowledgeChatMessage {
+  id        String             @id @default(uuid())
+  profileId String
+  profile   LiKnowledgeProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  role      String
+  content   String
+  fieldKey  String?
+  createdAt DateTime           @default(now())
+
+  @@index([profileId])
+}
+
+model LiCampaign {
+  id                   String           @id @default(uuid())
+  tenantId             String
+  clientId             String
+  linkedInAccountId    String
+  linkedInAccount      LinkedInAccount  @relation(fields: [linkedInAccountId], references: [id])
+  name                 String
+  type                 LiCampaignType   @default(AUTOMATIC)
+  mode                 LiCampaignMode   @default(REGULAR)
+  outreachType         LiOutreachType   @default(WITH_CONNECTION)
+  status               LiCampaignStatus @default(DRAFT)
+  timezone             String           @default("Asia/Kolkata")
+  run247               Boolean          @default(false)
+  workStartHour        Int              @default(9)
+  workEndHour          Int              @default(18)
+  workDays             Int[]            @default([1, 2, 3, 4, 5])
+  dailyConnectionLimit Int              @default(20)
+  dailyMessageLimit    Int              @default(20)
+  businessProfileId    String?
+  businessProfile      LiKnowledgeProfile? @relation("LiCampaignBusiness", fields: [businessProfileId], references: [id])
+  strategyId           String?
+  strategy             LiKnowledgeProfile? @relation("LiCampaignStrategy", fields: [strategyId], references: [id])
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  audienceSpec LiTargetAudienceSpec?
+  steps        LiSequenceStep[]
+  leads        LiLead[]
+
+  @@index([tenantId])
+  @@index([clientId, status])
+  @@index([linkedInAccountId])
+}
+
+model LiTargetAudienceSpec {
+  id                     String     @id @default(uuid())
+  campaignId             String     @unique
+  campaign               LiCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  countries              String[]   @default([])
+  cities                 String[]   @default([])
+  industries             String[]   @default([])
+  companySizes           String[]   @default([])
+  departments            String[]   @default([])
+  jobTitles              String[]   @default([])
+  seniorities            String[]   @default([])
+  companyKeywordsInclude String[]   @default([])
+  companyKeywordsExclude String[]   @default([])
+  personKeywordsInclude  String[]   @default([])
+  personKeywordsExclude  String[]   @default([])
+  createdAt              DateTime   @default(now())
+  updatedAt              DateTime   @updatedAt
+}
+
+model LiSequenceStep {
+  id         String     @id @default(uuid())
+  campaignId String
+  campaign   LiCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  order      Int
+  type       LiStepType
+  waitHours  Int        @default(0)
+  body       String?
+  note       String?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  @@unique([campaignId, order])
+  @@index([campaignId])
+}
+
+model LiLead {
+  id              String       @id @default(uuid())
+  campaignId      String
+  campaign        LiCampaign   @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  fullName        String
+  firstName       String?
+  lastName        String?
+  title           String?
+  company         String?
+  location        String?
+  profileUrl      String?
+  avatarUrl       String?
+  unipileMemberId String?
+  status          LiLeadStatus @default(PENDING)
+  currentStep     Int          @default(0)
+  sentiment       LiSentiment?
+  intent          String?
+  connectedAt     DateTime?
+  lastActionAt    DateTime?
+  lastReplyAt     DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  conversation LiConversation?
+  aiFetches    LiAiFetch[]
+  scheduled    LiScheduledAction[]
+
+  @@index([campaignId, status])
+  @@index([status])
+}
+
+model LiConversation {
+  id            String      @id @default(uuid())
+  leadId        String      @unique
+  lead          LiLead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  unipileChatId String?     @unique
+  unreadCount   Int         @default(0)
+  needsReply    Boolean     @default(false)
+  lastReplyAt   DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  messages LiMessage[]
+
+  @@index([needsReply])
+}
+
+model LiMessage {
+  id               String             @id @default(uuid())
+  conversationId   String
+  conversation     LiConversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  direction        LiMessageDirection
+  source           LiMessageSource    @default(AUTO)
+  body             String
+  unipileMessageId String?            @unique
+  sentAt           DateTime           @default(now())
+  createdAt        DateTime           @default(now())
+
+  @@index([conversationId])
+}
+
+model LiAiFetch {
+  id         String       @id @default(uuid())
+  leadId     String
+  lead       LiLead       @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  intent     String?
+  sentiment  LiSentiment?
+  enrichment Json?
+  draftReply String?
+  creditCost Int          @default(1)
+  createdAt  DateTime     @default(now())
+
+  @@index([leadId])
+}
+
+model LiScheduledAction {
+  id        String                  @id @default(uuid())
+  leadId    String
+  lead      LiLead                  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  type      LiScheduledActionType
+  status    LiScheduledActionStatus @default(PENDING)
+  stepOrder Int?
+  runAt     DateTime
+  jobId     String?
+  attempts  Int                     @default(0)
+  lastError String?
+  createdAt DateTime                @default(now())
+  updatedAt DateTime                @updatedAt
+
+  @@index([status, runAt])
+  @@index([leadId])
+}
