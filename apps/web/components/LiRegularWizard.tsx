@@ -42,6 +42,8 @@ export function LiRegularWizard({
   const [campaignId, setCampaignId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [sourcing, setSourcing] = useState(false);
+  const [sourceMsg, setSourceMsg] = useState('');
 
   const [accountId, setAccountId] = useState('');
   const [name, setName] = useState('');
@@ -102,6 +104,20 @@ export function LiRegularWizard({
       await api.post(`${base}/campaigns/${cid}/${launchMode === 'submit' ? 'submit' : 'resume'}`);
       onDone();
     } catch (e: any) { setError(e.message ?? 'Launch failed'); setSaving(false); }
+  }
+
+  async function sourceNow() {
+    setSourcing(true); setError(''); setSourceMsg('');
+    try {
+      const cid = await ensureCampaign();
+      // Make sure the audience the user just defined is saved before searching.
+      await api.patch(`${base}/campaigns/${cid}/audience`, audience);
+      const r = await api.post<{ sourced: number; keywords: string }>(`${base}/campaigns/${cid}/source-leads?limit=25`, {});
+      setSourceMsg(r.sourced > 0
+        ? `✓ Added ${r.sourced} lead${r.sourced === 1 ? '' : 's'} to the Target Audience (query: “${r.keywords}”). Pull more anytime on the campaign page.`
+        : `No leads found for “${r.keywords}”. Broaden the audience above, or import leads manually on the campaign page.`);
+    } catch (e: any) { setError(e.message ?? 'Sourcing failed'); }
+    finally { setSourcing(false); }
   }
 
   return (
@@ -247,6 +263,18 @@ export function LiRegularWizard({
             <Row k="Sequence" v={`${buildSteps().length} steps`} />
             <Row k="Schedule" v={sched.run247 ? '24/7' : `${sched.workStartHour}:00–${sched.workEndHour}:00, ${sched.workDays.length} days`} />
             <Row k="Daily limits" v={`${sched.dailyConnectionLimit} connects · ${sched.dailyMessageLimit} messages`} />
+
+            <div className="mt-2 rounded-xl border border-brand-200 bg-brand-50/50 p-4">
+              <div className="font-medium text-slate-800">Populate the Target Audience</div>
+              <p className="mb-3 text-sm text-slate-500">
+                Pull a first batch of leads (up to 25) from LinkedIn matching the audience above. The engine then
+                contacts them gradually at your daily limits — you can pull more anytime on the campaign page.
+              </p>
+              <button type="button" className="btn-ghost" disabled={sourcing || saving} onClick={sourceNow}>
+                {sourcing ? 'Sourcing…' : '✦ Source leads from this audience'}
+              </button>
+              {sourceMsg && <div className="mt-2 text-sm text-emerald-700">{sourceMsg}</div>}
+            </div>
           </Step>
         )}
       </div>
