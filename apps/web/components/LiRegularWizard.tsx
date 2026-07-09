@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { PageHeader } from '@/components/ui';
 import { LiTagInput } from '@/components/LiTagInput';
-import { LinkedInAccount } from '@/lib/linkedin';
+import { LinkedInAccount, LiCampaignDetail } from '@/lib/linkedin';
 
 const STEPS = ['Connect', 'Audience', 'Messages', 'Schedule', 'Review'];
 const COMPANY_SIZES = ['Startup (1-10)', 'Small (11-50)', 'Medium (51-200)', 'Large (201-1000)', 'Enterprise (1000+)'];
@@ -28,12 +28,14 @@ export function LiRegularWizard({
   clientId,
   base = '/linkedin',
   launchMode = 'resume',
+  editCampaignId,
   onBack,
   onDone,
 }: {
   clientId: string;
   base?: string;
   launchMode?: 'resume' | 'submit';
+  editCampaignId?: string;
   onBack?: () => void;
   onDone: () => void;
 }) {
@@ -64,6 +66,37 @@ export function LiRegularWizard({
     api.get<LinkedInAccount[]>(`${base}/clients/${clientId}/linkedin-accounts`)
       .then((a) => setAccounts(a.filter((x) => x.status === 'CONNECTED')));
   }, [clientId, base]);
+
+  // Edit mode: pre-fill every step from the existing (draft) campaign.
+  useEffect(() => {
+    if (!editCampaignId) return;
+    api.get<LiCampaignDetail>(`${base}/campaigns/${editCampaignId}`).then((c) => {
+      setCampaignId(c.id);
+      setName(c.name);
+      setAccountId(c.linkedInAccountId ?? c.linkedInAccount?.id ?? '');
+      setOutreachType(c.outreachType);
+      if (c.audienceSpec) setAudience({ ...emptyAudience, ...c.audienceSpec });
+      setNote(c.steps.find((s) => s.type === 'CONNECTION_REQUEST')?.note ?? '');
+      const msgs = c.steps.filter((s) => s.type === 'MESSAGE').map((s) => ({ waitHours: s.waitHours, body: s.body ?? '' }));
+      if (msgs.length) setFollowUps(msgs);
+      setSched((prev) => ({
+        ...prev,
+        timezone: c.timezone ?? prev.timezone,
+        run247: c.run247 ?? prev.run247,
+        workStartHour: c.workStartHour ?? prev.workStartHour,
+        workEndHour: c.workEndHour ?? prev.workEndHour,
+        workDays: c.workDays ?? prev.workDays,
+        dailyConnectionLimit: c.dailyConnectionLimit ?? prev.dailyConnectionLimit,
+        dailyMessageLimit: c.dailyMessageLimit ?? prev.dailyMessageLimit,
+        warmupEnabled: c.warmupEnabled ?? prev.warmupEnabled,
+        warmupStartLimit: c.warmupStartLimit ?? prev.warmupStartLimit,
+        warmupDays: c.warmupDays ?? prev.warmupDays,
+        dripEnabled: c.dripEnabled ?? prev.dripEnabled,
+        dripDailyTarget: c.dripDailyTarget ?? prev.dripDailyTarget,
+        dripBuffer: c.dripBuffer ?? prev.dripBuffer,
+      }));
+    }).catch(() => {});
+  }, [editCampaignId, base]);
 
   const setAud = (k: string, v: string[]) => setAudience((a) => ({ ...a, [k]: v }));
 
@@ -110,6 +143,18 @@ export function LiRegularWizard({
     } catch (e: any) { setError(e.message ?? 'Launch failed'); setSaving(false); }
   }
 
+  // Edit mode: persist every step and return to the list without launching (stays a draft).
+  async function saveEdit() {
+    setSaving(true); setError('');
+    try {
+      const cid = await ensureCampaign();
+      await api.patch(`${base}/campaigns/${cid}/audience`, audience);
+      await api.patch(`${base}/campaigns/${cid}/sequence`, { steps: buildSteps() });
+      await api.patch(`${base}/campaigns/${cid}/schedule`, sched);
+      onDone();
+    } catch (e: any) { setError(e.message ?? 'Save failed'); setSaving(false); }
+  }
+
   async function sourceNow() {
     setSourcing(true); setError(''); setSourceMsg('');
     try {
@@ -127,7 +172,10 @@ export function LiRegularWizard({
   return (
     <div className="mx-auto max-w-3xl">
       {onBack && <button onClick={onBack} className="text-sm text-slate-500 hover:text-slate-800">← Back</button>}
-      <PageHeader title="New LinkedIn Campaign" subtitle="Connect an account, define your audience and messages, then launch." />
+      <PageHeader
+        title={editCampaignId ? 'Edit LinkedIn Campaign' : 'New LinkedIn Campaign'}
+        subtitle={editCampaignId ? 'Update this draft’s audience, messages and schedule.' : 'Connect an account, define your audience and messages, then launch.'}
+      />
 
       {/* Stepper */}
       <div className="mb-6 flex items-center justify-between">
@@ -333,6 +381,8 @@ export function LiRegularWizard({
         <button className="btn-ghost" disabled={step === 0 || saving} onClick={() => setStep((s) => s - 1)}>← Back</button>
         {step < STEPS.length - 1 ? (
           <button className="btn-primary" disabled={saving} onClick={next}>{saving ? 'Saving…' : 'Next Step →'}</button>
+        ) : editCampaignId ? (
+          <button className="btn-primary" disabled={saving} onClick={saveEdit}>{saving ? 'Saving…' : '✓ Save changes'}</button>
         ) : (
           <button className="btn-primary" disabled={saving} onClick={launch}>{saving ? (launchMode === 'submit' ? 'Submitting…' : 'Launching…') : launchMode === 'submit' ? '✓ Submit for Approval' : '✓ Launch Campaign'}</button>
         )}

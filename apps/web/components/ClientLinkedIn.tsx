@@ -62,6 +62,7 @@ function ClientCampaigns({ clientId }: { clientId: string }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [busy, setBusy] = useState('');
   const [creating, setCreating] = useState<'choose' | 'REGULAR' | 'AI' | null>(null);
+  const [editId, setEditId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setCampaigns(await api.get<LiCampaign[]>(`${BASE}/campaigns?clientId=${clientId}`));
@@ -81,6 +82,7 @@ function ClientCampaigns({ clientId }: { clientId: string }) {
   // AI Mode is hidden for now — "New Campaign" goes straight to Regular mode.
   // To re-enable AI, set the button below back to setCreating('choose') and
   // restore the 'AI' + 'choose' branches (see the commented block).
+  if (editId) return <LiRegularWizard clientId={clientId} base={BASE} launchMode="submit" editCampaignId={editId} onBack={() => setEditId(null)} onDone={() => { setEditId(null); load(); }} />;
   if (creating === 'REGULAR') return <LiRegularWizard clientId={clientId} base={BASE} launchMode="submit" onBack={() => setCreating(null)} onDone={finishCreate} />;
   /* ── Mode picker (Regular vs AI) — hidden while we focus on Regular mode ──
   if (creating === 'AI') {
@@ -136,6 +138,8 @@ function ClientCampaigns({ clientId }: { clientId: string }) {
             <div className="flex items-center gap-3">
               <span className="text-sm text-slate-500">{c._count?.leads ?? 0} leads</span>
               <StatusBadge status={c.status} />
+              <button className="btn-ghost px-2 py-1 text-sm" onClick={() => setOpenId(openId === c.id ? null : c.id)}>{openId === c.id ? 'Hide' : 'View'}</button>
+              {c.status === 'DRAFT' && <button className="btn-ghost px-2 py-1 text-sm" onClick={() => setEditId(c.id)}>Edit</button>}
               {c.status === 'DRAFT' && <button className="btn-primary px-2 py-1" disabled={busy !== ''} onClick={() => act(c.id, 'submit', 'Submitted for approval — your account team will review it.')}>Submit for approval</button>}
               {c.status === 'RUNNING' && <button className="btn-ghost px-2 py-1" disabled={busy !== ''} onClick={() => act(c.id, 'pause')}>⏸ Pause</button>}
               {c.status === 'PAUSED' && <button className="btn-primary px-2 py-1" disabled={busy !== ''} onClick={() => act(c.id, 'resume')}>▶ Resume</button>}

@@ -296,9 +296,13 @@ function CampaignsTab({ clientId }: { clientId: string }) {
                 {c.mode === 'AI' && <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs text-brand-700">AI</span>}
                 <span className="text-xs text-slate-400">{c.outreachType === 'DIRECT_MESSAGES' ? 'Direct' : 'Connect'}</span>
               </div>
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-3">
                 <span className="text-sm text-slate-500">{c._count?.leads ?? 0} leads</span>
                 <StatusBadge status={c.status} />
+                <Link href={`/linkedin/${clientId}/campaigns/${c.id}`} className="btn-ghost px-2 py-1 text-sm">View</Link>
+                {(c.status === 'DRAFT' || c.status === 'PAUSED') && (
+                  <Link href={`/linkedin/${clientId}/campaigns/${c.id}/edit`} className="btn-ghost px-2 py-1 text-sm">Edit</Link>
+                )}
                 {c.status === 'RUNNING' ? (
                   <button className="btn-ghost px-2 py-1" onClick={() => act(c.id, 'pause')}>⏸ Pause</button>
                 ) : (
