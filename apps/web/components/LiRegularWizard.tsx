@@ -44,6 +44,8 @@ export function LiRegularWizard({
   const [error, setError] = useState('');
   const [sourcing, setSourcing] = useState(false);
   const [sourceMsg, setSourceMsg] = useState('');
+  // Audience sourcing (manual + drip) is admin-only — hidden in the client portal.
+  const isPortal = base.includes('/portal');
 
   const [accountId, setAccountId] = useState('');
   const [name, setName] = useState('');
@@ -273,7 +275,8 @@ export function LiRegularWizard({
               )}
             </div>
 
-            {/* Background drip-sourcer — auto-refill the Target Audience from LinkedIn search */}
+            {/* Background drip-sourcer — auto-refill the Target Audience from LinkedIn search (admin only) */}
+            {!isPortal && (
             <div className="mt-2 rounded-xl border border-brand-200 bg-brand-50/50 p-4">
               <label className="flex items-center gap-2 text-sm font-medium text-slate-800">
                 <input type="checkbox" checked={sched.dripEnabled} onChange={(e) => setSched({ ...sched, dripEnabled: e.target.checked })} />
@@ -293,6 +296,7 @@ export function LiRegularWizard({
                 </div>
               )}
             </div>
+            )}
           </Step>
         )}
 
@@ -308,17 +312,19 @@ export function LiRegularWizard({
             <Row k="Schedule" v={sched.run247 ? '24/7' : `${sched.workStartHour}:00–${sched.workEndHour}:00, ${sched.workDays.length} days`} />
             <Row k="Daily limits" v={`${sched.dailyConnectionLimit} connects · ${sched.dailyMessageLimit} messages`} />
 
-            <div className="mt-2 rounded-xl border border-brand-200 bg-brand-50/50 p-4">
-              <div className="font-medium text-slate-800">Populate the Target Audience</div>
-              <p className="mb-3 text-sm text-slate-500">
-                Pull a first batch of leads (up to 25) from LinkedIn matching the audience above. The engine then
-                contacts them gradually at your daily limits — you can pull more anytime on the campaign page.
-              </p>
-              <button type="button" className="btn-ghost" disabled={sourcing || saving} onClick={sourceNow}>
-                {sourcing ? 'Sourcing…' : '✦ Source leads from this audience'}
-              </button>
-              {sourceMsg && <div className="mt-2 text-sm text-emerald-700">{sourceMsg}</div>}
-            </div>
+            {!isPortal && (
+              <div className="mt-2 rounded-xl border border-brand-200 bg-brand-50/50 p-4">
+                <div className="font-medium text-slate-800">Populate the Target Audience</div>
+                <p className="mb-3 text-sm text-slate-500">
+                  Pull a first batch of leads (up to 25) from LinkedIn matching the audience above. The engine then
+                  contacts them gradually at your daily limits — you can pull more anytime on the campaign page.
+                </p>
+                <button type="button" className="btn-ghost" disabled={sourcing || saving} onClick={sourceNow}>
+                  {sourcing ? 'Sourcing…' : '✦ Source leads from this audience'}
+                </button>
+                {sourceMsg && <div className="mt-2 text-sm text-emerald-700">{sourceMsg}</div>}
+              </div>
+            )}
           </Step>
         )}
       </div>
