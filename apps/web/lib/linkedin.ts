@@ -8,6 +8,10 @@ export interface LiSubscription {
   creditsBalance: number;
   validityDays?: number | null;
   validityStartAt?: string | null;
+  // Governing plan validity (shared client window, same as email).
+  clientValidityDays?: number | null;
+  clientValidityStartAt?: string | null;
+  clientActive?: boolean;
   whatsappEnabled: boolean;
   whatsappNumber?: string | null;
   timezone: string;

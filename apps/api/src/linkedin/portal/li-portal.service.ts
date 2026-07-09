@@ -55,7 +55,20 @@ export class LiPortalService {
   private async assertProfile(userId: string, id: string) { await this.assertOwnsClient(userId, await this.profileClientId(id)); }
 
   // ── read: subscription / accounts / stats ────────────────────────────
-  async subscription(userId: string, tenantId: string, clientId: string) { await this.assertOwnsClient(userId, clientId); return this.subs.getOrCreate(tenantId, clientId); }
+  async subscription(userId: string, tenantId: string, clientId: string) {
+    await this.assertOwnsClient(userId, clientId);
+    // Validity is the shared client plan window (same as email), not a LinkedIn-only field.
+    const [sub, client] = await Promise.all([
+      this.subs.getOrCreate(tenantId, clientId),
+      this.prisma.client.findUnique({ where: { id: clientId }, select: { validityDays: true, validityStartAt: true, status: true } }),
+    ]);
+    return {
+      ...sub,
+      clientValidityDays: client?.validityDays ?? null,
+      clientValidityStartAt: client?.validityStartAt ?? null,
+      clientActive: client?.status === 'active',
+    };
+  }
   async accountsList(userId: string, clientId: string) { await this.assertOwnsClient(userId, clientId); return this.accounts.list(clientId); }
   async knowledgeStats(userId: string, clientId: string) { await this.assertOwnsClient(userId, clientId); return this.knowledge.clientStats(clientId); }
 
