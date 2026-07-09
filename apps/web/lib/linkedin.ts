@@ -134,7 +134,10 @@ export interface LiCampaignStats {
   acceptanceRate: number;
   replyRate: number;
   sentiment: { positive: number; neutral: number; negative: number };
+  series?: LiCampaignDay[];
 }
+
+export interface LiCampaignDay { date: string; sent: number; accepted: number; messages: number; replies: number }
 
 export interface LiLead {
   id: string;

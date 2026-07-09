@@ -171,11 +171,46 @@ export class LiCampaignsService {
       else if (r.sentiment === 'NEGATIVE') sentiment.negative = n;
       else if (r.sentiment === 'NEUTRAL') sentiment.neutral = n;
     }
+    const series = await this.dailySeries(id);
     return {
       sent, accepted, replied, totalMessages, sentiment,
       acceptanceRate: sent ? Math.round((accepted / sent) * 1000) / 10 : 0,
       replyRate: accepted ? Math.round((replied / accepted) * 1000) / 10 : 0,
+      series,
     };
+  }
+
+  /** Daily buckets (last 30 days, UTC) powering the Analytics charts:
+   *  connections Sent (completed SEND_CONNECTION actions), Accepted (connectedAt),
+   *  Messages (outbound) and Replies (inbound). */
+  private async dailySeries(campaignId: string) {
+    const DAYS = 30;
+    const since = new Date();
+    since.setUTCHours(0, 0, 0, 0);
+    since.setUTCDate(since.getUTCDate() - (DAYS - 1));
+
+    const [sentActions, acceptedLeads, msgs] = await Promise.all([
+      this.prisma.liScheduledAction.findMany({
+        where: { lead: { campaignId }, type: 'SEND_CONNECTION', status: 'DONE', updatedAt: { gte: since } },
+        select: { updatedAt: true },
+      }),
+      this.prisma.liLead.findMany({ where: { campaignId, connectedAt: { gte: since } }, select: { connectedAt: true } }),
+      this.prisma.liMessage.findMany({
+        where: { conversation: { lead: { campaignId } }, sentAt: { gte: since } },
+        select: { sentAt: true, direction: true },
+      }),
+    ]);
+
+    const key = (d: Date) => d.toISOString().slice(0, 10);
+    const buckets = new Map<string, { date: string; sent: number; accepted: number; messages: number; replies: number }>();
+    for (let i = 0; i < DAYS; i++) {
+      const d = new Date(since); d.setUTCDate(since.getUTCDate() + i);
+      buckets.set(key(d), { date: key(d), sent: 0, accepted: 0, messages: 0, replies: 0 });
+    }
+    for (const a of sentActions) { const b = buckets.get(key(a.updatedAt)); if (b) b.sent++; }
+    for (const l of acceptedLeads) { if (l.connectedAt) { const b = buckets.get(key(l.connectedAt)); if (b) b.accepted++; } }
+    for (const m of msgs) { const b = buckets.get(key(m.sentAt)); if (b) { if (m.direction === 'INBOUND') b.replies++; else b.messages++; } }
+    return [...buckets.values()];
   }
 
   async setStatus(id: string, status: LiCampaignStatus) {

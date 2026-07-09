@@ -5,6 +5,7 @@ import { api } from '@/lib/api';
 import { EmptyState, Tabs, Pagination } from '@/components/ui';
 import { LiImportLeadsModal } from '@/components/LiImportLeadsModal';
 import { LiCampaignSummary } from '@/components/LiCampaignSummary';
+import { ConnectionPerformanceChart, EngagementVolumeChart } from '@/components/LiCampaignCharts';
 import { LiCampaignDetail, LiCampaignStats, LiLeadsPage, parseLeadTitleCompany } from '@/lib/linkedin';
 
 const LEAD_TABS: { key: string; label: string; status?: string }[] = [
@@ -63,13 +64,26 @@ export function LiCampaignDetailView({ campaignId, base = '/linkedin' }: { campa
 
 function Analytics({ c, stats }: { c: LiCampaignDetail; stats: LiCampaignStats }) {
   const max = Math.max(stats.sent, 1);
+  const series = stats.series ?? [];
   return (
-    <div className="grid gap-6 md:grid-cols-2">
-      <div className="card p-5">
-        <h3 className="mb-4 font-semibold text-slate-800">Campaign Funnel</h3>
-        <FunnelBar label="Sent" n={stats.sent} pct={100} color="bg-slate-400" />
-        <FunnelBar label="Accepted" n={stats.accepted} pct={(stats.accepted / max) * 100} color="bg-emerald-500" />
-        <FunnelBar label="Replied" n={stats.replied} pct={(stats.replied / max) * 100} color="bg-brand-600" />
+    <div className="space-y-6">
+      <ConnectionPerformanceChart series={series} />
+      <div className="grid gap-6 md:grid-cols-2">
+        <EngagementVolumeChart series={series} />
+        <div className="card p-5">
+          <h3 className="mb-1 font-semibold text-slate-800">Campaign Funnel</h3>
+          <p className="mb-4 text-sm text-slate-400">Overall Conversion</p>
+          <FunnelBar label="Sent" n={stats.sent} pct={100} color="bg-slate-400" />
+          <FunnelBar label="Accepted" n={stats.accepted} pct={(stats.accepted / max) * 100} color="bg-emerald-500" note={`${stats.acceptanceRate}%`} />
+          <FunnelBar label="Replied" n={stats.replied} pct={(stats.replied / max) * 100} color="bg-brand-600" note={`${stats.replyRate}%`} />
+          {stats.replied > 0 && (
+            <div className="mt-2 flex flex-wrap gap-4 text-xs text-slate-500">
+              <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-emerald-500" />{stats.sentiment.positive} positive</span>
+              <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-slate-400" />{stats.sentiment.neutral} neutral</span>
+              <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-rose-500" />{stats.sentiment.negative} negative</span>
+            </div>
+          )}
+        </div>
       </div>
       <div className="card p-5">
         <h3 className="mb-4 font-semibold text-slate-800">Sequence ({c.steps.length} steps)</h3>
@@ -206,10 +220,13 @@ function Pill({ color, label, n }: { color: 'emerald' | 'slate' | 'rose'; label:
   const cls = { emerald: 'bg-emerald-50 text-emerald-700', slate: 'bg-slate-100 text-slate-600', rose: 'bg-rose-50 text-rose-700' }[color];
   return <div className={`rounded-lg px-3 py-1.5 text-sm font-medium ${cls}`}>{label} <span className="ml-1 font-bold">{n}</span></div>;
 }
-function FunnelBar({ label, n, pct, color }: { label: string; n: number; pct: number; color: string }) {
+function FunnelBar({ label, n, pct, color, note }: { label: string; n: number; pct: number; color: string; note?: string }) {
   return (
     <div className="mb-3">
-      <div className="mb-1 flex justify-between text-sm"><span className="text-slate-600">{label}</span><span className="font-semibold text-slate-800">{n}</span></div>
+      <div className="mb-1 flex justify-between text-sm">
+        <span className="text-slate-600">{label}</span>
+        <span className="font-semibold text-slate-800">{n}{note && <span className="ml-1 font-normal text-slate-400">({note})</span>}</span>
+      </div>
       <div className="h-2.5 rounded-full bg-slate-100"><div className={`h-2.5 rounded-full ${color}`} style={{ width: `${Math.max(2, pct)}%` }} /></div>
     </div>
   );
