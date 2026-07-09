@@ -59,7 +59,7 @@ export default function LinkedInInboxPage() {
       <div className="mb-4">
         <input
           className="input max-w-sm"
-          placeholder="Filter by client name, company, or invoice…"
+          placeholder="Filter by client, company, invoice, contact, or seat…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />

@@ -87,30 +87,41 @@ export class LiInboxService {
     return { total, page, pageSize, pages: Math.ceil(total / pageSize), items };
   }
 
-  /** Resolve a client name/company/invoice search to matching client ids in the tenant. */
-  private async clientIdsForSearch(tenantId: string, search?: string): Promise<string[] | undefined> {
+  /**
+   * Build the tenant-scoped where clause for the admin cross-client inbox.
+   * The free-text filter matches the owning CLIENT (name / company / invoice),
+   * the CONTACT that replied (lead name / company), or the LinkedIn SEAT (account name),
+   * so an admin can search by whichever they remember.
+   */
+  private async globalWhere(tenantId: string, search?: string, tab?: InboxTab): Promise<Prisma.LiConversationWhereInput> {
+    const where: Prisma.LiConversationWhereInput = {
+      lastReplyAt: { not: null },
+      lead: { campaign: { tenantId } },
+      ...this.tabWhere(tab),
+    };
     const q = search?.trim();
-    if (!q) return undefined;
+    if (!q) return where;
+
     const ci = { contains: q, mode: 'insensitive' as const };
     const clients = await this.prisma.client.findMany({
       where: { tenantId, OR: [{ name: ci }, { productCategory: ci }, { invoiceNo: ci }] },
       select: { id: true },
     });
-    return clients.map((c) => c.id);
+    const clientIds = clients.map((c) => c.id);
+    const or: Prisma.LiConversationWhereInput[] = [
+      { lead: { fullName: ci } },
+      { lead: { company: ci } },
+      { lead: { campaign: { linkedInAccount: { is: { fullName: ci } } } } },
+    ];
+    if (clientIds.length) or.push({ lead: { campaign: { clientId: { in: clientIds } } } });
+    return { AND: [where, { OR: or }] };
   }
 
-  /** Admin cross-client LinkedIn inbox: all conversations in the tenant, filterable by client. */
+  /** Admin cross-client LinkedIn inbox: all conversations in the tenant, filterable by client/contact/seat. */
   async globalList(tenantId: string, opts: { tab?: InboxTab; clientSearch?: string; page?: number; pageSize?: number }) {
     const page = Math.max(1, opts.page ?? 1);
     const pageSize = Math.min(100, Math.max(1, opts.pageSize ?? 25));
-    const clientIds = await this.clientIdsForSearch(tenantId, opts.clientSearch);
-    if (clientIds && clientIds.length === 0) return { total: 0, page, pageSize, pages: 0, items: [] };
-
-    const where: Prisma.LiConversationWhereInput = {
-      lastReplyAt: { not: null },
-      lead: { campaign: { tenantId, ...(clientIds ? { clientId: { in: clientIds } } : {}) } },
-      ...this.tabWhere(opts.tab),
-    };
+    const where = await this.globalWhere(tenantId, opts.clientSearch, opts.tab);
     const [total, rows] = await this.prisma.$transaction([
       this.prisma.liConversation.count({ where }),
       this.prisma.liConversation.findMany({
@@ -144,17 +155,12 @@ export class LiInboxService {
   }
 
   async globalCounts(tenantId: string, clientSearch?: string) {
-    const clientIds = await this.clientIdsForSearch(tenantId, clientSearch);
-    if (clientIds && clientIds.length === 0) return { all: 0, unread: 0, needsReply: 0, replied: 0 };
-    const base: Prisma.LiConversationWhereInput = {
-      lastReplyAt: { not: null },
-      lead: { campaign: { tenantId, ...(clientIds ? { clientId: { in: clientIds } } : {}) } },
-    };
+    const base = await this.globalWhere(tenantId, clientSearch);
     const [all, unread, needsReply, replied] = await this.prisma.$transaction([
       this.prisma.liConversation.count({ where: base }),
-      this.prisma.liConversation.count({ where: { ...base, unreadCount: { gt: 0 } } }),
-      this.prisma.liConversation.count({ where: { ...base, needsReply: true } }),
-      this.prisma.liConversation.count({ where: { ...base, needsReply: false } }),
+      this.prisma.liConversation.count({ where: { AND: [base, { unreadCount: { gt: 0 } }] } }),
+      this.prisma.liConversation.count({ where: { AND: [base, { needsReply: true }] } }),
+      this.prisma.liConversation.count({ where: { AND: [base, { needsReply: false }] } }),
     ]);
     return { all, unread, needsReply, replied };
   }
