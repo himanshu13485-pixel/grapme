@@ -145,7 +145,7 @@ export class LiCampaignsService {
     };
     const [total, items, counts] = await this.prisma.$transaction([
       this.prisma.liLead.count({ where }),
-      this.prisma.liLead.findMany({ where, orderBy: { createdAt: 'asc' }, skip: (page - 1) * pageSize, take: pageSize }),
+      this.prisma.liLead.findMany({ where, orderBy: { createdAt: 'desc' }, skip: (page - 1) * pageSize, take: pageSize }),
       this.prisma.liLead.groupBy({ by: ['status'], where: { campaignId: id }, _count: true, orderBy: { status: 'asc' } }),
     ]);
     const tabCounts = Object.fromEntries(counts.map((c) => [c.status, c._count]));

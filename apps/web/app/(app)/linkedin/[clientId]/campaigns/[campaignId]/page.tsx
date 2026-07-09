@@ -7,7 +7,7 @@ import { api } from '@/lib/api';
 import { PageHeader, EmptyState, StatusBadge, Tabs, Pagination } from '@/components/ui';
 import { LiImportLeadsModal } from '@/components/LiImportLeadsModal';
 import { LiCampaignSummary } from '@/components/LiCampaignSummary';
-import { LiCampaignDetail, LiCampaignStats, LiLeadsPage } from '@/lib/linkedin';
+import { LiCampaignDetail, LiCampaignStats, LiLeadsPage, parseLeadTitleCompany } from '@/lib/linkedin';
 
 const LEAD_TABS: { key: string; label: string; status?: string }[] = [
   { key: 'all', label: 'All' },
@@ -196,7 +196,9 @@ function Details({ campaignId }: { campaignId: string }) {
             </tr>
           </thead>
           <tbody>
-            {data?.items.map((l) => (
+            {data?.items.map((l) => {
+              const tc = parseLeadTitleCompany(l.title, l.company);
+              return (
               <tr key={l.id} className="border-b border-slate-50">
                 <td className="p-3"><div className="max-w-[200px] truncate font-medium text-slate-800" title={l.fullName}>{l.fullName}</div></td>
                 <td className="p-3">
@@ -204,12 +206,13 @@ function Details({ campaignId }: { campaignId: string }) {
                     ? <a href={l.profileUrl} target="_blank" rel="noreferrer" className="whitespace-nowrap text-brand-600 hover:text-brand-800 hover:underline">View Profile</a>
                     : <span className="text-slate-300">—</span>}
                 </td>
-                <td className="p-3"><div className="max-w-[300px] truncate text-slate-600" title={l.title ?? ''}>{l.title ?? '—'}</div></td>
-                <td className="p-3"><div className="max-w-[170px] truncate text-slate-600" title={l.company ?? ''}>{l.company ?? '—'}</div></td>
+                <td className="p-3"><div className="max-w-[300px] truncate text-slate-600" title={tc.title}>{tc.title}</div></td>
+                <td className="p-3"><div className="max-w-[170px] truncate text-slate-600" title={tc.company}>{tc.company}</div></td>
                 <td className="p-3"><span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs">{STATUS_LABEL[l.status] ?? l.status}</span></td>
                 <td className="p-3 text-slate-500">{l.currentStep}</td>
               </tr>
-            ))}
+              );
+            })}
             {data && data.items.length === 0 && <tr><td colSpan={6} className="p-8 text-center text-slate-400">{dq ? 'No targets match your search.' : 'No leads in this view.'}</td></tr>}
           </tbody>
         </table>

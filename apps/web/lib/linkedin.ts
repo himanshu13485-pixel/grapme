@@ -39,6 +39,28 @@ export function accountHealth(status: LinkedInAccountStatus): { label: string; d
   }
 }
 
+/**
+ * Split a LinkedIn headline into a clean designation + company. LinkedIn titles are
+ * often "Chief Executive Officer at Acme" or "CEO of Acme" — designation before
+ * " at "/" of ", company after. Falls back to the given company when present, and to
+ * the first headline segment (before "|") for a clean title.
+ */
+export function parseLeadTitleCompany(
+  title?: string | null,
+  company?: string | null,
+): { title: string; company: string } {
+  const raw = (title ?? '').trim();
+  // Company from " at … " (preferred) or " of … ", up to the next separator.
+  const cm = raw.match(/\bat\s+([^|·•]+)/i) ?? raw.match(/\bof\s+([^|·•]+)/i);
+  const derived = cm?.[1]?.trim() ?? '';
+  // Designation = the first headline segment, cut before " at "/" of ".
+  const firstSeg = raw.split(/[|·•]/)[0].trim();
+  const dm = firstSeg.match(/^(.*?)\s+at\s+/i) ?? firstSeg.match(/^(.*?)\s+of\s+/i);
+  const designation = (dm ? dm[1].trim() : firstSeg) || raw;
+  const finalCompany = (company && company.trim()) || derived;
+  return { title: designation || '—', company: finalCompany || '—' };
+}
+
 /** "3m ago" style relative time. */
 export function timeAgo(iso?: string | null): string {
   if (!iso) return 'never';

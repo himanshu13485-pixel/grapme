@@ -9,7 +9,7 @@ import { LiRegularWizard } from '@/components/LiRegularWizard';
 import { LiAiWizard } from '@/components/LiAiWizard';
 import { LiImportLeadsModal } from '@/components/LiImportLeadsModal';
 import { LiCampaignSummary } from '@/components/LiCampaignSummary';
-import { LiSubscription, LiKnowledgeStats, LiCampaign, LiCampaignStats, LiLeadsPage, LinkedInAccount, accountHealth } from '@/lib/linkedin';
+import { LiSubscription, LiKnowledgeStats, LiCampaign, LiCampaignStats, LiLeadsPage, LinkedInAccount, accountHealth, parseLeadTitleCompany } from '@/lib/linkedin';
 
 const BASE = '/linkedin/portal';
 const STATUS_LABEL: Record<string, string> = {
@@ -197,18 +197,34 @@ function CampaignDetail({ campaignId, onChanged }: { campaignId: string; onChang
       <div className="card overflow-hidden">
         <table className="w-full text-sm">
           <thead className="border-b border-slate-100 text-left text-slate-400">
-            <tr><th className="p-2 font-medium">Name</th><th className="p-2 font-medium">Title</th><th className="p-2 font-medium">Company</th><th className="p-2 font-medium">Status</th></tr>
+            <tr>
+              <th className="p-2 font-medium">Name</th>
+              <th className="p-2 font-medium">Profile</th>
+              <th className="p-2 font-medium">Title</th>
+              <th className="p-2 font-medium">Company</th>
+              <th className="p-2 font-medium">Status</th>
+              <th className="p-2 font-medium">Step</th>
+            </tr>
           </thead>
           <tbody>
-            {leads?.items.map((l) => (
+            {leads?.items.map((l) => {
+              const tc = parseLeadTitleCompany(l.title, l.company);
+              return (
               <tr key={l.id} className="border-b border-slate-50">
-                <td className="p-2"><div className="max-w-[180px] truncate text-slate-800" title={l.fullName}>{l.fullName}</div></td>
-                <td className="p-2"><div className="max-w-[240px] truncate text-slate-600" title={l.title ?? ''}>{l.title ?? '—'}</div></td>
-                <td className="p-2"><div className="max-w-[150px] truncate text-slate-600" title={l.company ?? ''}>{l.company ?? '—'}</div></td>
+                <td className="p-2"><div className="max-w-[170px] truncate text-slate-800" title={l.fullName}>{l.fullName}</div></td>
+                <td className="p-2">
+                  {l.profileUrl
+                    ? <a href={l.profileUrl} target="_blank" rel="noreferrer" className="whitespace-nowrap text-brand-600 hover:text-brand-800 hover:underline">View Profile</a>
+                    : <span className="text-slate-300">—</span>}
+                </td>
+                <td className="p-2"><div className="max-w-[240px] truncate text-slate-600" title={tc.title}>{tc.title}</div></td>
+                <td className="p-2"><div className="max-w-[150px] truncate text-slate-600" title={tc.company}>{tc.company}</div></td>
                 <td className="p-2"><span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs">{STATUS_LABEL[l.status] ?? l.status}</span></td>
+                <td className="p-2 text-slate-500">{l.currentStep}</td>
               </tr>
-            ))}
-            {leads && leads.items.length === 0 && <tr><td colSpan={4} className="p-6 text-center text-slate-400">No leads yet.</td></tr>}
+              );
+            })}
+            {leads && leads.items.length === 0 && <tr><td colSpan={6} className="p-6 text-center text-slate-400">No leads yet.</td></tr>}
           </tbody>
         </table>
       </div>
