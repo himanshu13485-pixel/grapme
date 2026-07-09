@@ -77,6 +77,18 @@ export function LiClientPlanFields({
           Auto Lead Sourcing (Drip) <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">Admin</span>
         </label>
         <p className="mt-1 text-xs text-slate-500">Auto-refill the audience from LinkedIn search when pending leads run low.</p>
+        {d.dripEnabled && (
+          <>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <div><label className="label">Leads sourced / day</label><input className="input" type="number" min={1} max={200} value={d.dripDailyTarget} onChange={(e) => setD({ dripDailyTarget: Number(e.target.value) })} /></div>
+              <div><label className="label">Refill when pending below</label><input className="input" type="number" min={1} max={1000} value={d.dripBuffer} onChange={(e) => setD({ dripBuffer: Number(e.target.value) })} /></div>
+            </div>
+            <p className="mt-2 text-xs text-slate-400">
+              Refills only when pending leads drop below {d.dripBuffer}, sourcing up to {d.dripDailyTarget}/day.
+              {creditMetering ? ' Credit metering is on — that’s 1 credit per refill.' : ''}
+            </p>
+          </>
+        )}
       </div>
     </div>
   );
