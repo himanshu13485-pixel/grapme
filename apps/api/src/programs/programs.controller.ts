@@ -62,6 +62,19 @@ export class ProgramsController {
     });
   }
 
+  /** Registered client logins (self-registration visibility), admin-only. */
+  @Get('clients/registrations')
+  listRegistrations(
+    @CurrentUser() user: AuthUser,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('q') q?: string,
+    @Query('status') status?: string,
+    @Query('verified') verified?: string,
+  ) {
+    return this.programs.listRegisteredClients(user, { page, pageSize, q, status, verified });
+  }
+
   /** Profiles the signed-in client-portal user owns (panel switcher). */
   @Get('my/clients')
   myClients(@CurrentUser() user: AuthUser) {

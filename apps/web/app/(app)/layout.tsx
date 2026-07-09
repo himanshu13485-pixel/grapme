@@ -12,6 +12,7 @@ import { api } from '@/lib/api';
 const NAV = [
   { href: '/dashboard', label: 'Dashboard', icon: '▦', module: 'dashboard' },
   { href: '/clients', label: 'Clients Workspace', icon: '🏢', admin: true, module: 'clients' },
+  { href: '/registered-clients', label: 'Registered Clients', icon: '👥', admin: true, module: 'registered-clients' },
   { href: '/cohort-schedule', label: 'Cohort Schedule', icon: '📅', admin: true, module: 'cohort-schedule' },
   { href: '/validity', label: 'Validity', icon: '⏳', admin: true, module: 'validity' },
   { href: '/plans', label: 'Membership', icon: '🏷', admin: true, module: 'plans' },

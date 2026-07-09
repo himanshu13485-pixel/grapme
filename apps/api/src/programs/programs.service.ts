@@ -18,6 +18,7 @@ import {
   MessageDirection,
   MessageStatus,
   Role,
+  UserStatus,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailerService } from '../sending/mailer.service';
@@ -274,6 +275,46 @@ export class ProgramsService {
         include: this.clientListInclude,
       }),
       this.prisma.client.count({ where }),
+    ]);
+    return { items, total, page, pageSize };
+  }
+
+  /**
+   * Registered client logins (admin visibility into self-registration). Lists the
+   * CLIENT users in the tenant — verified or not — with how many profiles each owns,
+   * so admins can spot sign-ups that never set up a workspace (or spam).
+   */
+  async listRegisteredClients(
+    user: AuthUser,
+    query: { page?: string; pageSize?: string; q?: string; status?: string; verified?: string },
+  ) {
+    this.assertAdmin(user);
+    const page = Math.max(1, parseInt(query.page ?? '1', 10) || 1);
+    const pageSize = Math.min(100, Math.max(1, parseInt(query.pageSize ?? '20', 10) || 20));
+    const ci = (contains: string) => ({ contains, mode: 'insensitive' }) as const;
+
+    const and: Prisma.UserWhereInput[] = [{ tenantId: user.tenantId, role: Role.CLIENT }];
+    if (query.verified === 'true') and.push({ emailVerified: true });
+    if (query.verified === 'false') and.push({ emailVerified: false });
+    if (query.status) and.push({ status: { equals: query.status.toUpperCase() as UserStatus } });
+    if (query.q) {
+      and.push({ OR: [{ name: ci(query.q) }, { email: ci(query.q) }, { companyName: ci(query.q) }] });
+    }
+    const where: Prisma.UserWhereInput = { AND: and };
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.user.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        select: {
+          id: true, name: true, email: true, companyName: true, contactMobile: true,
+          status: true, emailVerified: true, lastLoginAt: true, createdAt: true,
+          _count: { select: { ownedClients: true } },
+        },
+      }),
+      this.prisma.user.count({ where }),
     ]);
     return { items, total, page, pageSize };
   }
