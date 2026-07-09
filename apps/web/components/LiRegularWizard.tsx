@@ -42,6 +42,7 @@ export function LiRegularWizard({
   const [step, setStep] = useState(0);
   const [accounts, setAccounts] = useState<LinkedInAccount[]>([]);
   const [campaignId, setCampaignId] = useState<string | null>(null);
+  const [editStatus, setEditStatus] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [sourcing, setSourcing] = useState(false);
@@ -72,6 +73,7 @@ export function LiRegularWizard({
     if (!editCampaignId) return;
     api.get<LiCampaignDetail>(`${base}/campaigns/${editCampaignId}`).then((c) => {
       setCampaignId(c.id);
+      setEditStatus(c.status);
       setName(c.name);
       setAccountId(c.linkedInAccountId ?? c.linkedInAccount?.id ?? '');
       setOutreachType(c.outreachType);
@@ -152,7 +154,12 @@ export function LiRegularWizard({
     } catch (e: any) { setError(e.message ?? 'Launch failed'); setSaving(false); }
   }
 
-  // Edit mode: persist every step and return to the list without launching (stays a draft).
+  // A client editing a PAUSED (already-approved) campaign must re-submit for admin
+  // approval before it can go live again — edits shouldn't reach prospects unreviewed.
+  const needsReapproval = isPortal && !!editCampaignId && editStatus === 'PAUSED';
+
+  // Edit mode: persist every step. For a client-edited paused campaign, also re-submit
+  // for approval (backend demotes it to DRAFT so it can't be resumed directly).
   async function saveEdit() {
     setSaving(true); setError('');
     try {
@@ -160,6 +167,10 @@ export function LiRegularWizard({
       await api.patch(`${base}/campaigns/${cid}/audience`, audience);
       await api.patch(`${base}/campaigns/${cid}/sequence`, { steps: buildSteps() });
       await api.patch(`${base}/campaigns/${cid}/schedule`, sched);
+      if (needsReapproval) {
+        await api.post(`${base}/campaigns/${cid}/submit`);
+        alert('Changes saved and sent to your account team for approval — the campaign will resume once approved.');
+      }
       onDone();
     } catch (e: any) { setError(e.message ?? 'Save failed'); setSaving(false); }
   }
@@ -391,7 +402,7 @@ export function LiRegularWizard({
         {step < STEPS.length - 1 ? (
           <button className="btn-primary" disabled={saving} onClick={next}>{saving ? 'Saving…' : 'Next Step →'}</button>
         ) : editCampaignId ? (
-          <button className="btn-primary" disabled={saving} onClick={saveEdit}>{saving ? 'Saving…' : '✓ Save changes'}</button>
+          <button className="btn-primary" disabled={saving} onClick={saveEdit}>{saving ? 'Saving…' : needsReapproval ? '✓ Save & submit for approval' : '✓ Save changes'}</button>
         ) : (
           <button className="btn-primary" disabled={saving} onClick={launch}>{saving ? (launchMode === 'submit' ? 'Submitting…' : 'Launching…') : launchMode === 'submit' ? '✓ Submit for Approval' : '✓ Launch Campaign'}</button>
         )}

@@ -102,7 +102,7 @@ export class ApprovalsService {
     const idsOf = (t: ApprovalEntity) =>
       approvals.filter((a) => a.entityType === t).map((a) => a.entityId);
 
-    const [mailboxes, imports, campaigns, schedules, messages, activations] =
+    const [mailboxes, imports, campaigns, schedules, messages, activations, liCampaigns] =
       await Promise.all([
       this.prisma.emailAccount.findMany({
         where: { id: { in: idsOf(ApprovalEntity.SMTP) } },
@@ -144,6 +144,10 @@ export class ApprovalsService {
         where: { id: { in: idsOf(ApprovalEntity.CLIENT_ACTIVATION) } },
         select: { id: true, name: true, email: true, companyName: true },
       }),
+      this.prisma.liCampaign.findMany({
+        where: { id: { in: idsOf(ApprovalEntity.LI_CAMPAIGN) } },
+        select: { id: true, name: true, clientId: true },
+      }),
     ]);
 
     // Resolve every referenced clientId to a name in one query.
@@ -153,6 +157,7 @@ export class ApprovalsService {
     campaigns.forEach((c) => c.clientId && clientIds.add(c.clientId));
     schedules.forEach((s) => s.campaign?.clientId && clientIds.add(s.campaign.clientId));
     messages.forEach((m) => m.emailAccount?.clientId && clientIds.add(m.emailAccount.clientId));
+    liCampaigns.forEach((c) => c.clientId && clientIds.add(c.clientId));
     const clientRows = await this.prisma.client.findMany({
       where: { id: { in: [...clientIds] } },
       select: { id: true, name: true },
@@ -210,6 +215,12 @@ export class ApprovalsService {
         },
       ]),
     );
+    const lc = new Map(
+      liCampaigns.map((c) => [
+        c.id,
+        { name: c.name, clientName: c.clientId ? clientName.get(c.clientId) : undefined },
+      ]),
+    );
 
     for (const a of approvals) {
       switch (a.entityType) {
@@ -245,6 +256,11 @@ export class ApprovalsService {
         case ApprovalEntity.CLIENT_ACTIVATION:
           if (ac.has(a.entityId)) out.set(a.id, ac.get(a.entityId)!);
           break;
+        case ApprovalEntity.LI_CAMPAIGN: {
+          const c = lc.get(a.entityId);
+          if (c) out.set(a.id, { target: `LinkedIn campaign · ${c.name}`, clientName: c.clientName });
+          break;
+        }
       }
     }
     return out;

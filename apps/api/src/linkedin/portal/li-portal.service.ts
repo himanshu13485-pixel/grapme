@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
-import { ApprovalEntity, LiCampaignStatus, LiMessageSource, LiOutreachType } from '@prisma/client';
+import { ApprovalEntity, ApprovalStatus, LiCampaignStatus, LiMessageSource, LiOutreachType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LinkedInSubscriptionService } from '../subscription/linkedin-subscription.service';
 import { LinkedInAccountsService } from '../accounts/linkedin-accounts.service';
@@ -85,15 +85,30 @@ export class LiPortalService {
   async generateAudience(userId: string, id: string) { await this.assertCampaign(userId, id); return this.generation.generateAudience(id); }
   async generateMessages(userId: string, id: string, opts: { outreachType?: LiOutreachType; followUps?: number }) { await this.assertCampaign(userId, id); return this.generation.generateMessages(id, opts); }
 
-  /** Client submits a built campaign for admin approval to launch. */
+  /**
+   * Client submits a built campaign for admin approval to launch. Also used when a
+   * client edits a PAUSED (already-live) campaign — those edits must be re-reviewed,
+   * so the campaign is demoted to DRAFT (can't be resumed directly) while pending.
+   */
   async submitForApproval(userId: string, tenantId: string, id: string) {
     await this.assertCampaign(userId, id);
     const c = await this.campaigns.get(id);
     if (c.status !== LiCampaignStatus.DRAFT && c.status !== LiCampaignStatus.PAUSED) {
-      throw new BadRequestException('Only draft campaigns can be submitted for approval');
+      throw new BadRequestException('Only draft or paused campaigns can be submitted for approval');
     }
     if (c.steps.length === 0) throw new BadRequestException('Add at least one message before submitting');
-    await this.approvals.submit({ tenantId, entityType: ApprovalEntity.LI_CAMPAIGN, entityId: id, submittedById: userId });
+    // Re-submitting an edited paused campaign: demote to DRAFT so it stays out of the
+    // running state (and off the direct Resume path) until an admin approves it.
+    if (c.status === LiCampaignStatus.PAUSED) {
+      await this.campaigns.setStatus(id, LiCampaignStatus.DRAFT);
+    }
+    // Don't stack duplicate pending requests if the client submits twice.
+    const pending = await this.prisma.approval.count({
+      where: { entityType: ApprovalEntity.LI_CAMPAIGN, entityId: id, status: ApprovalStatus.PENDING },
+    });
+    if (!pending) {
+      await this.approvals.submit({ tenantId, entityType: ApprovalEntity.LI_CAMPAIGN, entityId: id, submittedById: userId });
+    }
     return { ok: true, status: 'PENDING_APPROVAL' };
   }
   async pause(userId: string, id: string) { await this.assertCampaign(userId, id); return this.campaigns.setStatus(id, LiCampaignStatus.PAUSED); }

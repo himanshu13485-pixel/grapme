@@ -80,6 +80,7 @@ export interface LiCampaign {
   createdAt: string;
   linkedInAccount?: { fullName?: string | null; avatarUrl?: string | null };
   _count?: { leads: number };
+  pendingApproval?: boolean;
 }
 
 export interface LiKnowledgeStats {

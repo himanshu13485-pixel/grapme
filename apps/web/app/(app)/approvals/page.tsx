@@ -28,6 +28,7 @@ const TYPE_LABEL: Record<string, string> = {
   MESSAGE_DELETE: 'Message deletion',
   CLIENT_DELETE: 'Client deletion',
   CLIENT_ACTIVATION: 'Client activation',
+  LI_CAMPAIGN: 'LinkedIn campaign',
 };
 function typeLabel(t: string) {
   return TYPE_LABEL[t] ?? t;

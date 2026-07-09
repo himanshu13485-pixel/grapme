@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { LiCampaignStatus, LiLeadStatus, Prisma } from '@prisma/client';
+import { ApprovalEntity, ApprovalStatus, LiCampaignStatus, LiLeadStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LiSchedulerService } from '../scheduler/li-scheduler.service';
 import {
@@ -38,8 +38,8 @@ export class LiCampaignsService {
     });
   }
 
-  list(clientId: string, status?: LiCampaignStatus) {
-    return this.prisma.liCampaign.findMany({
+  async list(clientId: string, status?: LiCampaignStatus) {
+    const campaigns = await this.prisma.liCampaign.findMany({
       where: { clientId, status: status ?? { not: LiCampaignStatus.DELETED } },
       orderBy: { createdAt: 'desc' },
       include: {
@@ -47,6 +47,16 @@ export class LiCampaignsService {
         _count: { select: { leads: true } },
       },
     });
+    // Flag campaigns awaiting admin approval so the UI can show "Under review"
+    // instead of the Submit/Edit actions.
+    const pending = campaigns.length
+      ? await this.prisma.approval.findMany({
+          where: { entityType: ApprovalEntity.LI_CAMPAIGN, status: ApprovalStatus.PENDING, entityId: { in: campaigns.map((c) => c.id) } },
+          select: { entityId: true },
+        })
+      : [];
+    const pendingSet = new Set(pending.map((p) => p.entityId));
+    return campaigns.map((c) => ({ ...c, pendingApproval: pendingSet.has(c.id) }));
   }
 
   async get(id: string) {
