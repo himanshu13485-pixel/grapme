@@ -8,6 +8,7 @@ import { LiInbox } from '@/components/LiInbox';
 import { LiRegularWizard } from '@/components/LiRegularWizard';
 import { LiAiWizard } from '@/components/LiAiWizard';
 import { LiImportLeadsModal } from '@/components/LiImportLeadsModal';
+import { LiCampaignSummary } from '@/components/LiCampaignSummary';
 import { LiSubscription, LiKnowledgeStats, LiCampaign, LiCampaignStats, LiLeadsPage, LinkedInAccount, accountHealth } from '@/lib/linkedin';
 
 const BASE = '/linkedin/portal';
@@ -133,6 +134,9 @@ function ClientCampaigns({ clientId }: { clientId: string }) {
             <button onClick={() => setOpenId(openId === c.id ? null : c.id)} className="flex items-center gap-2 text-left">
               <span className="font-medium text-slate-800">{c.name}</span>
               {c.mode === 'AI' && <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs text-brand-700">AI</span>}
+              {c.linkedInAccount?.fullName && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500" title="LinkedIn seat">👤 {c.linkedInAccount.fullName}</span>
+              )}
               <span className="text-xs text-slate-400">{openId === c.id ? '▲' : '▼'}</span>
             </button>
             <div className="flex items-center gap-3">
@@ -166,6 +170,10 @@ function CampaignDetail({ campaignId, onChanged }: { campaignId: string; onChang
 
   return (
     <div className="border-t border-slate-100 bg-slate-50/60 p-4">
+      <div className="mb-4">
+        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Campaign setup</div>
+        <LiCampaignSummary campaignId={campaignId} base={BASE} />
+      </div>
       {stats && (
         <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
           <Mini label="Sent" value={stats.sent} />

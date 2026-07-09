@@ -75,7 +75,16 @@ export function LiRegularWizard({
       setName(c.name);
       setAccountId(c.linkedInAccountId ?? c.linkedInAccount?.id ?? '');
       setOutreachType(c.outreachType);
-      if (c.audienceSpec) setAudience({ ...emptyAudience, ...c.audienceSpec });
+      if (c.audienceSpec) {
+        // Copy only the audience array fields — the raw spec also has id/campaignId/
+        // createdAt/updatedAt, which the audience DTO rejects (forbidNonWhitelisted).
+        const spec = c.audienceSpec as Record<string, unknown>;
+        const next: Audience = { ...emptyAudience };
+        (Object.keys(emptyAudience) as (keyof Audience)[]).forEach((k) => {
+          if (Array.isArray(spec[k])) next[k] = spec[k] as string[];
+        });
+        setAudience(next);
+      }
       setNote(c.steps.find((s) => s.type === 'CONNECTION_REQUEST')?.note ?? '');
       const msgs = c.steps.filter((s) => s.type === 'MESSAGE').map((s) => ({ waitHours: s.waitHours, body: s.body ?? '' }));
       if (msgs.length) setFollowUps(msgs);

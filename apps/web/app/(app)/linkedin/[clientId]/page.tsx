@@ -295,6 +295,9 @@ function CampaignsTab({ clientId }: { clientId: string }) {
                 <Link href={`/linkedin/${clientId}/campaigns/${c.id}`} className="font-medium text-slate-800 hover:text-brand-700">{c.name}</Link>
                 {c.mode === 'AI' && <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs text-brand-700">AI</span>}
                 <span className="text-xs text-slate-400">{c.outreachType === 'DIRECT_MESSAGES' ? 'Direct' : 'Connect'}</span>
+                {c.linkedInAccount?.fullName && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500" title="LinkedIn seat">👤 {c.linkedInAccount.fullName}</span>
+                )}
               </div>
               <div className="flex items-center gap-3">
                 <span className="text-sm text-slate-500">{c._count?.leads ?? 0} leads</span>

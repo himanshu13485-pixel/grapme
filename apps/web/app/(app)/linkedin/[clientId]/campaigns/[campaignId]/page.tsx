@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { PageHeader, EmptyState, StatusBadge, Tabs, Pagination } from '@/components/ui';
 import { LiImportLeadsModal } from '@/components/LiImportLeadsModal';
+import { LiCampaignSummary } from '@/components/LiCampaignSummary';
 import { LiCampaignDetail, LiCampaignStats, LiLeadsPage } from '@/lib/linkedin';
 
 const LEAD_TABS: { key: string; label: string; status?: string }[] = [
@@ -25,7 +26,7 @@ export default function LiCampaignDetailPage() {
   const { clientId, campaignId } = useParams<{ clientId: string; campaignId: string }>();
   const [c, setC] = useState<LiCampaignDetail | null>(null);
   const [stats, setStats] = useState<LiCampaignStats | null>(null);
-  const [view, setView] = useState('analytics');
+  const [view, setView] = useState('setup');
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -77,8 +78,10 @@ export default function LiCampaignDetailPage() {
       </div>
 
       <div className="mt-6">
-        <Tabs tabs={[{ key: 'analytics', label: 'Analytics' }, { key: 'details', label: 'Details' }]} active={view} onChange={setView} />
-        {view === 'analytics' ? <Analytics c={c} stats={stats} /> : <Details campaignId={campaignId} />}
+        <Tabs tabs={[{ key: 'setup', label: 'Setup' }, { key: 'analytics', label: 'Analytics' }, { key: 'details', label: 'Details' }]} active={view} onChange={setView} />
+        {view === 'setup' && <LiCampaignSummary campaignId={campaignId} base="/linkedin" />}
+        {view === 'analytics' && <Analytics c={c} stats={stats} />}
+        {view === 'details' && <Details campaignId={campaignId} />}
       </div>
     </div>
   );
