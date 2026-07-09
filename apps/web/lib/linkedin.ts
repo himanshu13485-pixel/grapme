@@ -170,6 +170,11 @@ export interface LiInboxItem {
 
 export interface LiInboxCounts { all: number; unread: number; needsReply: number; replied: number }
 
+/** Cross-client (admin) inbox item — carries the owning client. */
+export interface LiGlobalInboxItem extends LiInboxItem {
+  client?: { id: string; name: string; company?: string | null; invoice?: string | null } | null;
+}
+
 export interface LiAiFetch { id: string; intent?: string | null; sentiment?: string | null; draftReply?: string | null }
 
 export interface LiThreadMessage { id: string; direction: 'INBOUND' | 'OUTBOUND'; source: string; body: string; sentAt: string }

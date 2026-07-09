@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { IsIn, IsOptional, IsString, MinLength } from 'class-validator';
 import { LiMessageSource, Role } from '@prisma/client';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
 import { LiInboxService, InboxTab } from './li-inbox.service';
 
 class ReplyDto {
@@ -13,6 +14,27 @@ class ReplyDto {
 @Roles(Role.SUPER_ADMIN, Role.SUB_ADMIN)
 export class LiInboxController {
   constructor(private readonly inbox: LiInboxService) {}
+
+  // ── global cross-client inbox ────────────────────────────────────────
+  @Get('inbox')
+  globalList(
+    @CurrentUser() u: AuthUser,
+    @Query('tab') tab?: InboxTab,
+    @Query('client') client?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ) {
+    return this.inbox.globalList(u.tenantId, {
+      tab, clientSearch: client,
+      page: page ? Number(page) : undefined,
+      pageSize: pageSize ? Number(pageSize) : undefined,
+    });
+  }
+
+  @Get('inbox/counts')
+  globalCounts(@CurrentUser() u: AuthUser, @Query('client') client?: string) {
+    return this.inbox.globalCounts(u.tenantId, client);
+  }
 
   @Get('clients/:clientId/inbox')
   list(

@@ -85,7 +85,7 @@ export function LiInbox({ clientId, base = '/linkedin' }: { clientId: string; ba
   );
 }
 
-function ThreadModal({ conversationId, onClose, base }: { conversationId: string; onClose: () => void; base: string }) {
+export function ThreadModal({ conversationId, onClose, base }: { conversationId: string; onClose: () => void; base: string }) {
   const [thread, setThread] = useState<LiThread | null>(null);
   const [text, setText] = useState('');
   const [usedAi, setUsedAi] = useState(false);

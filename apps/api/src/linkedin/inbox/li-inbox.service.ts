@@ -87,6 +87,78 @@ export class LiInboxService {
     return { total, page, pageSize, pages: Math.ceil(total / pageSize), items };
   }
 
+  /** Resolve a client name/company/invoice search to matching client ids in the tenant. */
+  private async clientIdsForSearch(tenantId: string, search?: string): Promise<string[] | undefined> {
+    const q = search?.trim();
+    if (!q) return undefined;
+    const ci = { contains: q, mode: 'insensitive' as const };
+    const clients = await this.prisma.client.findMany({
+      where: { tenantId, OR: [{ name: ci }, { productCategory: ci }, { invoiceNo: ci }] },
+      select: { id: true },
+    });
+    return clients.map((c) => c.id);
+  }
+
+  /** Admin cross-client LinkedIn inbox: all conversations in the tenant, filterable by client. */
+  async globalList(tenantId: string, opts: { tab?: InboxTab; clientSearch?: string; page?: number; pageSize?: number }) {
+    const page = Math.max(1, opts.page ?? 1);
+    const pageSize = Math.min(100, Math.max(1, opts.pageSize ?? 25));
+    const clientIds = await this.clientIdsForSearch(tenantId, opts.clientSearch);
+    if (clientIds && clientIds.length === 0) return { total: 0, page, pageSize, pages: 0, items: [] };
+
+    const where: Prisma.LiConversationWhereInput = {
+      lastReplyAt: { not: null },
+      lead: { campaign: { tenantId, ...(clientIds ? { clientId: { in: clientIds } } : {}) } },
+      ...this.tabWhere(opts.tab),
+    };
+    const [total, rows] = await this.prisma.$transaction([
+      this.prisma.liConversation.count({ where }),
+      this.prisma.liConversation.findMany({
+        where, orderBy: { lastReplyAt: 'desc' }, skip: (page - 1) * pageSize, take: pageSize,
+        include: {
+          lead: {
+            select: {
+              id: true, fullName: true, title: true, company: true, location: true, avatarUrl: true, sentiment: true, intent: true,
+              campaign: { select: { id: true, name: true, clientId: true, linkedInAccount: { select: { id: true, fullName: true } } } },
+              aiFetches: { select: { id: true }, take: 1 },
+            },
+          },
+        },
+      }),
+    ]);
+    const cids = [...new Set(rows.map((r) => r.lead.campaign.clientId))];
+    const clients = await this.prisma.client.findMany({ where: { id: { in: cids } }, select: { id: true, name: true, productCategory: true, invoiceNo: true } });
+    const cmap = new Map(clients.map((c) => [c.id, c]));
+    const items = rows.map((c) => {
+      const cl = cmap.get(c.lead.campaign.clientId);
+      return {
+        conversationId: c.id, unreadCount: c.unreadCount, needsReply: c.needsReply, lastReplyAt: c.lastReplyAt,
+        analyzed: c.lead.aiFetches.length > 0,
+        lead: { id: c.lead.id, fullName: c.lead.fullName, title: c.lead.title, company: c.lead.company, location: c.lead.location, avatarUrl: c.lead.avatarUrl, sentiment: c.lead.sentiment, intent: c.lead.intent },
+        account: c.lead.campaign.linkedInAccount,
+        campaign: { id: c.lead.campaign.id, name: c.lead.campaign.name },
+        client: cl ? { id: cl.id, name: cl.name, company: cl.productCategory, invoice: cl.invoiceNo } : null,
+      };
+    });
+    return { total, page, pageSize, pages: Math.ceil(total / pageSize), items };
+  }
+
+  async globalCounts(tenantId: string, clientSearch?: string) {
+    const clientIds = await this.clientIdsForSearch(tenantId, clientSearch);
+    if (clientIds && clientIds.length === 0) return { all: 0, unread: 0, needsReply: 0, replied: 0 };
+    const base: Prisma.LiConversationWhereInput = {
+      lastReplyAt: { not: null },
+      lead: { campaign: { tenantId, ...(clientIds ? { clientId: { in: clientIds } } : {}) } },
+    };
+    const [all, unread, needsReply, replied] = await this.prisma.$transaction([
+      this.prisma.liConversation.count({ where: base }),
+      this.prisma.liConversation.count({ where: { ...base, unreadCount: { gt: 0 } } }),
+      this.prisma.liConversation.count({ where: { ...base, needsReply: true } }),
+      this.prisma.liConversation.count({ where: { ...base, needsReply: false } }),
+    ]);
+    return { all, unread, needsReply, replied };
+  }
+
   async counts(clientId: string, accountId?: string) {
     const base: Prisma.LiConversationWhereInput = {
       lastReplyAt: { not: null },
