@@ -112,6 +112,7 @@ enum ApprovalEntity {
   CLIENT_DELETE
   CLIENT_ACTIVATION
   LI_CAMPAIGN
+  LI_CHANNEL_REQUEST
 }
 
 enum ApprovalStatus {

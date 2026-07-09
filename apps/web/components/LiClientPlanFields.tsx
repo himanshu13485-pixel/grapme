@@ -11,6 +11,47 @@ export function emptyLiPlan(): LiPlanForm {
   return { seats: 1, defaults: { ...LI_DEFAULTS } };
 }
 
+const DAYS = [
+  { v: 1, l: 'Mon' }, { v: 2, l: 'Tue' }, { v: 3, l: 'Wed' }, { v: 4, l: 'Thu' },
+  { v: 5, l: 'Fri' }, { v: 6, l: 'Sat' }, { v: 0, l: 'Sun' },
+];
+
+/** Basic LinkedIn send window a client sets at self-service setup. No warm-up,
+ *  drip, seats or credit metering — those stay admin-only and secret. */
+export function LiClientSendWindowFields({ value, onChange }: { value: LiPlanForm; onChange: (v: LiPlanForm) => void }) {
+  const d = value.defaults;
+  const setD = (patch: Partial<LiCampaignDefaults>) => onChange({ ...value, defaults: { ...value.defaults, ...patch } });
+  const toggleDay = (day: number) => {
+    const has = d.workDays.includes(day);
+    setD({ workDays: has ? d.workDays.filter((x) => x !== day) : [...d.workDays, day].sort() });
+  };
+  return (
+    <div className="rounded-xl border border-brand-100 bg-brand-50/40 p-4">
+      <div className="mb-1 flex items-center gap-2">
+        <span className="text-lg">🔗</span>
+        <h4 className="font-semibold text-slate-800">LinkedIn send window</h4>
+      </div>
+      <p className="mb-3 text-xs text-slate-500">When should LinkedIn outreach run? Your account team fine-tunes limits and warm-up.</p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div><label className="label">Start hour (0–23)</label><input className="input" type="number" min={0} max={23} value={d.workStartHour} onChange={(e) => setD({ workStartHour: Number(e.target.value) })} /></div>
+        <div><label className="label">End hour (0–23)</label><input className="input" type="number" min={1} max={23} value={d.workEndHour} onChange={(e) => setD({ workEndHour: Number(e.target.value) })} /></div>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {DAYS.map((day) => (
+          <button key={day.v} type="button" onClick={() => toggleDay(day.v)}
+            className={`rounded-lg px-2.5 py-1 text-xs font-medium transition ${d.workDays.includes(day.v) ? 'bg-brand-600 text-white' : 'bg-white text-slate-500 border border-slate-200'}`}>
+            {day.l}
+          </button>
+        ))}
+      </div>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <div><label className="label">Max connection invites / day</label><input className="input" type="number" min={1} max={200} value={d.dailyConnectionLimit} onChange={(e) => setD({ dailyConnectionLimit: Number(e.target.value) })} /></div>
+        <div><label className="label">Max messages / day</label><input className="input" type="number" min={1} max={200} value={d.dailyMessageLimit} onChange={(e) => setD({ dailyMessageLimit: Number(e.target.value) })} /></div>
+      </div>
+    </div>
+  );
+}
+
 /**
  * LinkedIn business requirements for the New/Edit Client form (admin-only), shown
  * only when the client is subscribed to LinkedIn. These become the client's sending

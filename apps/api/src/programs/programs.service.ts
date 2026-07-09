@@ -28,6 +28,7 @@ import { ActivityService } from '../common/services/activity.service';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { GeoService } from '../common/services/geo.service';
 import { LiCampaignsService } from '../linkedin/campaigns/li-campaigns.service';
+import { LinkedInSubscriptionService } from '../linkedin/subscription/linkedin-subscription.service';
 import {
   AssignMailboxDto,
   CreateClientDto,
@@ -78,6 +79,7 @@ export class ProgramsService {
     private geo: GeoService,
     private approvals: ApprovalsService,
     private liCampaigns: LiCampaignsService,
+    private liSubs: LinkedInSubscriptionService,
   ) {}
 
   /**
@@ -153,9 +155,33 @@ export class ProgramsService {
       }
       ownerData.ownerUserId = user.userId;
     }
+    // `linkedin` is the client's self-service send-window request — not a Client column.
+    const { linkedin, ...clientData } = dto;
+    // A CLIENT can't self-enable the paid LinkedIn channel: create the profile with
+    // Email active as a baseline and route LinkedIn through admin approval instead.
+    const clientRequestsLinkedIn = user.role === Role.CLIENT && !!clientData.linkedInEnabled;
+    if (clientRequestsLinkedIn) {
+      clientData.emailEnabled = true;
+      clientData.linkedInEnabled = false;
+    }
     const client = await this.prisma.client.create({
-      data: { tenantId: user.tenantId, ...dto, ...ownerData },
+      data: { tenantId: user.tenantId, ...clientData, ...ownerData },
     });
+
+    if (clientRequestsLinkedIn) {
+      // Seed the subscription with the send window the client asked for, then queue
+      // an approval; the admin approves to actually switch LinkedIn on.
+      if (linkedin) {
+        await this.liSubs.update(user.tenantId, client.id, { campaignDefaults: linkedin }).catch(() => undefined);
+      }
+      await this.approvals.submit({
+        tenantId: user.tenantId,
+        entityType: ApprovalEntity.LI_CHANNEL_REQUEST,
+        entityId: client.id,
+        submittedById: user.userId,
+      });
+    }
+
     await this.activity.log({
       tenantId: user.tenantId,
       actorId: user.userId,

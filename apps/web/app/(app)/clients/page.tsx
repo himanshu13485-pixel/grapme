@@ -6,7 +6,7 @@ import { api } from '@/lib/api';
 import { useCanDelete, useAuth } from '@/lib/auth';
 import { usePlans } from '@/lib/plans';
 import { PageHeader, EmptyState, Modal, StatusBadge, Pagination } from '@/components/ui';
-import { LiClientPlanFields, LiPlanForm, emptyLiPlan } from '@/components/LiClientPlanFields';
+import { LiClientPlanFields, LiClientSendWindowFields, LiPlanForm, emptyLiPlan } from '@/components/LiClientPlanFields';
 import { LiSubscription, LI_DEFAULTS } from '@/lib/linkedin';
 
 interface Client {
@@ -451,7 +451,20 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
         serviceType: form.serviceType || undefined,
         emailEnabled: channels === 'EMAIL' || channels === 'BOTH',
         linkedInEnabled: channels === 'LINKEDIN' || channels === 'BOTH',
-        linkedInCreditMetering: channels !== 'EMAIL' ? creditMetering : false,
+        linkedInCreditMetering: !isClient && channels !== 'EMAIL' ? creditMetering : false,
+        // Client self-service LinkedIn request carries only the basic send window;
+        // the server routes it through admin approval (see createClient).
+        ...(isClient && channels !== 'EMAIL'
+          ? {
+              linkedin: {
+                workStartHour: liPlan.defaults.workStartHour,
+                workEndHour: liPlan.defaults.workEndHour,
+                workDays: liPlan.defaults.workDays,
+                dailyConnectionLimit: liPlan.defaults.dailyConnectionLimit,
+                dailyMessageLimit: liPlan.defaults.dailyMessageLimit,
+              },
+            }
+          : {}),
         monthlyQuota: Number(form.monthlyQuota),
         dailyBatchSize: Number(form.dailyBatchSize),
         batchWindowDays: Number(form.batchWindowDays),
@@ -481,32 +494,35 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
 
   return (
     <form onSubmit={submit} className="space-y-4">
-      {!isClient && (
-        <div>
-          <label className="label">Outreach channels *</label>
-          <div className="grid grid-cols-3 gap-2">
-            {([
-              ['EMAIL', '📧 Email', 'Email outreach only'],
-              ['LINKEDIN', '🔗 LinkedIn', 'LinkedIn outreach only'],
-              ['BOTH', '📧 + 🔗 Both', 'Email and LinkedIn'],
-            ] as ['EMAIL' | 'LINKEDIN' | 'BOTH', string, string][]).map(([key, label, desc]) => (
-              <button
-                type="button"
-                key={key}
-                onClick={() => setChannels(key)}
-                className={`rounded-xl border p-3 text-left transition ${
-                  channels === key
-                    ? 'border-brand-500 bg-brand-50 ring-2 ring-brand-100'
-                    : 'border-slate-200 hover:border-brand-300'
-                }`}
-              >
-                <div className="text-sm font-semibold text-slate-800">{label}</div>
-                <div className="text-xs text-slate-500">{desc}</div>
-              </button>
-            ))}
-          </div>
+      <div>
+        <label className="label">Outreach channels *</label>
+        <div className="grid grid-cols-3 gap-2">
+          {([
+            ['EMAIL', '📧 Email', 'Email outreach only'],
+            ['LINKEDIN', '🔗 LinkedIn', 'LinkedIn outreach only'],
+            ['BOTH', '📧 + 🔗 Both', 'Email and LinkedIn'],
+          ] as ['EMAIL' | 'LINKEDIN' | 'BOTH', string, string][]).map(([key, label, desc]) => (
+            <button
+              type="button"
+              key={key}
+              onClick={() => setChannels(key)}
+              className={`rounded-xl border p-3 text-left transition ${
+                channels === key
+                  ? 'border-brand-500 bg-brand-50 ring-2 ring-brand-100'
+                  : 'border-slate-200 hover:border-brand-300'
+              }`}
+            >
+              <div className="text-sm font-semibold text-slate-800">{label}</div>
+              <div className="text-xs text-slate-500">{desc}</div>
+            </button>
+          ))}
         </div>
-      )}
+        {isClient && channels !== 'EMAIL' && (
+          <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+            ⏳ Your workspace starts on Email right away. LinkedIn activation is reviewed by your account team before it goes live.
+          </p>
+        )}
+      </div>
       {/* Common client details (shared across channels) */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
@@ -637,6 +653,11 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
       {/* LinkedIn business requirements — admin-only, when the client uses LinkedIn. */}
       {!isClient && channels !== 'EMAIL' && (
         <LiClientPlanFields value={liPlan} onChange={setLiPlan} creditMetering={creditMetering} onCreditMetering={setCreditMetering} />
+      )}
+
+      {/* LinkedIn send window — client self-service (basic only; tuning stays admin-side). */}
+      {isClient && channels !== 'EMAIL' && (
+        <LiClientSendWindowFields value={liPlan} onChange={setLiPlan} />
       )}
 
       {error && <p className="text-sm text-rose-600">{error}</p>}
