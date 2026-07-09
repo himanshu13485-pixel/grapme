@@ -117,7 +117,7 @@ export default function RegisteredClientsPage() {
                           : <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-700" title="Registered but never set up a workspace">No workspace</span>}
                     </td>
                     <td className="px-4 py-3 text-slate-500">{new Date(u.createdAt).toLocaleDateString()}</td>
-                    <td className="px-4 py-3 text-slate-500">{u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleDateString() : 'Never'}</td>
+                    <td className="px-4 py-3 whitespace-nowrap text-slate-500">{u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : 'Never'}</td>
                   </tr>
                 ))}
               </tbody>
