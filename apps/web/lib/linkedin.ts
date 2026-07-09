@@ -25,10 +25,14 @@ export interface LinkedInAccount {
   connectionsCount?: number | null;
   lastSyncedAt?: string | null;
   createdAt: string;
+  deactivated?: boolean;
 }
 
 /** Visual health for a connected LinkedIn account. `healthy` = able to send. */
-export function accountHealth(status: LinkedInAccountStatus): { label: string; dot: string; text: string; healthy: boolean; attention: boolean } {
+export function accountHealth(status: LinkedInAccountStatus, deactivated = false): { label: string; dot: string; text: string; healthy: boolean; attention: boolean } {
+  // Client suspended (plan expired / deactivated) overrides the connection status —
+  // no outreach happens regardless of how healthy the underlying seat is.
+  if (deactivated) return { label: 'Deactivated', dot: 'bg-slate-400', text: 'text-slate-500', healthy: false, attention: false };
   switch (status) {
     case 'CONNECTED':    return { label: 'Connected', dot: 'bg-emerald-500', text: 'text-emerald-700', healthy: true, attention: false };
     case 'PENDING':      return { label: 'Pending auth', dot: 'bg-amber-400', text: 'text-amber-700', healthy: false, attention: false };

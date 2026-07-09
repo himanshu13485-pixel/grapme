@@ -243,6 +243,30 @@ export class LiCampaignsService {
     return campaign;
   }
 
+  /**
+   * Suspend a client's LinkedIn outreach — pause every RUNNING campaign (cancels its
+   * scheduled actions via the scheduler). Called when a client's plan validity expires
+   * or an admin deactivates the client, mirroring the email cohort behaviour.
+   */
+  async pauseAllForClient(clientId: string): Promise<number> {
+    const running = await this.prisma.liCampaign.findMany({
+      where: { clientId, status: LiCampaignStatus.RUNNING },
+      select: { id: true },
+    });
+    for (const c of running) await this.setStatus(c.id, LiCampaignStatus.PAUSED);
+    return running.length;
+  }
+
+  /** Resume a client's PAUSED campaigns when the client is reactivated / renewed. */
+  async resumeAllForClient(clientId: string): Promise<number> {
+    const paused = await this.prisma.liCampaign.findMany({
+      where: { clientId, status: LiCampaignStatus.PAUSED },
+      select: { id: true },
+    });
+    for (const c of paused) await this.setStatus(c.id, LiCampaignStatus.RUNNING);
+    return paused.length;
+  }
+
   private async assertExists(id: string) {
     const n = await this.prisma.liCampaign.count({ where: { id } });
     if (!n) throw new NotFoundException('Campaign not found');

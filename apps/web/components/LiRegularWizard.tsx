@@ -65,7 +65,7 @@ export function LiRegularWizard({
 
   useEffect(() => {
     api.get<LinkedInAccount[]>(`${base}/clients/${clientId}/linkedin-accounts`)
-      .then((a) => setAccounts(a.filter((x) => x.status === 'CONNECTED')));
+      .then((a) => setAccounts(a.filter((x) => x.status === 'CONNECTED' && !x.deactivated)));
   }, [clientId, base]);
 
   // Edit mode: pre-fill every step from the existing (draft) campaign.

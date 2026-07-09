@@ -43,6 +43,10 @@ export class LiOutreachProcessor extends WorkerHost {
     const ctx = await this.loadContext(action.leadId);
     if (!ctx) return this.complete(scheduledActionId);
     if (ctx.campaign.status !== LiCampaignStatus.RUNNING) return this.cancel(scheduledActionId);
+    // Halt outreach the moment a client is deactivated or its plan validity lapses,
+    // even before the engine tick pauses the campaign. Defer, don't cancel — the
+    // action is restored when the campaign resumes on reactivation.
+    if (!(await this.clientCanSend(ctx.campaign.clientId))) return this.scheduler.rearm(scheduledActionId, this.scheduler.tomorrow());
     if (ctx.lead.status === LiLeadStatus.REPLIED || ctx.lead.status === LiLeadStatus.EXCLUDED) return this.complete(scheduledActionId);
     if (!ctx.account.unipileAccountId) return this.fail(scheduledActionId, 'Account not connected to provider');
 
@@ -168,6 +172,20 @@ export class LiOutreachProcessor extends WorkerHost {
         this.logger.warn(`Drip skipped for campaign ${c.id}: ${(e as Error).message}`);
       }
     }
+  }
+
+  /** A client sends only while it's active AND its plan validity window hasn't lapsed. */
+  private async clientCanSend(clientId: string): Promise<boolean> {
+    const c = await this.prisma.client.findUnique({
+      where: { id: clientId },
+      select: { status: true, validityDays: true, validityStartAt: true },
+    });
+    if (!c || c.status !== 'active') return false;
+    if (c.validityDays && c.validityStartAt) {
+      const expiry = c.validityStartAt.getTime() + c.validityDays * 86_400_000;
+      if (expiry < Date.now()) return false;
+    }
+    return true;
   }
 
   async loadContext(leadId: string) {

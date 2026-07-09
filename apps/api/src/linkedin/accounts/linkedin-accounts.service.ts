@@ -28,8 +28,15 @@ export class LinkedInAccountsService {
     return { accountId: account.id, url: link.url };
   }
 
-  list(clientId: string) {
-    return this.prisma.linkedInAccount.findMany({ where: { clientId }, orderBy: { createdAt: 'desc' } });
+  async list(clientId: string) {
+    const [accounts, client] = await Promise.all([
+      this.prisma.linkedInAccount.findMany({ where: { clientId }, orderBy: { createdAt: 'desc' } }),
+      this.prisma.client.findUnique({ where: { id: clientId }, select: { status: true } }),
+    ]);
+    // A seat is "deactivated" whenever its client is suspended (plan expired / deactivated) —
+    // outreach is paused platform-wide, so surface it on every seat.
+    const deactivated = !!client && client.status !== 'active';
+    return accounts.map((a) => ({ ...a, deactivated }));
   }
 
   async get(id: string) {

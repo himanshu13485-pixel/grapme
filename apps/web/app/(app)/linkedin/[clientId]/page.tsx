@@ -183,7 +183,7 @@ function AccountsTab({ clientId }: { clientId: string }) {
           <AccountHealthSummary accounts={accounts} />
           <div className="card divide-y divide-slate-100">
             {accounts.map((a) => {
-              const h = accountHealth(a.status);
+              const h = accountHealth(a.status, a.deactivated);
               return (
                 <div key={a.id} className="flex items-center justify-between p-4">
                   <div className="flex items-center gap-3">

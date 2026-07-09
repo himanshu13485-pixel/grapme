@@ -27,6 +27,7 @@ import { AuthUser } from '../common/decorators/current-user.decorator';
 import { ActivityService } from '../common/services/activity.service';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { GeoService } from '../common/services/geo.service';
+import { LiCampaignsService } from '../linkedin/campaigns/li-campaigns.service';
 import {
   AssignMailboxDto,
   CreateClientDto,
@@ -76,6 +77,7 @@ export class ProgramsService {
     private activity: ActivityService,
     private geo: GeoService,
     private approvals: ApprovalsService,
+    private liCampaigns: LiCampaignsService,
   ) {}
 
   /**
@@ -1642,9 +1644,29 @@ export class ProgramsService {
         where: { clientId: c.id, status: 'RUNNING' },
         data: { status: 'PAUSED' },
       });
+      // LinkedIn channel: pause running campaigns and deactivate seats too.
+      await this.suspendLinkedIn(c.id);
       this.logger.log(
-        `Validity expired for "${c.name}" → set inactive, running cohorts paused`,
+        `Validity expired for "${c.name}" → set inactive, running cohorts + LinkedIn campaigns paused`,
       );
+    }
+  }
+
+  /** Pause a client's LinkedIn campaigns when it's suspended (validity expiry / deactivation). */
+  private async suspendLinkedIn(clientId: string): Promise<void> {
+    try {
+      await this.liCampaigns.pauseAllForClient(clientId);
+    } catch (err) {
+      this.logger.warn(`LinkedIn suspend failed for client ${clientId}: ${err}`);
+    }
+  }
+
+  /** Resume a client's LinkedIn campaigns when it's reactivated / renewed. */
+  private async resumeLinkedIn(clientId: string): Promise<void> {
+    try {
+      await this.liCampaigns.resumeAllForClient(clientId);
+    } catch (err) {
+      this.logger.warn(`LinkedIn resume failed for client ${clientId}: ${err}`);
     }
   }
 
@@ -1669,6 +1691,7 @@ export class ProgramsService {
         where: { clientId, status: 'PAUSED' },
         data: { status: 'RUNNING' },
       });
+      await this.resumeLinkedIn(clientId);
     } else {
       await this.prisma.client.update({
         where: { id: clientId },
@@ -1678,6 +1701,7 @@ export class ProgramsService {
         where: { clientId, status: 'RUNNING' },
         data: { status: 'PAUSED' },
       });
+      await this.suspendLinkedIn(clientId);
     }
     await this.activity.log({
       tenantId: user.tenantId,
