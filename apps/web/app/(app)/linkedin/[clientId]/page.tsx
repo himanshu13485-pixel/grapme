@@ -80,15 +80,17 @@ export default function ClientLinkedInPage() {
 function SubscriptionTab({ clientId }: { clientId: string }) {
   const [sub, setSub] = useState<LiSubscription | null>(null);
   const [stats, setStats] = useState<LiKnowledgeStats | null>(null);
+  const [client, setClient] = useState<{ validityDays?: number | null; validityStartAt?: string | null } | null>(null);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
 
   const load = useCallback(async () => {
-    const [s, st] = await Promise.all([
+    const [s, st, cl] = await Promise.all([
       api.get<LiSubscription>(`/linkedin/clients/${clientId}/subscription`),
       api.get<LiKnowledgeStats>(`/linkedin/clients/${clientId}/knowledge-stats`),
+      api.get<{ validityDays?: number | null; validityStartAt?: string | null }>(`/clients/${clientId}`).catch(() => null),
     ]);
-    setSub(s); setStats(st);
+    setSub(s); setStats(st); setClient(cl);
   }, [clientId]);
   useEffect(() => { load(); }, [load]);
 
@@ -100,7 +102,7 @@ function SubscriptionTab({ clientId }: { clientId: string }) {
     setSaving(true); setMsg('');
     try {
       await api.patch(`/linkedin/clients/${clientId}/subscription`, {
-        planName: sub!.planName, seats: Number(sub!.seats), validityDays: sub!.validityDays ? Number(sub!.validityDays) : undefined,
+        planName: sub!.planName, seats: Number(sub!.seats),
         whatsappEnabled: sub!.whatsappEnabled, whatsappNumber: sub!.whatsappNumber, timezone: sub!.timezone,
       });
       setMsg('Saved'); setTimeout(() => setMsg(''), 2000);
@@ -120,7 +122,7 @@ function SubscriptionTab({ clientId }: { clientId: string }) {
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <Stat label="Seats" value={sub.seats} />
         <Stat label="Credits" value={sub.creditsBalance} action={<button onClick={adjustCredits} className="text-xs font-medium text-brand-700 hover:text-brand-800">Adjust</button>} />
-        <Stat label="Validity (days)" value={sub.validityDays ?? '—'} />
+        <Stat label="Plan validity" value={client?.validityDays ? `${client.validityDays}d` : '—'} sub={validityLeft(client?.validityDays, client?.validityStartAt)} />
         <Stat label="AI Knowledge" value={`${stats?.aiKnowledgePct ?? 0}%`} sub={`${stats?.profileCount ?? 0} profiles`} />
       </div>
 
@@ -129,7 +131,6 @@ function SubscriptionTab({ clientId }: { clientId: string }) {
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Plan name"><input className="input" value={sub.planName ?? ''} onChange={(e) => set('planName', e.target.value)} placeholder="e.g. Growth Plus" /></Field>
           <Field label="Seats"><input className="input" type="number" min={0} value={sub.seats} onChange={(e) => set('seats', e.target.value)} /></Field>
-          <Field label="Validity (days)"><input className="input" type="number" min={0} value={sub.validityDays ?? ''} onChange={(e) => set('validityDays', e.target.value)} placeholder="30 / 180 / 360" /></Field>
           <Field label="Timezone"><input className="input" value={sub.timezone} onChange={(e) => set('timezone', e.target.value)} /></Field>
           <Field label="WhatsApp notifications">
             <label className="mt-2 flex items-center gap-2 text-sm">
@@ -138,6 +139,9 @@ function SubscriptionTab({ clientId }: { clientId: string }) {
           </Field>
           <Field label="WhatsApp number"><input className="input" value={sub.whatsappNumber ?? ''} onChange={(e) => set('whatsappNumber', e.target.value)} placeholder="+91…" /></Field>
         </div>
+        <p className="mt-4 text-xs text-slate-400">
+          Plan validity is shared with the client’s email plan — manage it from the <b>Validity</b> menu. When it expires the client is deactivated and its LinkedIn campaigns pause automatically.
+        </p>
         <div className="mt-5 flex items-center gap-3">
           <button className="btn-primary" disabled={saving} onClick={save}>{saving ? 'Saving…' : 'Save Plan'}</button>
           {msg && <span className="text-sm text-emerald-600">{msg}</span>}
@@ -336,4 +340,11 @@ function Stat({ label, value, sub, action }: { label: string; value: React.React
 }
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <div><label className="mb-1 block text-sm font-medium text-slate-600">{label}</label>{children}</div>;
+}
+
+/** "12 days left" / "Expired" caption for the shared client plan validity. */
+function validityLeft(days?: number | null, startAt?: string | null): string | undefined {
+  if (!days || !startAt) return 'No expiry set';
+  const left = Math.ceil((new Date(startAt).getTime() + days * 86_400_000 - Date.now()) / 86_400_000);
+  return left > 0 ? `${left} day${left === 1 ? '' : 's'} left` : 'Expired';
 }

@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import {
-  IsBoolean, IsInt, IsOptional, IsString, Min, IsDateString,
+  IsBoolean, IsInt, IsOptional, IsString, Min,
 } from 'class-validator';
 import { Role } from '@prisma/client';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -10,8 +10,7 @@ import { LinkedInSubscriptionService } from './linkedin-subscription.service';
 class UpdateSubDto {
   @IsOptional() @IsString() planName?: string;
   @IsOptional() @IsInt() @Min(0) seats?: number;
-  @IsOptional() @IsInt() @Min(0) validityDays?: number;
-  @IsOptional() @IsDateString() validityStartAt?: string;
+  // Validity is governed by the shared client plan (email/Validity menu), not here.
   @IsOptional() @IsBoolean() whatsappEnabled?: boolean;
   @IsOptional() @IsString() whatsappNumber?: string;
   @IsOptional() @IsString() timezone?: string;

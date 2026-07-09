@@ -5,8 +5,6 @@ import { PrismaService } from '../../prisma/prisma.service';
 export interface UpdateLiSubscriptionDto {
   planName?: string;
   seats?: number;
-  validityDays?: number;
-  validityStartAt?: string;
   whatsappEnabled?: boolean;
   whatsappNumber?: string;
   timezone?: string;
@@ -40,8 +38,6 @@ export class LinkedInSubscriptionService {
       data: {
         planName: dto.planName,
         seats: dto.seats,
-        validityDays: dto.validityDays,
-        validityStartAt: dto.validityStartAt ? new Date(dto.validityStartAt) : undefined,
         whatsappEnabled: dto.whatsappEnabled,
         whatsappNumber: dto.whatsappNumber,
         timezone: dto.timezone,
