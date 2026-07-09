@@ -26,10 +26,10 @@ export function LiInbox({ clientId, base = '/linkedin' }: { clientId: string; ba
   }, [clientId, base]);
 
   const load = useCallback(async () => {
-    const qs = `tab=${tab}${accountId ? `&accountId=${accountId}` : ''}`;
+    const acc = accountId ? `?accountId=${accountId}` : '';
     const [list, cnt] = await Promise.all([
-      api.get<{ items: LiInboxItem[] }>(`${base}/clients/${clientId}/inbox?${qs}`),
-      api.get<LiInboxCounts>(`${base}/clients/${clientId}/inbox/counts`),
+      api.get<{ items: LiInboxItem[] }>(`${base}/clients/${clientId}/inbox?tab=${tab}${accountId ? `&accountId=${accountId}` : ''}`),
+      api.get<LiInboxCounts>(`${base}/clients/${clientId}/inbox/counts${acc}`),
     ]);
     setItems(list.items); setCounts(cnt); setLoaded(true);
   }, [clientId, tab, accountId, base]);

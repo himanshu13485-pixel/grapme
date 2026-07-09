@@ -86,7 +86,7 @@ export class LiPortalController {
     return this.portal.inboxList(u.userId, clientId, { tab, accountId, search, page: page ? Number(page) : undefined });
   }
   @Get('clients/:clientId/inbox/counts')
-  inboxCounts(@CurrentUser() u: AuthUser, @Param('clientId') clientId: string) { return this.portal.inboxCounts(u.userId, clientId); }
+  inboxCounts(@CurrentUser() u: AuthUser, @Param('clientId') clientId: string, @Query('accountId') accountId?: string) { return this.portal.inboxCounts(u.userId, clientId, accountId); }
   @Get('conversations/:id')
   thread(@CurrentUser() u: AuthUser, @Param('id') id: string) { return this.portal.thread(u.userId, id); }
   @Post('conversations/:id/read')

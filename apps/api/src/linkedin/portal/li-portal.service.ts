@@ -106,7 +106,7 @@ export class LiPortalService {
 
   // ── inbox ────────────────────────────────────────────────────────────
   async inboxList(userId: string, clientId: string, opts: { tab?: InboxTab; accountId?: string; search?: string; page?: number; pageSize?: number }) { await this.assertOwnsClient(userId, clientId); return this.inbox.list(clientId, opts); }
-  async inboxCounts(userId: string, clientId: string) { await this.assertOwnsClient(userId, clientId); return this.inbox.counts(clientId); }
+  async inboxCounts(userId: string, clientId: string, accountId?: string) { await this.assertOwnsClient(userId, clientId); return this.inbox.counts(clientId, accountId); }
   async thread(userId: string, id: string) { await this.assertConversation(userId, id); return this.inbox.thread(id); }
   async markRead(userId: string, id: string) { await this.assertConversation(userId, id); return this.inbox.markRead(id); }
   async reply(userId: string, id: string, text: string, source: LiMessageSource) { await this.assertConversation(userId, id); return this.inbox.reply(id, text, source); }

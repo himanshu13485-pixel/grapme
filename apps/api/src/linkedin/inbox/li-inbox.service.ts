@@ -87,8 +87,11 @@ export class LiInboxService {
     return { total, page, pageSize, pages: Math.ceil(total / pageSize), items };
   }
 
-  async counts(clientId: string) {
-    const base: Prisma.LiConversationWhereInput = { lastReplyAt: { not: null }, lead: { campaign: { clientId } } };
+  async counts(clientId: string, accountId?: string) {
+    const base: Prisma.LiConversationWhereInput = {
+      lastReplyAt: { not: null },
+      lead: { campaign: { clientId, ...(accountId ? { linkedInAccountId: accountId } : {}) } },
+    };
     const [all, unread, needsReply, replied] = await this.prisma.$transaction([
       this.prisma.liConversation.count({ where: base }),
       this.prisma.liConversation.count({ where: { ...base, unreadCount: { gt: 0 } } }),

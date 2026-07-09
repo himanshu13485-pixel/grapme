@@ -31,8 +31,8 @@ export class LiInboxController {
   }
 
   @Get('clients/:clientId/inbox/counts')
-  counts(@Param('clientId') clientId: string) {
-    return this.inbox.counts(clientId);
+  counts(@Param('clientId') clientId: string, @Query('accountId') accountId?: string) {
+    return this.inbox.counts(clientId, accountId);
   }
 
   @Get('conversations/:id')
