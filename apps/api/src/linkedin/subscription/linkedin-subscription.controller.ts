@@ -1,11 +1,27 @@
 import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import {
-  IsBoolean, IsInt, IsOptional, IsString, Min,
+  IsArray, IsBoolean, IsInt, IsOptional, IsString, Max, Min, ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { Role } from '@prisma/client';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
 import { LinkedInSubscriptionService } from './linkedin-subscription.service';
+
+class CampaignDefaultsDto {
+  @IsOptional() @IsBoolean() run247?: boolean;
+  @IsOptional() @IsInt() @Min(0) @Max(23) workStartHour?: number;
+  @IsOptional() @IsInt() @Min(1) @Max(23) workEndHour?: number;
+  @IsOptional() @IsArray() @IsInt({ each: true }) @Min(0, { each: true }) @Max(6, { each: true }) workDays?: number[];
+  @IsOptional() @IsInt() @Min(1) @Max(200) dailyConnectionLimit?: number;
+  @IsOptional() @IsInt() @Min(1) @Max(200) dailyMessageLimit?: number;
+  @IsOptional() @IsBoolean() warmupEnabled?: boolean;
+  @IsOptional() @IsInt() @Min(1) warmupStartLimit?: number;
+  @IsOptional() @IsInt() @Min(1) @Max(60) warmupDays?: number;
+  @IsOptional() @IsBoolean() dripEnabled?: boolean;
+  @IsOptional() @IsInt() @Min(1) @Max(200) dripDailyTarget?: number;
+  @IsOptional() @IsInt() @Min(1) @Max(1000) dripBuffer?: number;
+}
 
 class UpdateSubDto {
   @IsOptional() @IsString() planName?: string;
@@ -14,6 +30,7 @@ class UpdateSubDto {
   @IsOptional() @IsBoolean() whatsappEnabled?: boolean;
   @IsOptional() @IsString() whatsappNumber?: string;
   @IsOptional() @IsString() timezone?: string;
+  @IsOptional() @ValidateNested() @Type(() => CampaignDefaultsDto) campaignDefaults?: CampaignDefaultsDto;
 }
 class AdjustCreditsDto {
   @IsInt() amount!: number;

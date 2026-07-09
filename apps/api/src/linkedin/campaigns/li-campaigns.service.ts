@@ -22,6 +22,17 @@ export class LiCampaignsService {
     });
     if (!account) throw new BadRequestException('LinkedIn account not in this client');
 
+    // Inherit the client's LinkedIn sending defaults (set at registration) so every
+    // new campaign starts from the admin-approved working hours / caps / warm-up / drip.
+    const sub = await this.prisma.linkedInSubscription.findUnique({
+      where: { clientId: dto.clientId },
+      select: { timezone: true, campaignDefaults: true },
+    });
+    const d = (sub?.campaignDefaults ?? {}) as Record<string, unknown>;
+    const num = (k: string) => (typeof d[k] === 'number' ? (d[k] as number) : undefined);
+    const bool = (k: string) => (typeof d[k] === 'boolean' ? (d[k] as boolean) : undefined);
+    const days = Array.isArray(d.workDays) ? (d.workDays as number[]) : undefined;
+
     return this.prisma.liCampaign.create({
       data: {
         tenantId,
@@ -31,7 +42,19 @@ export class LiCampaignsService {
         type: dto.type ?? undefined,
         mode: dto.mode ?? undefined,
         outreachType: dto.outreachType ?? undefined,
-        timezone: dto.timezone ?? undefined,
+        timezone: dto.timezone ?? sub?.timezone ?? undefined,
+        run247: bool('run247'),
+        workStartHour: num('workStartHour'),
+        workEndHour: num('workEndHour'),
+        workDays: days,
+        dailyConnectionLimit: num('dailyConnectionLimit'),
+        dailyMessageLimit: num('dailyMessageLimit'),
+        warmupEnabled: bool('warmupEnabled'),
+        warmupStartLimit: num('warmupStartLimit'),
+        warmupDays: num('warmupDays'),
+        dripEnabled: bool('dripEnabled'),
+        dripDailyTarget: num('dripDailyTarget'),
+        dripBuffer: num('dripBuffer'),
         businessProfileId: dto.businessProfileId ?? undefined,
         strategyId: dto.strategyId ?? undefined,
       },

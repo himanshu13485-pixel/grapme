@@ -1,5 +1,28 @@
 // Types for the LinkedIn channel (API under /api/v1/linkedin/*).
 
+/** Client-level LinkedIn sending defaults, inherited by every new campaign. */
+export interface LiCampaignDefaults {
+  run247?: boolean;
+  workStartHour?: number;
+  workEndHour?: number;
+  workDays?: number[];
+  dailyConnectionLimit?: number;
+  dailyMessageLimit?: number;
+  warmupEnabled?: boolean;
+  warmupStartLimit?: number;
+  warmupDays?: number;
+  dripEnabled?: boolean;
+  dripDailyTarget?: number;
+  dripBuffer?: number;
+}
+
+export const LI_DEFAULTS: Required<LiCampaignDefaults> = {
+  run247: false, workStartHour: 9, workEndHour: 18, workDays: [1, 2, 3, 4, 5],
+  dailyConnectionLimit: 20, dailyMessageLimit: 20,
+  warmupEnabled: true, warmupStartLimit: 5, warmupDays: 14,
+  dripEnabled: false, dripDailyTarget: 25, dripBuffer: 50,
+};
+
 export interface LiSubscription {
   id: string;
   clientId: string;
@@ -8,13 +31,14 @@ export interface LiSubscription {
   creditsBalance: number;
   validityDays?: number | null;
   validityStartAt?: string | null;
+  timezone?: string;
+  whatsappEnabled?: boolean;
+  whatsappNumber?: string | null;
+  campaignDefaults?: LiCampaignDefaults | null;
   // Governing plan validity (shared client window, same as email).
   clientValidityDays?: number | null;
   clientValidityStartAt?: string | null;
   clientActive?: boolean;
-  whatsappEnabled: boolean;
-  whatsappNumber?: string | null;
-  timezone: string;
 }
 
 export type LinkedInAccountStatus = 'PENDING' | 'CONNECTED' | 'CREDENTIALS' | 'DISCONNECTED' | 'ERROR';

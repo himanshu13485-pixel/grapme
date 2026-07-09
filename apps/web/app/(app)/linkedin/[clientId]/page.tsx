@@ -15,7 +15,8 @@ export default function ClientLinkedInPage() {
   const [clientName, setClientName] = useState('');
   const [emailOn, setEmailOn] = useState(true);
   const [linkedInOn, setLinkedInOn] = useState<boolean | null>(null);
-  const [tab, setTab] = useState(searchParams.get('tab') ?? 'subscription');
+  const requestedTab = searchParams.get('tab');
+  const [tab, setTab] = useState(['accounts', 'campaigns', 'inbox'].includes(requestedTab ?? '') ? requestedTab! : 'campaigns');
 
   useEffect(() => {
     api.get<{ name: string; emailEnabled?: boolean; linkedInEnabled?: boolean }>(`/clients/${clientId}`)
@@ -55,9 +56,11 @@ export default function ClientLinkedInPage() {
         </div>
       ) : (
         <>
+          {/* Persistent plan stats — shown above every tab (plan settings are edited in New/Edit Client). */}
+          <StatsHeader clientId={clientId} />
+
           <Tabs
             tabs={[
-              { key: 'subscription', label: 'Subscription' },
               { key: 'accounts', label: 'Accounts' },
               { key: 'campaigns', label: 'Campaigns' },
               { key: 'inbox', label: 'Inbox' },
@@ -66,7 +69,6 @@ export default function ClientLinkedInPage() {
             onChange={setTab}
           />
 
-          {tab === 'subscription' && <SubscriptionTab clientId={clientId} />}
           {tab === 'accounts' && <AccountsTab clientId={clientId} />}
           {tab === 'campaigns' && <CampaignsTab clientId={clientId} />}
           {tab === 'inbox' && <LiInbox clientId={clientId} />}
@@ -76,13 +78,11 @@ export default function ClientLinkedInPage() {
   );
 }
 
-// ── Subscription (separate LinkedIn billing) ─────────────────────────────
-function SubscriptionTab({ clientId }: { clientId: string }) {
+// ── Plan stats header (read-only; plan settings live in New/Edit Client) ──
+function StatsHeader({ clientId }: { clientId: string }) {
   const [sub, setSub] = useState<LiSubscription | null>(null);
   const [stats, setStats] = useState<LiKnowledgeStats | null>(null);
   const [client, setClient] = useState<{ validityDays?: number | null; validityStartAt?: string | null } | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState('');
 
   const load = useCallback(async () => {
     const [s, st, cl] = await Promise.all([
@@ -94,20 +94,6 @@ function SubscriptionTab({ clientId }: { clientId: string }) {
   }, [clientId]);
   useEffect(() => { load(); }, [load]);
 
-  if (!sub) return <EmptyState message="Loading…" />;
-
-  const set = (k: keyof LiSubscription, v: any) => setSub({ ...sub, [k]: v });
-
-  async function save() {
-    setSaving(true); setMsg('');
-    try {
-      await api.patch(`/linkedin/clients/${clientId}/subscription`, {
-        planName: sub!.planName, seats: Number(sub!.seats),
-        whatsappEnabled: sub!.whatsappEnabled, whatsappNumber: sub!.whatsappNumber, timezone: sub!.timezone,
-      });
-      setMsg('Saved'); setTimeout(() => setMsg(''), 2000);
-    } finally { setSaving(false); }
-  }
   async function adjustCredits() {
     const raw = prompt('Adjust LinkedIn credits by (e.g. 100 or -50):');
     if (!raw) return;
@@ -118,35 +104,11 @@ function SubscriptionTab({ clientId }: { clientId: string }) {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        <Stat label="Seats" value={sub.seats} />
-        <Stat label="Credits" value={sub.creditsBalance} action={<button onClick={adjustCredits} className="text-xs font-medium text-brand-700 hover:text-brand-800">Adjust</button>} />
-        <Stat label="Plan validity" value={client?.validityDays ? `${client.validityDays}d` : '—'} sub={validityLeft(client?.validityDays, client?.validityStartAt)} />
-        <Stat label="AI Knowledge" value={`${stats?.aiKnowledgePct ?? 0}%`} sub={`${stats?.profileCount ?? 0} profiles`} />
-      </div>
-
-      <div className="card p-5">
-        <h3 className="mb-4 font-semibold">LinkedIn Plan</h3>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Plan name"><input className="input" value={sub.planName ?? ''} onChange={(e) => set('planName', e.target.value)} placeholder="e.g. Growth Plus" /></Field>
-          <Field label="Seats"><input className="input" type="number" min={0} value={sub.seats} onChange={(e) => set('seats', e.target.value)} /></Field>
-          <Field label="Timezone"><input className="input" value={sub.timezone} onChange={(e) => set('timezone', e.target.value)} /></Field>
-          <Field label="WhatsApp notifications">
-            <label className="mt-2 flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={sub.whatsappEnabled} onChange={(e) => set('whatsappEnabled', e.target.checked)} /> Enabled
-            </label>
-          </Field>
-          <Field label="WhatsApp number"><input className="input" value={sub.whatsappNumber ?? ''} onChange={(e) => set('whatsappNumber', e.target.value)} placeholder="+91…" /></Field>
-        </div>
-        <p className="mt-4 text-xs text-slate-400">
-          Plan validity is shared with the client’s email plan — manage it from the <b>Validity</b> menu. When it expires the client is deactivated and its LinkedIn campaigns pause automatically.
-        </p>
-        <div className="mt-5 flex items-center gap-3">
-          <button className="btn-primary" disabled={saving} onClick={save}>{saving ? 'Saving…' : 'Save Plan'}</button>
-          {msg && <span className="text-sm text-emerald-600">{msg}</span>}
-        </div>
-      </div>
+    <div className="mb-5 grid grid-cols-2 gap-4 md:grid-cols-4">
+      <Stat label="Seats" value={sub?.seats ?? '—'} />
+      <Stat label="Credits" value={sub?.creditsBalance ?? '—'} action={<button onClick={adjustCredits} className="text-xs font-medium text-brand-700 hover:text-brand-800">Adjust</button>} />
+      <Stat label="Plan validity" value={client?.validityDays ? `${client.validityDays}d` : '—'} sub={validityLeft(client?.validityDays, client?.validityStartAt)} />
+      <Stat label="AI Knowledge" value={`${stats?.aiKnowledgePct ?? 0}%`} sub={`${stats?.profileCount ?? 0} profiles`} />
     </div>
   );
 }
@@ -337,9 +299,6 @@ function Stat({ label, value, sub, action }: { label: string; value: React.React
       {sub && <div className="text-xs text-slate-400">{sub}</div>}
     </div>
   );
-}
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <div><label className="mb-1 block text-sm font-medium text-slate-600">{label}</label>{children}</div>;
 }
 
 /** "12 days left" / "Expired" caption for the shared client plan validity. */

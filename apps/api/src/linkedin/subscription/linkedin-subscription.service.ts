@@ -2,12 +2,29 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { LiCreditReason, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 
+/** Client-level LinkedIn sending defaults, inherited by every new campaign. */
+export interface LiCampaignDefaults {
+  run247?: boolean;
+  workStartHour?: number;
+  workEndHour?: number;
+  workDays?: number[];
+  dailyConnectionLimit?: number;
+  dailyMessageLimit?: number;
+  warmupEnabled?: boolean;
+  warmupStartLimit?: number;
+  warmupDays?: number;
+  dripEnabled?: boolean;
+  dripDailyTarget?: number;
+  dripBuffer?: number;
+}
+
 export interface UpdateLiSubscriptionDto {
   planName?: string;
   seats?: number;
   whatsappEnabled?: boolean;
   whatsappNumber?: string;
   timezone?: string;
+  campaignDefaults?: LiCampaignDefaults;
 }
 
 /**
@@ -41,6 +58,7 @@ export class LinkedInSubscriptionService {
         whatsappEnabled: dto.whatsappEnabled,
         whatsappNumber: dto.whatsappNumber,
         timezone: dto.timezone,
+        ...(dto.campaignDefaults !== undefined ? { campaignDefaults: dto.campaignDefaults as Prisma.InputJsonValue } : {}),
       },
     });
   }

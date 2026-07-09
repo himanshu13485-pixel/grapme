@@ -933,6 +933,12 @@ model LinkedInSubscription {
   whatsappEnabled Boolean  @default(false)
   whatsappNumber  String?
   timezone        String   @default("Asia/Kolkata")
+  // Client-level LinkedIn sending defaults (working hours, caps, warm-up, drip),
+  // set at client registration and inherited by every new campaign. Shape:
+  // { run247, workStartHour, workEndHour, workDays[], dailyConnectionLimit,
+  //   dailyMessageLimit, warmupEnabled, warmupStartLimit, warmupDays,
+  //   dripEnabled, dripDailyTarget, dripBuffer }
+  campaignDefaults Json?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 

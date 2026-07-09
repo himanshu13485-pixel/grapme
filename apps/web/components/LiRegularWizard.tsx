@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { PageHeader } from '@/components/ui';
 import { LiTagInput } from '@/components/LiTagInput';
-import { LinkedInAccount, LiCampaignDetail } from '@/lib/linkedin';
+import { LinkedInAccount, LiCampaignDetail, LiSubscription } from '@/lib/linkedin';
 
 const STEPS = ['Connect', 'Audience', 'Messages', 'Schedule', 'Review'];
 const COMPANY_SIZES = ['Startup (1-10)', 'Small (11-50)', 'Medium (51-200)', 'Large (201-1000)', 'Enterprise (1000+)'];
@@ -67,6 +67,31 @@ export function LiRegularWizard({
     api.get<LinkedInAccount[]>(`${base}/clients/${clientId}/linkedin-accounts`)
       .then((a) => setAccounts(a.filter((x) => x.status === 'CONNECTED' && !x.deactivated)));
   }, [clientId, base]);
+
+  // New campaign: prefill the schedule from the client's LinkedIn sending defaults
+  // (set by the admin at registration). Edit mode loads the campaign's own values.
+  useEffect(() => {
+    if (editCampaignId) return;
+    api.get<LiSubscription>(`${base}/clients/${clientId}/subscription`).then((s) => {
+      const d = s.campaignDefaults ?? {};
+      setSched((prev) => ({
+        ...prev,
+        timezone: s.timezone ?? prev.timezone,
+        run247: d.run247 ?? prev.run247,
+        workStartHour: d.workStartHour ?? prev.workStartHour,
+        workEndHour: d.workEndHour ?? prev.workEndHour,
+        workDays: d.workDays ?? prev.workDays,
+        dailyConnectionLimit: d.dailyConnectionLimit ?? prev.dailyConnectionLimit,
+        dailyMessageLimit: d.dailyMessageLimit ?? prev.dailyMessageLimit,
+        warmupEnabled: d.warmupEnabled ?? prev.warmupEnabled,
+        warmupStartLimit: d.warmupStartLimit ?? prev.warmupStartLimit,
+        warmupDays: d.warmupDays ?? prev.warmupDays,
+        dripEnabled: d.dripEnabled ?? prev.dripEnabled,
+        dripDailyTarget: d.dripDailyTarget ?? prev.dripDailyTarget,
+        dripBuffer: d.dripBuffer ?? prev.dripBuffer,
+      }));
+    }).catch(() => {});
+  }, [clientId, base, editCampaignId]);
 
   // Edit mode: pre-fill every step from the existing (draft) campaign.
   useEffect(() => {
@@ -322,7 +347,8 @@ export function LiRegularWizard({
               <Field label="Daily messages"><input type="number" min={1} className="input" value={sched.dailyMessageLimit} onChange={(e) => setSched({ ...sched, dailyMessageLimit: Number(e.target.value) })} /></Field>
             </div>
 
-            {/* Warm-up ramp — protect the account from LinkedIn invite limits/bans */}
+            {/* Warm-up ramp — admin-only tuning (hidden from the client portal) */}
+            {!isPortal && (
             <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50/50 p-4">
               <label className="flex items-center gap-2 text-sm font-medium text-slate-800">
                 <input type="checkbox" checked={sched.warmupEnabled} onChange={(e) => setSched({ ...sched, warmupEnabled: e.target.checked })} />
@@ -342,6 +368,7 @@ export function LiRegularWizard({
                 </div>
               )}
             </div>
+            )}
 
             {/* Background drip-sourcer — auto-refill the Target Audience from LinkedIn search (admin only) */}
             {!isPortal && (
