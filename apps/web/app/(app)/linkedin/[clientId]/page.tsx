@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { PageHeader, EmptyState, StatusBadge, Tabs, Modal } from '@/components/ui';
@@ -11,10 +11,11 @@ import { LiInbox } from '@/components/LiInbox';
 export default function ClientLinkedInPage() {
   const { clientId } = useParams<{ clientId: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [clientName, setClientName] = useState('');
   const [emailOn, setEmailOn] = useState(true);
   const [linkedInOn, setLinkedInOn] = useState<boolean | null>(null);
-  const [tab, setTab] = useState('subscription');
+  const [tab, setTab] = useState(searchParams.get('tab') ?? 'subscription');
 
   useEffect(() => {
     api.get<{ name: string; emailEnabled?: boolean; linkedInEnabled?: boolean }>(`/clients/${clientId}`)

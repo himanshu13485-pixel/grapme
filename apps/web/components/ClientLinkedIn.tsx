@@ -3,19 +3,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
-import { EmptyState, StatusBadge, Tabs, Pagination, PageHeader } from '@/components/ui';
+import { EmptyState, StatusBadge, Tabs, PageHeader } from '@/components/ui';
 import { LiInbox } from '@/components/LiInbox';
 import { LiRegularWizard } from '@/components/LiRegularWizard';
 import { LiAiWizard } from '@/components/LiAiWizard';
-import { LiImportLeadsModal } from '@/components/LiImportLeadsModal';
-import { LiCampaignSummary } from '@/components/LiCampaignSummary';
-import { LiSubscription, LiKnowledgeStats, LiCampaign, LiCampaignStats, LiLeadsPage, LinkedInAccount, accountHealth, timeAgo, parseLeadTitleCompany } from '@/lib/linkedin';
+import { LiCampaignDetailView } from '@/components/LiCampaignDetailView';
+import { LiSubscription, LiKnowledgeStats, LiCampaign, LinkedInAccount, accountHealth, timeAgo } from '@/lib/linkedin';
 
 const BASE = '/linkedin/portal';
-const STATUS_LABEL: Record<string, string> = {
-  PENDING: 'Pending', CONNECTION_PENDING: 'Sent', CONNECTED: 'Connected',
-  MESSAGED: 'Messaged', REPLIED: 'Replied',
-};
 
 export function ClientLinkedIn({ clientId }: { clientId: string }) {
   const [sub, setSub] = useState<LiSubscription | null>(null);
@@ -102,7 +97,7 @@ function ClientAccounts({ accounts }: { accounts: LinkedInAccount[] }) {
 function ClientCampaigns({ clientId }: { clientId: string }) {
   const [campaigns, setCampaigns] = useState<LiCampaign[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [viewId, setViewId] = useState<string | null>(null);
   const [busy, setBusy] = useState('');
   const [creating, setCreating] = useState<'choose' | 'REGULAR' | 'AI' | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
@@ -161,6 +156,34 @@ function ClientCampaigns({ clientId }: { clientId: string }) {
 
   if (!loaded) return <EmptyState message="Loading…" />;
 
+  // Full campaign detail (mirrors the admin campaign page).
+  if (viewId) {
+    const c = campaigns.find((x) => x.id === viewId);
+    if (!c) { setViewId(null); return null; }
+    return (
+      <div>
+        <button onClick={() => { setViewId(null); load(); }} className="text-sm text-slate-500 hover:text-slate-800">← Back to campaigns</button>
+        <div className="mb-4 mt-2 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-2xl font-bold text-slate-900">{c.name}</h2>
+            <div className="text-sm text-slate-500">
+              {c.linkedInAccount?.fullName ? `${c.linkedInAccount.fullName} · ` : ''}
+              {c.outreachType === 'DIRECT_MESSAGES' ? 'Direct Messages' : 'With Connection'}
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <StatusBadge status={c.status} />
+            {c.status === 'DRAFT' && <button className="btn-ghost px-3 py-1.5" onClick={() => { setViewId(null); setEditId(c.id); }}>Edit</button>}
+            {c.status === 'DRAFT' && <button className="btn-primary px-3 py-1.5" disabled={busy !== ''} onClick={() => act(c.id, 'submit', 'Submitted for approval — your account team will review it.')}>Submit for approval</button>}
+            {c.status === 'RUNNING' && <button className="btn-ghost px-3 py-1.5" disabled={busy !== ''} onClick={() => act(c.id, 'pause')}>⏸ Pause</button>}
+            {c.status === 'PAUSED' && <button className="btn-primary px-3 py-1.5" disabled={busy !== ''} onClick={() => act(c.id, 'resume')}>▶ Resume</button>}
+          </div>
+        </div>
+        <LiCampaignDetailView campaignId={c.id} base={BASE} />
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="mb-3 flex justify-end">
@@ -171,106 +194,27 @@ function ClientCampaigns({ clientId }: { clientId: string }) {
       ) : (
       <div className="card divide-y divide-slate-100">
       {campaigns.map((c) => (
-        <div key={c.id}>
-          <div className="flex items-center justify-between p-4">
-            <button onClick={() => setOpenId(openId === c.id ? null : c.id)} className="flex items-center gap-2 text-left">
-              <span className="font-medium text-slate-800">{c.name}</span>
-              {c.mode === 'AI' && <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs text-brand-700">AI</span>}
-              {c.linkedInAccount?.fullName && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500" title="LinkedIn seat">👤 {c.linkedInAccount.fullName}</span>
-              )}
-              <span className="text-xs text-slate-400">{openId === c.id ? '▲' : '▼'}</span>
-            </button>
-            <div className="flex items-center gap-3">
-              <span className="text-sm text-slate-500">{c._count?.leads ?? 0} leads</span>
-              <StatusBadge status={c.status} />
-              <button className="btn-ghost px-2 py-1 text-sm" onClick={() => setOpenId(openId === c.id ? null : c.id)}>{openId === c.id ? 'Hide' : 'View'}</button>
-              {c.status === 'DRAFT' && <button className="btn-ghost px-2 py-1 text-sm" onClick={() => setEditId(c.id)}>Edit</button>}
-              {c.status === 'DRAFT' && <button className="btn-primary px-2 py-1" disabled={busy !== ''} onClick={() => act(c.id, 'submit', 'Submitted for approval — your account team will review it.')}>Submit for approval</button>}
-              {c.status === 'RUNNING' && <button className="btn-ghost px-2 py-1" disabled={busy !== ''} onClick={() => act(c.id, 'pause')}>⏸ Pause</button>}
-              {c.status === 'PAUSED' && <button className="btn-primary px-2 py-1" disabled={busy !== ''} onClick={() => act(c.id, 'resume')}>▶ Resume</button>}
-            </div>
+        <div key={c.id} className="flex items-center justify-between p-4">
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-slate-800">{c.name}</span>
+            {c.mode === 'AI' && <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs text-brand-700">AI</span>}
+            {c.linkedInAccount?.fullName && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500" title="LinkedIn seat">👤 {c.linkedInAccount.fullName}</span>
+            )}
           </div>
-          {openId === c.id && <CampaignDetail campaignId={c.id} onChanged={load} />}
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-slate-500">{c._count?.leads ?? 0} leads</span>
+            <StatusBadge status={c.status} />
+            <button className="btn-ghost px-2 py-1 text-sm" onClick={() => setViewId(c.id)}>View</button>
+            {c.status === 'DRAFT' && <button className="btn-ghost px-2 py-1 text-sm" onClick={() => setEditId(c.id)}>Edit</button>}
+            {c.status === 'DRAFT' && <button className="btn-primary px-2 py-1" disabled={busy !== ''} onClick={() => act(c.id, 'submit', 'Submitted for approval — your account team will review it.')}>Submit for approval</button>}
+            {c.status === 'RUNNING' && <button className="btn-ghost px-2 py-1" disabled={busy !== ''} onClick={() => act(c.id, 'pause')}>⏸ Pause</button>}
+            {c.status === 'PAUSED' && <button className="btn-primary px-2 py-1" disabled={busy !== ''} onClick={() => act(c.id, 'resume')}>▶ Resume</button>}
+          </div>
         </div>
       ))}
       </div>
       )}
-    </div>
-  );
-}
-
-function CampaignDetail({ campaignId, onChanged }: { campaignId: string; onChanged?: () => void }) {
-  const [stats, setStats] = useState<LiCampaignStats | null>(null);
-  const [leads, setLeads] = useState<LiLeadsPage | null>(null);
-  const [page, setPage] = useState(1);
-  const [importing, setImporting] = useState(false);
-  const [reloadKey, setReloadKey] = useState(0);
-
-  useEffect(() => { api.get<LiCampaignStats>(`${BASE}/campaigns/${campaignId}/stats`).then(setStats); }, [campaignId, reloadKey]);
-  useEffect(() => { api.get<LiLeadsPage>(`${BASE}/campaigns/${campaignId}/leads?page=${page}`).then(setLeads); }, [campaignId, page, reloadKey]);
-
-  return (
-    <div className="border-t border-slate-100 bg-slate-50/60 p-4">
-      <div className="mb-4">
-        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Campaign setup</div>
-        <LiCampaignSummary campaignId={campaignId} base={BASE} />
-      </div>
-      {stats && (
-        <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-          <Mini label="Sent" value={stats.sent} />
-          <Mini label="Acceptance" value={`${stats.acceptanceRate}%`} />
-          <Mini label="Reply Rate" value={`${stats.replyRate}%`} />
-          <Mini label="Messages" value={stats.totalMessages} />
-        </div>
-      )}
-      <div className="mb-2 flex items-center justify-between">
-        <div className="text-sm text-slate-500">{leads?.total ?? 0} lead{leads?.total === 1 ? '' : 's'}</div>
-        <button className="btn-ghost px-2 py-1 text-sm" onClick={() => setImporting(true)}>⭳ Import leads</button>
-      </div>
-      {importing && (
-        <LiImportLeadsModal
-          campaignId={campaignId}
-          base={BASE}
-          onClose={() => setImporting(false)}
-          onImported={() => { setImporting(false); setPage(1); setReloadKey((k) => k + 1); onChanged?.(); }}
-        />
-      )}
-      <div className="card overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="border-b border-slate-100 text-left text-slate-400">
-            <tr>
-              <th className="p-2 font-medium">Name</th>
-              <th className="p-2 font-medium">Profile</th>
-              <th className="p-2 font-medium">Title</th>
-              <th className="p-2 font-medium">Company</th>
-              <th className="p-2 font-medium">Status</th>
-              <th className="p-2 font-medium">Step</th>
-            </tr>
-          </thead>
-          <tbody>
-            {leads?.items.map((l) => {
-              const tc = parseLeadTitleCompany(l.title, l.company);
-              return (
-              <tr key={l.id} className="border-b border-slate-50">
-                <td className="p-2"><div className="max-w-[170px] truncate text-slate-800" title={l.fullName}>{l.fullName}</div></td>
-                <td className="p-2">
-                  {l.profileUrl
-                    ? <a href={l.profileUrl} target="_blank" rel="noreferrer" className="whitespace-nowrap text-brand-600 hover:text-brand-800 hover:underline">View Profile</a>
-                    : <span className="text-slate-300">—</span>}
-                </td>
-                <td className="p-2"><div className="max-w-[240px] truncate text-slate-600" title={tc.title}>{tc.title}</div></td>
-                <td className="p-2"><div className="max-w-[150px] truncate text-slate-600" title={tc.company}>{tc.company}</div></td>
-                <td className="p-2"><span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs">{STATUS_LABEL[l.status] ?? l.status}</span></td>
-                <td className="p-2 text-slate-500">{l.currentStep}</td>
-              </tr>
-              );
-            })}
-            {leads && leads.items.length === 0 && <tr><td colSpan={6} className="p-6 text-center text-slate-400">No leads yet.</td></tr>}
-          </tbody>
-        </table>
-      </div>
-      {leads && <Pagination page={leads.page} pageSize={leads.pageSize} total={leads.total} onPage={setPage} />}
     </div>
   );
 }
@@ -283,7 +227,4 @@ function Stat({ label, value, sub }: { label: string; value: React.ReactNode; su
       {sub && <div className="text-xs text-slate-400">{sub}</div>}
     </div>
   );
-}
-function Mini({ label, value }: { label: string; value: React.ReactNode }) {
-  return <div className="card p-3"><div className="text-xs text-slate-500">{label}</div><div className="text-lg font-bold text-slate-800">{value}</div></div>;
 }
