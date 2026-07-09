@@ -280,9 +280,14 @@ export class ProgramsService {
   }
 
   /**
-   * Registered client logins (admin visibility into self-registration). Lists the
-   * CLIENT users in the tenant — verified or not — with how many profiles each owns,
-   * so admins can spot sign-ups that never set up a workspace (or spam).
+   * Registered clients directory (admin visibility into self-registration + spam).
+   * A "row" is either a CLIENT login (self-registered, verified or not — may own 0
+   * profiles) OR an admin-created client profile that has no login. Merged so admins
+   * see every client identity in one place, including sign-ups that never built a
+   * workspace ("No workspace") and admin-managed profiles ("No login").
+   *
+   * verified/status filters are login concepts, so when either is set only logins
+   * are returned; the default (unfiltered) view includes login-less profiles.
    */
   async listRegisteredClients(
     user: AuthUser,
@@ -291,31 +296,56 @@ export class ProgramsService {
     this.assertAdmin(user);
     const page = Math.max(1, parseInt(query.page ?? '1', 10) || 1);
     const pageSize = Math.min(100, Math.max(1, parseInt(query.pageSize ?? '20', 10) || 20));
+    const q = query.q?.trim();
     const ci = (contains: string) => ({ contains, mode: 'insensitive' }) as const;
 
-    const and: Prisma.UserWhereInput[] = [{ tenantId: user.tenantId, role: Role.CLIENT }];
-    if (query.verified === 'true') and.push({ emailVerified: true });
-    if (query.verified === 'false') and.push({ emailVerified: false });
-    if (query.status) and.push({ status: { equals: query.status.toUpperCase() as UserStatus } });
-    if (query.q) {
-      and.push({ OR: [{ name: ci(query.q) }, { email: ci(query.q) }, { companyName: ci(query.q) }] });
-    }
-    const where: Prisma.UserWhereInput = { AND: and };
+    const userAnd: Prisma.UserWhereInput[] = [{ tenantId: user.tenantId, role: Role.CLIENT }];
+    if (query.verified === 'true') userAnd.push({ emailVerified: true });
+    if (query.verified === 'false') userAnd.push({ emailVerified: false });
+    if (query.status) userAnd.push({ status: { equals: query.status.toUpperCase() as UserStatus } });
+    if (q) userAnd.push({ OR: [{ name: ci(q) }, { email: ci(q) }, { companyName: ci(q) }] });
 
-    const [items, total] = await this.prisma.$transaction([
+    const includeProfiles = !query.verified && !query.status;
+    const [users, profiles] = await Promise.all([
       this.prisma.user.findMany({
-        where,
+        where: { AND: userAnd },
         orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * pageSize,
-        take: pageSize,
         select: {
           id: true, name: true, email: true, companyName: true, contactMobile: true,
           status: true, emailVerified: true, lastLoginAt: true, createdAt: true,
           _count: { select: { ownedClients: true } },
         },
       }),
-      this.prisma.user.count({ where }),
+      includeProfiles
+        ? this.prisma.client.findMany({
+            where: {
+              tenantId: user.tenantId,
+              ownerUserId: null,
+              ...(q ? { OR: [{ name: ci(q) }, { email: ci(q) }, { productCategory: ci(q) }] } : {}),
+            },
+            orderBy: { createdAt: 'desc' },
+            select: { id: true, name: true, email: true, productCategory: true, mobile: true, status: true, createdAt: true },
+          })
+        : Promise.resolve([]),
     ]);
+
+    const rows = [
+      ...users.map((u) => ({
+        id: u.id, source: 'login' as const, name: u.name, email: u.email,
+        company: u.companyName ?? null, mobile: u.contactMobile ?? null,
+        status: u.status, emailVerified: u.emailVerified as boolean | null,
+        profiles: u._count.ownedClients, createdAt: u.createdAt, lastLoginAt: u.lastLoginAt as Date | null,
+      })),
+      ...profiles.map((c) => ({
+        id: c.id, source: 'profile' as const, name: c.name, email: c.email ?? '—',
+        company: c.productCategory ?? null, mobile: c.mobile ?? null,
+        status: (c.status ?? 'active').toUpperCase(), emailVerified: null as boolean | null,
+        profiles: 1, createdAt: c.createdAt, lastLoginAt: null as Date | null,
+      })),
+    ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+    const total = rows.length;
+    const items = rows.slice((page - 1) * pageSize, page * pageSize);
     return { items, total, page, pageSize };
   }
 
