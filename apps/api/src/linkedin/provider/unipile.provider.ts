@@ -151,11 +151,21 @@ export class UnipileProvider implements LinkedInProvider {
         firstName: p.first_name,
         lastName: p.last_name,
         title: p.headline ?? undefined,
-        company: p.current_positions?.[0]?.company ?? p.work_experience?.[0]?.company ?? undefined,
+        // Classic people-search returns no company field — best-effort parse from
+        // the headline ("… at Acme", "… @ Acme"). Enriched precisely at contact time.
+        company: p.current_positions?.[0]?.company ?? p.work_experience?.[0]?.company ?? this.companyFromHeadline(p.headline) ?? undefined,
         location: p.location ?? undefined,
         profileUrl: String(p.public_profile_url ?? p.profile_url).split('?')[0],
       }));
     return { people, cursor: data?.cursor };
+  }
+
+  /** Best-effort company from a LinkedIn headline: text after " at "/" @ " up to a separator. */
+  private companyFromHeadline(headline?: string): string | undefined {
+    if (!headline) return undefined;
+    const m = headline.match(/\s(?:@\s*|at\s+)([^|·•]+)/i);
+    const co = m?.[1]?.trim();
+    return co && co.length >= 2 && co.length <= 60 ? co : undefined;
   }
 
   private mapStatus(s?: string): ProviderAccount['status'] {

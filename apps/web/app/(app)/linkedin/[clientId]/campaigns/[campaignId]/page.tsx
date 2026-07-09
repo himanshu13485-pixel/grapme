@@ -198,14 +198,14 @@ function Details({ campaignId }: { campaignId: string }) {
           <tbody>
             {data?.items.map((l) => (
               <tr key={l.id} className="border-b border-slate-50">
-                <td className="p-3 font-medium text-slate-800">{l.fullName}</td>
+                <td className="p-3"><div className="max-w-[200px] truncate font-medium text-slate-800" title={l.fullName}>{l.fullName}</div></td>
                 <td className="p-3">
                   {l.profileUrl
-                    ? <a href={l.profileUrl} target="_blank" rel="noreferrer" className="text-brand-600 hover:text-brand-800 hover:underline">View Profile</a>
+                    ? <a href={l.profileUrl} target="_blank" rel="noreferrer" className="whitespace-nowrap text-brand-600 hover:text-brand-800 hover:underline">View Profile</a>
                     : <span className="text-slate-300">—</span>}
                 </td>
-                <td className="p-3 text-slate-600">{l.title ?? '—'}</td>
-                <td className="p-3 text-slate-600">{l.company ?? '—'}</td>
+                <td className="p-3"><div className="max-w-[300px] truncate text-slate-600" title={l.title ?? ''}>{l.title ?? '—'}</div></td>
+                <td className="p-3"><div className="max-w-[170px] truncate text-slate-600" title={l.company ?? ''}>{l.company ?? '—'}</div></td>
                 <td className="p-3"><span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs">{STATUS_LABEL[l.status] ?? l.status}</span></td>
                 <td className="p-3 text-slate-500">{l.currentStep}</td>
               </tr>

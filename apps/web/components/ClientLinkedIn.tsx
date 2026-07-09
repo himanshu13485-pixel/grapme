@@ -197,17 +197,18 @@ function CampaignDetail({ campaignId, onChanged }: { campaignId: string; onChang
       <div className="card overflow-hidden">
         <table className="w-full text-sm">
           <thead className="border-b border-slate-100 text-left text-slate-400">
-            <tr><th className="p-2 font-medium">Name</th><th className="p-2 font-medium">Company</th><th className="p-2 font-medium">Status</th></tr>
+            <tr><th className="p-2 font-medium">Name</th><th className="p-2 font-medium">Title</th><th className="p-2 font-medium">Company</th><th className="p-2 font-medium">Status</th></tr>
           </thead>
           <tbody>
             {leads?.items.map((l) => (
               <tr key={l.id} className="border-b border-slate-50">
-                <td className="p-2 text-slate-800">{l.fullName}</td>
-                <td className="p-2 text-slate-600">{l.company ?? '—'}</td>
+                <td className="p-2"><div className="max-w-[180px] truncate text-slate-800" title={l.fullName}>{l.fullName}</div></td>
+                <td className="p-2"><div className="max-w-[240px] truncate text-slate-600" title={l.title ?? ''}>{l.title ?? '—'}</div></td>
+                <td className="p-2"><div className="max-w-[150px] truncate text-slate-600" title={l.company ?? ''}>{l.company ?? '—'}</div></td>
                 <td className="p-2"><span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs">{STATUS_LABEL[l.status] ?? l.status}</span></td>
               </tr>
             ))}
-            {leads && leads.items.length === 0 && <tr><td colSpan={3} className="p-6 text-center text-slate-400">No leads yet.</td></tr>}
+            {leads && leads.items.length === 0 && <tr><td colSpan={4} className="p-6 text-center text-slate-400">No leads yet.</td></tr>}
           </tbody>
         </table>
       </div>
