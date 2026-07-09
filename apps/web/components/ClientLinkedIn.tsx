@@ -9,7 +9,7 @@ import { LiRegularWizard } from '@/components/LiRegularWizard';
 import { LiAiWizard } from '@/components/LiAiWizard';
 import { LiImportLeadsModal } from '@/components/LiImportLeadsModal';
 import { LiCampaignSummary } from '@/components/LiCampaignSummary';
-import { LiSubscription, LiKnowledgeStats, LiCampaign, LiCampaignStats, LiLeadsPage, LinkedInAccount, accountHealth, parseLeadTitleCompany } from '@/lib/linkedin';
+import { LiSubscription, LiKnowledgeStats, LiCampaign, LiCampaignStats, LiLeadsPage, LinkedInAccount, accountHealth, timeAgo, parseLeadTitleCompany } from '@/lib/linkedin';
 
 const BASE = '/linkedin/portal';
 const STATUS_LABEL: Record<string, string> = {
@@ -51,8 +51,50 @@ export function ClientLinkedIn({ clientId }: { clientId: string }) {
         </div>
       )}
 
-      <Tabs tabs={[{ key: 'campaigns', label: 'Campaigns' }, { key: 'inbox', label: 'Inbox' }]} active={view} onChange={setView} />
-      {view === 'campaigns' ? <ClientCampaigns clientId={clientId} /> : <LiInbox clientId={clientId} base={BASE} />}
+      <Tabs
+        tabs={[
+          { key: 'campaigns', label: 'Campaigns' },
+          { key: 'inbox', label: 'Inbox' },
+          { key: 'accounts', label: 'Accounts', count: accounts.length || undefined },
+        ]}
+        active={view}
+        onChange={setView}
+      />
+      {view === 'campaigns' && <ClientCampaigns clientId={clientId} />}
+      {view === 'inbox' && <LiInbox clientId={clientId} base={BASE} />}
+      {view === 'accounts' && <ClientAccounts accounts={accounts} />}
+    </div>
+  );
+}
+
+/** Read-only list of the client's connected LinkedIn accounts (seats). */
+function ClientAccounts({ accounts }: { accounts: LinkedInAccount[] }) {
+  if (accounts.length === 0) {
+    return <EmptyState message="No LinkedIn accounts connected yet. Your account team connects your seats for you." />;
+  }
+  return (
+    <div className="card divide-y divide-slate-100">
+      {accounts.map((a) => {
+        const h = accountHealth(a.status);
+        return (
+          <div key={a.id} className="flex items-center justify-between p-4">
+            <div className="flex items-center gap-3">
+              <img src={a.avatarUrl || 'https://placehold.co/40x40/ede9fe/6d28d9?text=in'} alt="" className="h-10 w-10 rounded-full bg-brand-50 object-cover" />
+              <div>
+                <div className="font-medium text-slate-800">{a.fullName ?? 'Pending connection…'}</div>
+                <div className="line-clamp-1 text-xs text-slate-500">
+                  {a.headline ?? (a.status === 'CONNECTED' ? 'LinkedIn account' : 'Awaiting LinkedIn auth')}
+                  {a.connectionsCount != null && ` · ${a.connectionsCount} connections`}
+                  {a.status === 'CONNECTED' && ` · synced ${timeAgo(a.lastSyncedAt)}`}
+                </div>
+              </div>
+            </div>
+            <span className={`inline-flex items-center gap-1.5 rounded-full bg-slate-50 px-2.5 py-1 text-xs font-medium ${h.text}`}>
+              <span className={`h-2 w-2 rounded-full ${h.dot}`} />{h.label}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }
