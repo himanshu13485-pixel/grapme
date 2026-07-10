@@ -353,7 +353,26 @@ function channelLabel(c: { emailEnabled?: boolean; linkedInEnabled?: boolean }):
   return '📧 Email only';
 }
 
+const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+function formatDays(days?: number[] | null): string {
+  if (!days || days.length === 0) return '—';
+  return [...days].sort().map((x) => DAY_LABELS[x] ?? x).join(', ');
+}
+
 function ClientDetailView({ client }: { client: Client }) {
+  const { user } = useAuth();
+  const isClient = user?.role === 'CLIENT';
+  const base = isClient ? '/linkedin/portal' : '/linkedin';
+  const emailOn = client.emailEnabled !== false;
+  const linkedInOn = !!client.linkedInEnabled;
+  const [sub, setSub] = useState<LiSubscription | null>(null);
+
+  useEffect(() => {
+    if (!linkedInOn) return;
+    api.get<LiSubscription>(`${base}/clients/${client.id}/subscription`).then(setSub).catch(() => {});
+  }, [client.id, linkedInOn, base]);
+
+  const d = { ...LI_DEFAULTS, ...(sub?.campaignDefaults ?? {}) };
   const rows: { label: string; value: string }[] = [
     { label: 'Company name', value: client.name },
     { label: 'Invoice no.', value: client.invoiceNo || '—' },
@@ -363,18 +382,35 @@ function ClientDetailView({ client }: { client: Client }) {
     { label: 'Product / Category', value: client.productCategory || '—' },
     { label: 'Service type', value: serviceLabel(client.serviceType) },
     { label: 'Outreach channels', value: channelLabel(client) },
-    ...(client.linkedInEnabled ? [{ label: 'LinkedIn sourcing credits', value: client.linkedInCreditMetering ? 'Metered — 1 credit per run' : 'Not metered (free)' }] : []),
     { label: 'Plan', value: client.plan },
     { label: 'Plan validity', value: client.validityDays ? `${client.validityDays} days` : '—' },
     { label: 'Status', value: client.status },
-    { label: 'Contacts / month', value: String(client.monthlyQuota) },
-    { label: 'Sends / day', value: String(client.dailyBatchSize) },
-    { label: 'Batch window (days)', value: String(client.batchWindowDays) },
-    { label: 'Gap between stages (days)', value: String(client.stageIntervalDays) },
-    { label: 'Follow-ups (after initial)', value: String(client.followUpCount) },
-    { label: 'Send window', value: `${hourLabel(client.sendWindowStart)} – ${hourLabel(client.sendWindowEnd)}` },
-    { label: 'Interval jitter (± days)', value: String(client.stageIntervalJitterDays) },
-    { label: 'Weekdays only', value: client.weekdaysOnly ? 'Yes' : 'No' },
+    // ── Email business requirements (when Email is active) ──
+    ...(emailOn ? [
+      { label: 'Contacts / month', value: String(client.monthlyQuota) },
+      { label: 'Sends / day', value: String(client.dailyBatchSize) },
+      { label: 'Batch window (days)', value: String(client.batchWindowDays) },
+      { label: 'Gap between stages (days)', value: String(client.stageIntervalDays) },
+      { label: 'Follow-ups (after initial)', value: String(client.followUpCount) },
+      { label: 'Send window', value: `${hourLabel(client.sendWindowStart)} – ${hourLabel(client.sendWindowEnd)}` },
+      { label: 'Interval jitter (± days)', value: String(client.stageIntervalJitterDays) },
+      { label: 'Weekdays only', value: client.weekdaysOnly ? 'Yes' : 'No' },
+    ] : []),
+    // ── LinkedIn business requirements (when LinkedIn is active) ──
+    ...(linkedInOn ? [
+      { label: 'LinkedIn send window', value: `${hourLabel(d.workStartHour)} – ${hourLabel(d.workEndHour)}` },
+      { label: 'LinkedIn send days', value: formatDays(d.workDays) },
+      { label: 'Max connection invites / day', value: String(d.dailyConnectionLimit) },
+      { label: 'Max messages / day', value: String(d.dailyMessageLimit) },
+      // Admin-only tuning (kept secret from the client panel).
+      ...(!isClient ? [
+        { label: 'Seats', value: String(sub?.seats ?? '—') },
+        { label: 'Warm-up ramp', value: d.warmupEnabled ? `${d.warmupStartLimit}/day → full over ${d.warmupDays} days` : 'Off' },
+        { label: 'Auto lead sourcing (drip)', value: d.dripEnabled ? `${d.dripDailyTarget}/day · refill below ${d.dripBuffer}` : 'Off' },
+        { label: 'LinkedIn sourcing credits', value: client.linkedInCreditMetering ? 'Metered — 1 credit per run' : 'Not metered (free)' },
+        { label: 'WhatsApp notifications', value: sub?.whatsappEnabled ? (sub?.whatsappNumber || 'Enabled') : 'Off' },
+      ] : []),
+    ] : []),
   ];
   return (
     <div className="overflow-hidden rounded-lg border border-slate-200">
