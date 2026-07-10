@@ -40,6 +40,7 @@ const NAV: NavItem[] = [
   { href: '/greetings', label: 'Greetings', icon: '👋', admin: true, module: 'greetings' },
   { href: '/sub-admins', label: 'Sub Admins', icon: '⚇', admin: true, superOnly: true, module: 'sub-admins' },
   { href: '/activity-logs', label: 'Activity Logs', icon: '◷', admin: true, module: 'activity-logs' },
+  { href: '/pricing', label: 'Pricing', icon: '💳', module: 'pricing' },
   { href: '/my-profile', label: 'My Account', icon: '👤', module: 'my-profile' },
 ];
 
