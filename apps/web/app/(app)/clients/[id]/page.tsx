@@ -16,6 +16,7 @@ import { MailboxManager } from '@/components/MailboxManager';
 import { WorldMap, GeoData } from '@/components/WorldMap';
 import { ValidityBadge } from '@/components/Validity';
 import { LiSubscription, LI_DEFAULTS } from '@/lib/linkedin';
+import { usePlans } from '@/lib/plans';
 
 function hourLabel(h: number): string {
   const ampm = h < 12 ? 'AM' : 'PM';
@@ -1804,6 +1805,7 @@ function DetailSection({ title, rows }: { title: string; rows: DetailRow[] }) {
 
 function ClientDetails({ client }: { client: Client }) {
   const { user } = useAuth();
+  const { plans } = usePlans();
   const isClient = user?.role === 'CLIENT';
   const base = isClient ? '/linkedin/portal' : '/linkedin';
   const serviceLabel = (s?: string) =>
@@ -1812,6 +1814,7 @@ function ClientDetails({ client }: { client: Client }) {
   const emailOn = client.emailEnabled !== false;
   const linkedInOn = !!client.linkedInEnabled;
   const [sub, setSub] = useState<LiSubscription | null>(null);
+  const plan = plans.find((p) => p.name === client.plan);
 
   useEffect(() => {
     if (!linkedInOn) return;
@@ -1819,6 +1822,7 @@ function ClientDetails({ client }: { client: Client }) {
   }, [client.id, linkedInOn, base]);
 
   const d = { ...LI_DEFAULTS, ...(sub?.campaignDefaults ?? {}) };
+  const validity = client.validityDays ?? plan?.validityDays ?? null;
   const clientRows: DetailRow[] = [
     { label: 'Company name', value: client.name },
     { label: 'Invoice no.', value: client.invoiceNo || '—' },
@@ -1830,10 +1834,15 @@ function ClientDetails({ client }: { client: Client }) {
     { label: 'Service type', value: serviceLabel(client.serviceType) },
     { label: 'Outreach channels', value: linkedInOn ? (emailOn ? '📧 Email + 🔗 LinkedIn' : '🔗 LinkedIn only') : '📧 Email only' },
     { label: 'Plan', value: client.plan },
-    { label: 'Plan validity', value: client.validityDays ? `${client.validityDays} days` : '—' },
+    { label: 'Plan validity', value: validity ? `${validity} days` : '—' },
     { label: 'Status', value: active ? 'Active' : 'Inactive' },
   ];
   const emailRows: DetailRow[] = emailOn ? [
+    ...(plan ? [
+      { label: 'Credits (as per plan)', value: String(plan.emailCredits ?? 0) },
+      { label: 'Mailboxes (as per plan)', value: String(plan.mailboxLimit ?? 0) },
+      { label: 'Campaigns (as per plan)', value: String(plan.emailCampaignLimit ?? 0) },
+    ] : []),
     { label: 'Contacts / month', value: String(client.monthlyQuota) },
     { label: 'Sends / day', value: String(client.dailyBatchSize) },
     { label: 'Batch window (days)', value: String(client.batchWindowDays) },
@@ -1844,12 +1853,17 @@ function ClientDetails({ client }: { client: Client }) {
     { label: 'Weekdays only', value: client.weekdaysOnly ? 'Yes' : 'No' },
   ] : [];
   const linkedinRows: DetailRow[] = linkedInOn ? [
+    ...(plan ? [
+      { label: 'Credits (as per plan)', value: String(plan.linkedInCredits ?? 0) },
+      { label: 'Seats (as per plan)', value: String(plan.seatLimit ?? 0) },
+      { label: 'Campaigns (as per plan)', value: String(plan.linkedInCampaignLimit ?? 0) },
+    ] : []),
     { label: 'Send window', value: `${hourLabel(d.workStartHour)} – ${hourLabel(d.workEndHour)}` },
     { label: 'Send days', value: detailDays(d.workDays) },
     { label: 'Max connection invites / day', value: String(d.dailyConnectionLimit) },
     { label: 'Max messages / day', value: String(d.dailyMessageLimit) },
     ...(!isClient ? [
-      { label: 'Seats', value: String(sub?.seats ?? '—') },
+      { label: 'Seats (configured)', value: String(sub?.seats ?? '—') },
       { label: 'Warm-up ramp', value: d.warmupEnabled ? `${d.warmupStartLimit}/day → full over ${d.warmupDays} days` : 'Off' },
       { label: 'Auto lead sourcing (drip)', value: d.dripEnabled ? `${d.dripDailyTarget}/day · refill below ${d.dripBuffer}` : 'Off' },
       { label: 'LinkedIn sourcing credits', value: client.linkedInCreditMetering ? 'Metered — 1 credit per run' : 'Not metered (free)' },

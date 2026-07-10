@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState, FormEvent } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useCanDelete, useAuth } from '@/lib/auth';
-import { usePlans } from '@/lib/plans';
+import { usePlans, Plan } from '@/lib/plans';
 import { PageHeader, EmptyState, Modal, StatusBadge, Pagination } from '@/components/ui';
 import { LiClientPlanFields, LiClientSendWindowFields, LiPlanForm, emptyLiPlan } from '@/components/LiClientPlanFields';
 import { LiSubscription, LI_DEFAULTS } from '@/lib/linkedin';
@@ -361,11 +361,13 @@ function formatDays(days?: number[] | null): string {
 
 function ClientDetailView({ client }: { client: Client }) {
   const { user } = useAuth();
+  const { plans } = usePlans();
   const isClient = user?.role === 'CLIENT';
   const base = isClient ? '/linkedin/portal' : '/linkedin';
   const emailOn = client.emailEnabled !== false;
   const linkedInOn = !!client.linkedInEnabled;
   const [sub, setSub] = useState<LiSubscription | null>(null);
+  const plan = plans.find((p) => p.name === client.plan);
 
   useEffect(() => {
     if (!linkedInOn) return;
@@ -373,6 +375,7 @@ function ClientDetailView({ client }: { client: Client }) {
   }, [client.id, linkedInOn, base]);
 
   const d = { ...LI_DEFAULTS, ...(sub?.campaignDefaults ?? {}) };
+  const validity = client.validityDays ?? plan?.validityDays ?? null;
 
   const clientRows: DetailRow[] = [
     { label: 'Company name', value: client.name },
@@ -385,10 +388,15 @@ function ClientDetailView({ client }: { client: Client }) {
     { label: 'Service type', value: serviceLabel(client.serviceType) },
     { label: 'Outreach channels', value: channelLabel(client) },
     { label: 'Plan', value: client.plan },
-    { label: 'Plan validity', value: client.validityDays ? `${client.validityDays} days` : '—' },
+    { label: 'Plan validity', value: validity ? `${validity} days` : '—' },
     { label: 'Status', value: client.status },
   ];
   const emailRows: DetailRow[] = emailOn ? [
+    ...(plan ? [
+      { label: 'Credits (as per plan)', value: String(plan.emailCredits ?? 0) },
+      { label: 'Mailboxes (as per plan)', value: String(plan.mailboxLimit ?? 0) },
+      { label: 'Campaigns (as per plan)', value: String(plan.emailCampaignLimit ?? 0) },
+    ] : []),
     { label: 'Contacts / month', value: String(client.monthlyQuota) },
     { label: 'Sends / day', value: String(client.dailyBatchSize) },
     { label: 'Batch window (days)', value: String(client.batchWindowDays) },
@@ -399,13 +407,18 @@ function ClientDetailView({ client }: { client: Client }) {
     { label: 'Weekdays only', value: client.weekdaysOnly ? 'Yes' : 'No' },
   ] : [];
   const linkedinRows: DetailRow[] = linkedInOn ? [
+    ...(plan ? [
+      { label: 'Credits (as per plan)', value: String(plan.linkedInCredits ?? 0) },
+      { label: 'Seats (as per plan)', value: String(plan.seatLimit ?? 0) },
+      { label: 'Campaigns (as per plan)', value: String(plan.linkedInCampaignLimit ?? 0) },
+    ] : []),
     { label: 'Send window', value: `${hourLabel(d.workStartHour)} – ${hourLabel(d.workEndHour)}` },
     { label: 'Send days', value: formatDays(d.workDays) },
     { label: 'Max connection invites / day', value: String(d.dailyConnectionLimit) },
     { label: 'Max messages / day', value: String(d.dailyMessageLimit) },
     // Admin-only tuning (kept secret from the client panel).
     ...(!isClient ? [
-      { label: 'Seats', value: String(sub?.seats ?? '—') },
+      { label: 'Seats (configured)', value: String(sub?.seats ?? '—') },
       { label: 'Warm-up ramp', value: d.warmupEnabled ? `${d.warmupStartLimit}/day → full over ${d.warmupDays} days` : 'Off' },
       { label: 'Auto lead sourcing (drip)', value: d.dripEnabled ? `${d.dripDailyTarget}/day · refill below ${d.dripBuffer}` : 'Off' },
       { label: 'LinkedIn sourcing credits', value: client.linkedInCreditMetering ? 'Metered — 1 credit per run' : 'Not metered (free)' },
@@ -451,6 +464,20 @@ function Stat({ label, value }: { label: string; value: number }) {
   );
 }
 
+/** Compact "what this plan grants" hint shown under the Plan picker. */
+function PlanAllowance({ plan }: { plan?: Plan }) {
+  if (!plan) return null;
+  const ch = plan.emailEnabled !== false && plan.linkedInEnabled !== false ? '📧+🔗'
+    : plan.linkedInEnabled !== false ? '🔗' : '📧';
+  return (
+    <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
+      {ch} · validity {plan.validityDays ?? 0}d
+      {plan.emailEnabled !== false && <> · 📧 {plan.emailCredits ?? 0} cr / {plan.mailboxLimit ?? 0} mbx / {plan.emailCampaignLimit ?? 0} camp</>}
+      {plan.linkedInEnabled !== false && <> · 🔗 {plan.linkedInCredits ?? 0} cr / {plan.seatLimit ?? 0} seats / {plan.linkedInCampaignLimit ?? 0} camp</>}
+    </p>
+  );
+}
+
 /** LiPlanForm (+ shared plan / WhatsApp from the common form) → subscription PATCH payload. */
 function liPlanPayload(p: LiPlanForm, planName: string, whatsappEnabled: boolean, whatsappNumber: string) {
   return {
@@ -466,7 +493,7 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
   const { user } = useAuth();
   // Self-registered clients get their company/contact details prefilled.
   const isClient = user?.role === 'CLIENT';
-  const { planNames } = usePlans();
+  const { planNames, plans } = usePlans();
   const [form, setForm] = useState({
     name: isClient ? user?.companyName ?? '' : '',
     invoiceNo: '',
@@ -681,7 +708,12 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
           <select
             className="input"
             value={form.plan}
-            onChange={(e) => setForm({ ...form, plan: e.target.value })}
+            onChange={(e) => {
+              const name = e.target.value;
+              setForm({ ...form, plan: name });
+              const p = plans.find((pl) => pl.name === name);
+              if (p?.seatLimit) setLiPlan((lp) => ({ ...lp, seats: p.seatLimit! }));
+            }}
           >
             {planNames.map((p) => (
               <option key={p} value={p}>
@@ -689,6 +721,7 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
               </option>
             ))}
           </select>
+          <PlanAllowance plan={plans.find((p) => p.name === form.plan)} />
         </div>
       </div>
 
@@ -780,7 +813,7 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
   const [ownerBusy, setOwnerBusy] = useState(false);
   const [status, setStatus] = useState((client.status ?? 'active').toLowerCase());
   const [statusBusy, setStatusBusy] = useState(false);
-  const { planNames } = usePlans();
+  const { planNames, plans } = usePlans();
   // Always include the client's current plan even if it was later removed.
   const planOptions = [...new Set([client.plan, ...planNames].filter(Boolean))];
 
@@ -993,11 +1026,17 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
           <div>
             <label className="label">Plan</label>
             <select className="input" value={form.plan}
-              onChange={(e) => setForm({ ...form, plan: e.target.value })}>
+              onChange={(e) => {
+                const name = e.target.value;
+                setForm({ ...form, plan: name });
+                const p = plans.find((pl) => pl.name === name);
+                if (p?.seatLimit) setLiPlan((lp) => ({ ...lp, seats: p.seatLimit! }));
+              }}>
               {planOptions.map((p) => (
                 <option key={p} value={p}>{p}</option>
               ))}
             </select>
+            <PlanAllowance plan={plans.find((p) => p.name === form.plan)} />
           </div>
           <div className="sm:col-span-2">
             <label className="label">Outreach channels</label>
