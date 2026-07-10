@@ -7,27 +7,41 @@ import { api } from '@/lib/api';
 import { PageHeader, EmptyState, StatusBadge, Tabs, Modal } from '@/components/ui';
 import { LiSubscription, LinkedInAccount, LiCampaign, LiKnowledgeStats, accountHealth, timeAgo } from '@/lib/linkedin';
 import { LiInbox } from '@/components/LiInbox';
+import { ValidityBadge } from '@/components/Validity';
+
+interface ClientHead { name: string; emailEnabled?: boolean; linkedInEnabled?: boolean; status?: string; validityDays?: number | null; validityStartAt?: string | null }
 
 export default function ClientLinkedInPage() {
   const { clientId } = useParams<{ clientId: string }>();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [clientName, setClientName] = useState('');
+  const [client, setClient] = useState<ClientHead | null>(null);
   const [emailOn, setEmailOn] = useState(true);
   const [linkedInOn, setLinkedInOn] = useState<boolean | null>(null);
   const requestedTab = searchParams.get('tab');
   const [tab, setTab] = useState(['accounts', 'campaigns', 'inbox'].includes(requestedTab ?? '') ? requestedTab! : 'campaigns');
+  const clientName = client?.name ?? '';
+  const isActive = (client?.status ?? 'active').toLowerCase() === 'active';
 
   useEffect(() => {
-    api.get<{ name: string; emailEnabled?: boolean; linkedInEnabled?: boolean }>(`/clients/${clientId}`)
-      .then((c) => { setClientName(c.name); setEmailOn(c.emailEnabled !== false); setLinkedInOn(!!c.linkedInEnabled); })
+    api.get<ClientHead>(`/clients/${clientId}`)
+      .then((c) => { setClient(c); setEmailOn(c.emailEnabled !== false); setLinkedInOn(!!c.linkedInEnabled); })
       .catch(() => setLinkedInOn(false));
   }, [clientId]);
 
   return (
     <div>
       <Link href="/linkedin" className="text-sm text-slate-500 hover:text-slate-800">← LinkedIn Outreach</Link>
-      <PageHeader title={`${clientName || 'Client'} · LinkedIn`} subtitle="Subscription, connected accounts, and campaigns for this client." />
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <PageHeader title={`${clientName || 'Client'} · LinkedIn`} subtitle="Subscription, connected accounts, and campaigns for this client." />
+        <div className="flex flex-wrap items-center gap-3 pt-1">
+          <span className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold ${isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'}`}>
+            <span className={`h-2 w-2 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-slate-400'}`} />{isActive ? 'Active' : 'Inactive'}
+          </span>
+          {client && <ValidityBadge days={client.validityDays} startAt={client.validityStartAt} />}
+          <Link href={`/clients/${clientId}`} className="btn-ghost whitespace-nowrap">ℹ Profile details</Link>
+        </div>
+      </div>
 
       {/* Channel switcher — jump back to this client's Email workspace. */}
       <div className="mb-5 inline-flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
