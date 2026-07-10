@@ -37,12 +37,25 @@ export default function LinkedInSchedulePage() {
   const [q, setQ] = useState('');
   const [dq, setDq] = useState('');
   const [status, setStatus] = useState('');
+  const [emBusy, setEmBusy] = useState('');
 
   useEffect(() => {
     const t = setTimeout(() => setDq(q.trim()), 300);
     return () => clearTimeout(t);
   }, [q]);
   useEffect(() => { setPage(1); }, [dq, status]);
+
+  async function emergency(action: 'pause-all' | 'resume-all' | 'stop-all') {
+    const verb = action === 'pause-all' ? 'pause' : action === 'resume-all' ? 'resume' : 'stop';
+    if (!confirm(`${verb[0].toUpperCase() + verb.slice(1)} ALL LinkedIn campaigns across every client?`)) return;
+    setEmBusy(action);
+    try {
+      const r = await api.post<{ affected: number }>(`/linkedin/overview/${action}`, {});
+      alert(`${r.affected} campaign${r.affected === 1 ? '' : 's'} ${verb}${verb === 'stop' ? 'ped' : verb === 'resume' ? 'd' : 'd'}.`);
+      setPage(1);
+    } catch (e: any) { alert(e?.message ?? 'Failed'); }
+    finally { setEmBusy(''); }
+  }
 
   useEffect(() => {
     const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
@@ -57,6 +70,19 @@ export default function LinkedInSchedulePage() {
   return (
     <div>
       <PageHeader title="LinkedIn Campaigns Schedule" subtitle="Every client's LinkedIn campaigns and their send schedule in one board." />
+
+      {/* Emergency controls — act on every client's LinkedIn campaigns at once. */}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-3">
+        <div>
+          <div className="flex items-center gap-2 font-semibold text-rose-700"><span className="text-rose-500">⬣</span> Emergency controls</div>
+          <div className="text-xs text-rose-500">Act on every client&apos;s LinkedIn campaigns at once.</div>
+        </div>
+        <div className="flex gap-2">
+          <button className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-sm font-medium text-amber-700 disabled:opacity-50" disabled={emBusy !== ''} onClick={() => emergency('pause-all')}>⏸ Pause all</button>
+          <button className="rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-sm font-medium text-emerald-700 disabled:opacity-50" disabled={emBusy !== ''} onClick={() => emergency('resume-all')}>▶ Resume all</button>
+          <button className="rounded-lg bg-rose-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50" disabled={emBusy !== ''} onClick={() => emergency('stop-all')}>⏹ Stop all</button>
+        </div>
+      </div>
 
       <div className="mb-4 flex flex-wrap gap-3">
         <input className="input max-w-sm" placeholder="Filter by client, company, or invoice…" value={q} onChange={(e) => setQ(e.target.value)} />

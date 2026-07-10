@@ -299,6 +299,24 @@ export class LiCampaignsService {
     return paused.length;
   }
 
+  /** Tenant-wide emergency control across every client's LinkedIn campaigns. */
+  async emergencyControl(tenantId: string, action: 'pause' | 'resume' | 'stop'): Promise<{ affected: number }> {
+    const from = action === 'resume'
+      ? [LiCampaignStatus.PAUSED]
+      : action === 'pause'
+        ? [LiCampaignStatus.RUNNING]
+        : [LiCampaignStatus.RUNNING, LiCampaignStatus.PAUSED]; // stop
+    const to = action === 'resume' ? LiCampaignStatus.RUNNING
+      : action === 'pause' ? LiCampaignStatus.PAUSED
+        : LiCampaignStatus.ARCHIVED;
+    const campaigns = await this.prisma.liCampaign.findMany({
+      where: { tenantId, status: { in: from } },
+      select: { id: true },
+    });
+    for (const c of campaigns) await this.setStatus(c.id, to);
+    return { affected: campaigns.length };
+  }
+
   /** Resolve a client name/company/invoice search to matching client ids in the tenant. */
   private async clientIdsForSearch(tenantId: string, search?: string): Promise<string[] | undefined> {
     const q = search?.trim();

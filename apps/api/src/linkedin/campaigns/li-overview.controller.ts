@@ -1,4 +1,4 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Post, Query } from '@nestjs/common';
 import { LiCampaignStatus, LiLeadStatus, Role } from '@prisma/client';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
@@ -24,6 +24,14 @@ export class LiOverviewController {
       pageSize: pageSize ? Number(pageSize) : undefined,
     });
   }
+
+  /** Emergency controls across every client's LinkedIn campaigns. */
+  @Post('pause-all')
+  pauseAll(@CurrentUser() u: AuthUser) { return this.campaigns.emergencyControl(u.tenantId, 'pause'); }
+  @Post('resume-all')
+  resumeAll(@CurrentUser() u: AuthUser) { return this.campaigns.emergencyControl(u.tenantId, 'resume'); }
+  @Post('stop-all')
+  stopAll(@CurrentUser() u: AuthUser) { return this.campaigns.emergencyControl(u.tenantId, 'stop'); }
 
   @Get('leads')
   leads(
