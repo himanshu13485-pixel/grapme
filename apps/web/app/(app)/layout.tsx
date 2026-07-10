@@ -25,6 +25,8 @@ const NAV = [
   { href: '/deliverability', label: 'Deliverability', icon: '◎', module: 'deliverability' },
   { href: '/linkedin', label: 'LinkedIn Outreach', icon: '🔗', admin: true, module: 'linkedin' },
   { href: '/linkedin-inbox', label: 'LinkedIn Inbox', icon: '📨', admin: true, module: 'linkedin-inbox' },
+  { href: '/linkedin-schedule', label: 'LinkedIn Campaigns Schedule', icon: '🗓', admin: true, module: 'linkedin-schedule' },
+  { href: '/linkedin-leads', label: 'LinkedIn Leads', icon: '🧲', admin: true, module: 'linkedin-leads' },
   { href: '/approvals', label: 'Approvals', icon: '✓', admin: true, module: 'approvals' },
   { href: '/compliance', label: 'Compliance', icon: '⚖', admin: true, module: 'compliance' },
   { href: '/sub-admins', label: 'Sub Admins', icon: '⚇', admin: true, superOnly: true, module: 'sub-admins' },

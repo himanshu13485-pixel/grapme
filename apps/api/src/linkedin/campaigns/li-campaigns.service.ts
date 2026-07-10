@@ -290,6 +290,88 @@ export class LiCampaignsService {
     return paused.length;
   }
 
+  /** Resolve a client name/company/invoice search to matching client ids in the tenant. */
+  private async clientIdsForSearch(tenantId: string, search?: string): Promise<string[] | undefined> {
+    const q = search?.trim();
+    if (!q) return undefined;
+    const ci = { contains: q, mode: 'insensitive' as const };
+    const clients = await this.prisma.client.findMany({
+      where: { tenantId, OR: [{ name: ci }, { productCategory: ci }, { invoiceNo: ci }] },
+      select: { id: true },
+    });
+    return clients.map((c) => c.id);
+  }
+
+  private async clientMap(clientIds: string[]) {
+    const clients = await this.prisma.client.findMany({
+      where: { id: { in: [...new Set(clientIds)] } },
+      select: { id: true, name: true, productCategory: true, invoiceNo: true },
+    });
+    return new Map(clients.map((c) => [c.id, { id: c.id, name: c.name, company: c.productCategory, invoice: c.invoiceNo }]));
+  }
+
+  /** Admin cross-client campaign schedule board. */
+  async globalSchedule(tenantId: string, opts: { clientSearch?: string; status?: LiCampaignStatus; page?: number; pageSize?: number }) {
+    const page = Math.max(1, opts.page ?? 1);
+    const pageSize = Math.min(100, Math.max(1, opts.pageSize ?? 25));
+    const clientIds = await this.clientIdsForSearch(tenantId, opts.clientSearch);
+    if (clientIds && clientIds.length === 0) return { items: [], total: 0, page, pageSize };
+
+    const where: Prisma.LiCampaignWhereInput = {
+      tenantId,
+      status: opts.status ?? { not: LiCampaignStatus.DELETED },
+      ...(clientIds ? { clientId: { in: clientIds } } : {}),
+    };
+    const [total, rows] = await this.prisma.$transaction([
+      this.prisma.liCampaign.count({ where }),
+      this.prisma.liCampaign.findMany({
+        where, orderBy: { createdAt: 'desc' }, skip: (page - 1) * pageSize, take: pageSize,
+        include: { linkedInAccount: { select: { fullName: true } }, _count: { select: { leads: true } } },
+      }),
+    ]);
+    const cmap = await this.clientMap(rows.map((r) => r.clientId));
+    const items = rows.map((c) => ({
+      id: c.id, name: c.name, status: c.status, clientId: c.clientId,
+      timezone: c.timezone, run247: c.run247, workStartHour: c.workStartHour, workEndHour: c.workEndHour,
+      workDays: c.workDays, dailyConnectionLimit: c.dailyConnectionLimit, dailyMessageLimit: c.dailyMessageLimit,
+      warmupEnabled: c.warmupEnabled, dripEnabled: c.dripEnabled,
+      seat: c.linkedInAccount?.fullName ?? null, leads: c._count.leads,
+      client: cmap.get(c.clientId) ?? null,
+    }));
+    return { items, total, page, pageSize };
+  }
+
+  /** Admin cross-client leads view (leads sourced via drip / import / audience). */
+  async globalLeads(tenantId: string, opts: { clientSearch?: string; status?: LiLeadStatus; page?: number; pageSize?: number }) {
+    const page = Math.max(1, opts.page ?? 1);
+    const pageSize = Math.min(100, Math.max(1, opts.pageSize ?? 25));
+    const clientIds = await this.clientIdsForSearch(tenantId, opts.clientSearch);
+    if (clientIds && clientIds.length === 0) return { items: [], total: 0, page, pageSize };
+
+    const where: Prisma.LiLeadWhereInput = {
+      campaign: { tenantId, ...(clientIds ? { clientId: { in: clientIds } } : {}) },
+      ...(opts.status ? { status: opts.status } : {}),
+    };
+    const [total, rows] = await this.prisma.$transaction([
+      this.prisma.liLead.count({ where }),
+      this.prisma.liLead.findMany({
+        where, orderBy: { createdAt: 'desc' }, skip: (page - 1) * pageSize, take: pageSize,
+        select: {
+          id: true, fullName: true, title: true, company: true, profileUrl: true, status: true, currentStep: true, createdAt: true,
+          campaign: { select: { id: true, name: true, clientId: true } },
+        },
+      }),
+    ]);
+    const cmap = await this.clientMap(rows.map((r) => r.campaign.clientId));
+    const items = rows.map((l) => ({
+      id: l.id, fullName: l.fullName, title: l.title, company: l.company, profileUrl: l.profileUrl,
+      status: l.status, currentStep: l.currentStep, createdAt: l.createdAt,
+      campaign: { id: l.campaign.id, name: l.campaign.name },
+      client: cmap.get(l.campaign.clientId) ?? null,
+    }));
+    return { items, total, page, pageSize };
+  }
+
   private async assertExists(id: string) {
     const n = await this.prisma.liCampaign.count({ where: { id } });
     if (!n) throw new NotFoundException('Campaign not found');
