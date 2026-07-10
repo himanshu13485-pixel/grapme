@@ -157,7 +157,12 @@ export class ProgramsService {
       ownerData.ownerUserId = user.userId;
     }
     // `linkedin` is the client's self-service send-window request — not a Client column.
-    const { linkedin, ...clientData } = dto;
+    const { linkedin, validityDays, ...clientData } = dto;
+    // Setting a validity window starts the clock now (mirrors the Validity menu).
+    const validity: { validityDays?: number | null; validityStartAt?: Date | null } =
+      validityDays === undefined ? {}
+        : validityDays > 0 ? { validityDays: Math.floor(validityDays), validityStartAt: new Date() }
+          : { validityDays: null, validityStartAt: null };
     // A CLIENT can't self-enable the paid LinkedIn channel: create the profile with
     // Email active as a baseline and route LinkedIn through admin approval instead.
     const clientRequestsLinkedIn = user.role === Role.CLIENT && !!clientData.linkedInEnabled;
@@ -166,7 +171,7 @@ export class ProgramsService {
       clientData.linkedInEnabled = false;
     }
     const client = await this.prisma.client.create({
-      data: { tenantId: user.tenantId, ...clientData, ...ownerData },
+      data: { tenantId: user.tenantId, ...clientData, ...validity, ...ownerData },
     });
 
     if (clientRequestsLinkedIn) {
@@ -387,7 +392,21 @@ export class ProgramsService {
 
   async updateClient(user: AuthUser, id: string, dto: UpdateClientDto) {
     const before = await this.assertClient(user, id);
-    const updated = await this.prisma.client.update({ where: { id }, data: dto });
+    // Validity is stored with a start date; changing the window (re)starts the clock.
+    const { validityDays, ...rest } = dto;
+    const data: Prisma.ClientUpdateInput = { ...rest };
+    if (validityDays !== undefined && validityDays !== (before.validityDays ?? 0)) {
+      if (validityDays > 0) {
+        data.validityDays = Math.floor(validityDays);
+        data.validityStartAt = new Date();
+        data.validityNotifyStage = 0;
+      } else {
+        data.validityDays = null;
+        data.validityStartAt = null;
+        data.validityNotifyStage = 0;
+      }
+    }
+    const updated = await this.prisma.client.update({ where: { id }, data });
     // Record only the fields that actually changed, so the audit trail is clear.
     const changedBefore: Record<string, unknown> = { name: before.name };
     const changedAfter: Record<string, unknown> = { name: updated.name };

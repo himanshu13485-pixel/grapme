@@ -507,6 +507,7 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
     serviceType: 'EXPORT',
     whatsappEnabled: false,
     whatsappNumber: '',
+    validityDays: 0,
     emailCredits: 0,
     emailCreditMetering: false,
     mailboxLimit: 0,
@@ -718,7 +719,7 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
             onChange={(e) => {
               const name = e.target.value;
               const p = plans.find((pl) => pl.name === name);
-              setForm((f) => ({ ...f, plan: name, ...(p ? { emailCredits: p.emailCredits ?? 0, mailboxLimit: p.mailboxLimit ?? 0, emailCampaignLimit: p.emailCampaignLimit ?? 0 } : {}) }));
+              setForm((f) => ({ ...f, plan: name, ...(p ? { validityDays: p.validityDays ?? 0, emailCredits: p.emailCredits ?? 0, mailboxLimit: p.mailboxLimit ?? 0, emailCampaignLimit: p.emailCampaignLimit ?? 0 } : {}) }));
               if (p) setLiPlan((lp) => ({ ...lp, seats: p.seatLimit || lp.seats, credits: p.linkedInCredits ?? 0, campaignLimit: p.linkedInCampaignLimit ?? 0 }));
             }}
           >
@@ -730,6 +731,12 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
           </select>
           <PlanAllowance plan={plans.find((p) => p.name === form.plan)} />
         </div>
+        {!isClient && (
+          <div>
+            <label className="label">Validity (days)</label>
+            <input className="input" type="number" min={0} value={form.validityDays} onChange={(e) => setForm({ ...form, validityDays: Math.max(0, Number(e.target.value) || 0) })} placeholder="0 = no expiry" />
+          </div>
+        )}
       </div>
 
       {/* Email business requirements — only when the client uses Email. */}
@@ -801,6 +808,7 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
     serviceType: client.serviceType ?? 'EXPORT',
     whatsappEnabled: false,
     whatsappNumber: '',
+    validityDays: client.validityDays ?? 0,
     emailCredits: client.emailCredits ?? 0,
     emailCreditMetering: client.emailCreditMetering ?? false,
     mailboxLimit: client.mailboxLimit ?? 0,
@@ -940,6 +948,7 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
         emailEnabled: channels === 'EMAIL' || channels === 'BOTH',
         linkedInEnabled: channels === 'LINKEDIN' || channels === 'BOTH',
         linkedInCreditMetering: channels !== 'EMAIL' ? creditMetering : false,
+        validityDays: Number(form.validityDays),
         emailCredits: Number(form.emailCredits),
         emailCreditMetering: form.emailCreditMetering,
         mailboxLimit: Number(form.mailboxLimit),
@@ -1057,7 +1066,7 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
               onChange={(e) => {
                 const name = e.target.value;
                 const p = plans.find((pl) => pl.name === name);
-                setForm((f) => ({ ...f, plan: name, ...(p ? { emailCredits: p.emailCredits ?? 0, mailboxLimit: p.mailboxLimit ?? 0, emailCampaignLimit: p.emailCampaignLimit ?? 0 } : {}) }));
+                setForm((f) => ({ ...f, plan: name, ...(p ? { validityDays: p.validityDays ?? 0, emailCredits: p.emailCredits ?? 0, mailboxLimit: p.mailboxLimit ?? 0, emailCampaignLimit: p.emailCampaignLimit ?? 0 } : {}) }));
                 if (p) setLiPlan((lp) => ({ ...lp, seats: p.seatLimit || lp.seats, credits: p.linkedInCredits ?? 0, campaignLimit: p.linkedInCampaignLimit ?? 0 }));
               }}>
               {planOptions.map((p) => (
@@ -1065,6 +1074,11 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
               ))}
             </select>
             <PlanAllowance plan={plans.find((p) => p.name === form.plan)} />
+          </div>
+          <div>
+            <label className="label">Validity (days)</label>
+            <input className="input" type="number" min={0} value={form.validityDays} onChange={(e) => setForm({ ...form, validityDays: Math.max(0, Number(e.target.value) || 0) })} placeholder="0 = no expiry" />
+            <p className="mt-0.5 text-[11px] text-slate-400">Changing this restarts the validity window from today.</p>
           </div>
           <div className="sm:col-span-2">
             <label className="label">Outreach channels</label>

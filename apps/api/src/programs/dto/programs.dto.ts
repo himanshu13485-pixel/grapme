@@ -31,6 +31,7 @@ export class CreateClientDto {
   @IsOptional() @IsBoolean() emailEnabled?: boolean;
   @IsOptional() @IsBoolean() linkedInEnabled?: boolean;
   @IsOptional() @IsBoolean() linkedInCreditMetering?: boolean;
+  @IsOptional() @IsInt() @Min(0) validityDays?: number; // plan validity window in days (0 = no expiry)
   // Per-client Email entitlements (defaulted from the plan, overridable).
   @IsOptional() @IsInt() @Min(0) emailCredits?: number;
   @IsOptional() @IsBoolean() emailCreditMetering?: boolean;
@@ -61,6 +62,7 @@ export class UpdateClientDto {
   @IsOptional() @IsBoolean() emailEnabled?: boolean;
   @IsOptional() @IsBoolean() linkedInEnabled?: boolean;
   @IsOptional() @IsBoolean() linkedInCreditMetering?: boolean;
+  @IsOptional() @IsInt() @Min(0) validityDays?: number;
   @IsOptional() @IsInt() @Min(0) emailCredits?: number;
   @IsOptional() @IsBoolean() emailCreditMetering?: boolean;
   @IsOptional() @IsInt() @Min(0) mailboxLimit?: number;
