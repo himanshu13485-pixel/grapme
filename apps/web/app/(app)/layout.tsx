@@ -42,6 +42,7 @@ const NAV: NavItem[] = [
   { href: '/plans', label: 'Set Membership', icon: '🏷', admin: true, module: 'plans' },
   { href: '/plan-requests', label: 'Plan Upgrade Request', icon: '🧾', admin: true, module: 'plan-requests' },
   { href: '/billing', label: 'Payment / Billing', icon: '💳', admin: true, module: 'billing' },
+  { href: '/whatsapp', label: 'WhatsApp', icon: '💬', admin: true, module: 'whatsapp' },
   { href: '/my-profile', label: 'My Account', icon: '👤', module: 'my-profile' },
 ];
 

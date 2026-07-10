@@ -23,6 +23,7 @@ import { ComplianceModule } from './compliance/compliance.module';
 import { ProgramsModule } from './programs/programs.module';
 import { PlansModule } from './plans/plans.module';
 import { BillingModule } from './billing/billing.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { GreetingsModule } from './greetings/greetings.module';
 import { AssetsModule } from './assets/assets.module';
 import { LinkedinModule } from './linkedin/linkedin.module';
@@ -62,6 +63,7 @@ const engineModules = queueEnabled
     ProgramsModule,
     PlansModule,
     BillingModule,
+    NotificationsModule,
     GreetingsModule,
     AssetsModule,
     LinkedinModule,

@@ -21,6 +21,7 @@ const MODULES: { key: string; label: string }[] = [
   { key: 'registered-clients', label: 'Registered Clients' },
   { key: 'plan-requests', label: 'Plan Upgrade Request' },
   { key: 'billing', label: 'Payment / Billing' },
+  { key: 'whatsapp', label: 'WhatsApp' },
   { key: 'cohort-schedule', label: 'Cohort Schedule' },
   { key: 'campaigns', label: 'Campaigns' },
   { key: 'contacts', label: 'Contacts' },
