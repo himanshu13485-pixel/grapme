@@ -23,8 +23,6 @@ const NAV: NavItem[] = [
   { href: '/billing', label: 'Payment / Billing', icon: '💳', admin: true, module: 'billing' },
   // ── Email Outreach (collapsed under "More…") ──
   { href: '/cohort-schedule', label: 'Cohort Schedule', icon: '📅', admin: true, module: 'cohort-schedule', group: 'email' },
-  { href: '/validity', label: 'Validity', icon: '⏳', admin: true, module: 'validity', group: 'email' },
-  { href: '/plans', label: 'Membership', icon: '🏷', admin: true, module: 'plans', group: 'email' },
   { href: '/campaigns', label: 'Campaigns', icon: '✈', module: 'campaigns', group: 'email' },
   { href: '/contacts', label: 'Contacts', icon: '☰', module: 'contacts', group: 'email' },
   { href: '/templates', label: 'Templates', icon: '❏', module: 'templates', group: 'email' },
@@ -43,6 +41,7 @@ const NAV: NavItem[] = [
   { href: '/sub-admins', label: 'Sub Admins', icon: '⚇', admin: true, superOnly: true, module: 'sub-admins' },
   { href: '/activity-logs', label: 'Activity Logs', icon: '◷', admin: true, module: 'activity-logs' },
   { href: '/pricing', label: 'Membership', icon: '🪙', module: 'pricing' },
+  { href: '/plans', label: 'Set Membership', icon: '🏷', admin: true, module: 'plans' },
   { href: '/my-profile', label: 'My Account', icon: '👤', module: 'my-profile' },
 ];
 
