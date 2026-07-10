@@ -221,6 +221,9 @@ model Plan {
   seatLimit             Int  @default(0) // No. of seats (LinkedIn)
   emailCampaignLimit    Int  @default(0) // No. of campaigns (Email)
   linkedInCampaignLimit Int  @default(0) // No. of campaigns (LinkedIn)
+  // Multi-currency pricing. Shape:
+  // [{ currency, monthlyPrice, monthlyBest, yearlyPrice, yearlyBest }]
+  pricing               Json?
   createdAt DateTime @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)

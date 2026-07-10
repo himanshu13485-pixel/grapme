@@ -2,7 +2,7 @@
 
 import { useState, FormEvent } from 'react';
 import { api } from '@/lib/api';
-import { usePlans, Plan } from '@/lib/plans';
+import { usePlans, Plan, PlanPrice } from '@/lib/plans';
 import { PageHeader } from '@/components/ui';
 
 export default function MembershipPage() {
@@ -115,10 +115,20 @@ function PlanRow({
     emailCampaignLimit: num(plan.emailCampaignLimit),
     linkedInCampaignLimit: num(plan.linkedInCampaignLimit),
   });
+  const [pricing, setPricing] = useState<PlanPrice[]>(() => plan.pricing ?? []);
   const [busy, setBusy] = useState(false);
   const set = (k: keyof typeof form, v: number) => setForm((f) => ({ ...f, [k]: v }));
 
+  const setPrice = (i: number, k: keyof PlanPrice, v: string | number) =>
+    setPricing((rows) => rows.map((r, j) => (j === i ? { ...r, [k]: k === 'currency' ? String(v).toUpperCase() : Math.max(0, Number(v) || 0) } : r)));
+  const addCurrency = (cur: string) => {
+    if (!cur || pricing.some((p) => p.currency === cur)) return;
+    setPricing((rows) => [...rows, { currency: cur, monthlyPrice: 0, monthlyBest: 0, yearlyPrice: 0, yearlyBest: 0 }]);
+  };
+  const removeCurrency = (i: number) => setPricing((rows) => rows.filter((_, j) => j !== i));
+
   const dirty =
+    JSON.stringify(pricing) !== JSON.stringify(plan.pricing ?? []) ||
     color.toLowerCase() !== plan.color.toLowerCase() ||
     emailOn !== (plan.emailEnabled !== false) ||
     linkedInOn !== (plan.linkedInEnabled !== false) ||
@@ -146,6 +156,7 @@ function PlanRow({
         seatLimit: form.seatLimit,
         emailCampaignLimit: form.emailCampaignLimit,
         linkedInCampaignLimit: form.linkedInCampaignLimit,
+        pricing,
       });
       onSaved();
     } catch {
@@ -218,9 +229,62 @@ function PlanRow({
           </div>
         </div>
       </div>
+
+      {/* Multi-currency pricing */}
+      <div className="mt-4">
+        <div className="mb-2 flex items-center gap-3">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">💳 Pricing</div>
+          <select
+            className="input h-8 w-40 py-0 text-xs"
+            value=""
+            onChange={(e) => { addCurrency(e.target.value); e.target.value = ''; }}
+          >
+            <option value="">+ Add currency…</option>
+            {CURRENCIES.filter((c) => !pricing.some((p) => p.currency === c)).map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        </div>
+        {pricing.length === 0 ? (
+          <p className="text-xs text-slate-400">No pricing set — add a currency to enter monthly / yearly price and best price.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[560px] text-sm">
+              <thead className="text-left text-[10px] uppercase text-slate-400">
+                <tr>
+                  <th className="px-2 py-1">Currency</th>
+                  <th className="px-2 py-1" colSpan={2}>Monthly</th>
+                  <th className="px-2 py-1" colSpan={2}>Yearly</th>
+                  <th className="px-2 py-1"></th>
+                </tr>
+                <tr className="text-[10px] text-slate-300">
+                  <th></th>
+                  <th className="px-2 font-normal">Price</th><th className="px-2 font-normal">Best price</th>
+                  <th className="px-2 font-normal">Price</th><th className="px-2 font-normal">Best price</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {pricing.map((p, i) => (
+                  <tr key={i}>
+                    <td className="px-2 py-1"><input className="input w-20 py-1 text-center text-sm font-medium uppercase" value={p.currency} onChange={(e) => setPrice(i, 'currency', e.target.value)} /></td>
+                    <td className="px-2 py-1"><input type="number" min={0} className="input w-24 py-1 text-sm" value={p.monthlyPrice} onChange={(e) => setPrice(i, 'monthlyPrice', e.target.value)} /></td>
+                    <td className="px-2 py-1"><input type="number" min={0} className="input w-24 py-1 text-sm" value={p.monthlyBest} onChange={(e) => setPrice(i, 'monthlyBest', e.target.value)} /></td>
+                    <td className="px-2 py-1"><input type="number" min={0} className="input w-24 py-1 text-sm" value={p.yearlyPrice} onChange={(e) => setPrice(i, 'yearlyPrice', e.target.value)} /></td>
+                    <td className="px-2 py-1"><input type="number" min={0} className="input w-24 py-1 text-sm" value={p.yearlyBest} onChange={(e) => setPrice(i, 'yearlyBest', e.target.value)} /></td>
+                    <td className="px-2 py-1"><button type="button" className="text-xs text-slate-400 hover:text-rose-600" onClick={() => removeCurrency(i)}>✕</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
+
+const CURRENCIES = ['USD', 'INR', 'EUR', 'GBP', 'AUD', 'CAD', 'AED', 'SGD', 'JPY', 'ZAR'];
 
 function NumField({ label, value, onChange, hint }: { label: string; value: number; onChange: (v: number) => void; hint?: string }) {
   return (

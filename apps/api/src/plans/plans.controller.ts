@@ -42,6 +42,7 @@ export class PlansController {
       emailCredits?: number; linkedInCredits?: number;
       mailboxLimit?: number; seatLimit?: number;
       emailCampaignLimit?: number; linkedInCampaignLimit?: number;
+      pricing?: unknown;
     },
   ) {
     return this.plans.update(user, id, dto);

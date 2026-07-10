@@ -3,11 +3,20 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from './api';
 
+export interface PlanPrice {
+  currency: string;
+  monthlyPrice: number;
+  monthlyBest: number;
+  yearlyPrice: number;
+  yearlyBest: number;
+}
+
 export interface Plan {
   id: string;
   name: string;
   color: string;
   sortOrder?: number;
+  pricing?: PlanPrice[] | null;
   emailEnabled?: boolean;
   linkedInEnabled?: boolean;
   validityDays?: number | null;

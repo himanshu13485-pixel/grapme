@@ -82,6 +82,7 @@ export class PlansService {
       emailCredits?: number; linkedInCredits?: number;
       mailboxLimit?: number; seatLimit?: number;
       emailCampaignLimit?: number; linkedInCampaignLimit?: number;
+      pricing?: unknown;
     },
   ) {
     this.assertAdmin(user);
@@ -124,8 +125,23 @@ export class PlansService {
         ...(n(dto.seatLimit) !== undefined ? { seatLimit: n(dto.seatLimit) } : {}),
         ...(n(dto.emailCampaignLimit) !== undefined ? { emailCampaignLimit: n(dto.emailCampaignLimit) } : {}),
         ...(n(dto.linkedInCampaignLimit) !== undefined ? { linkedInCampaignLimit: n(dto.linkedInCampaignLimit) } : {}),
+        ...(dto.pricing !== undefined ? { pricing: this.sanitizePricing(dto.pricing) } : {}),
       },
     });
+  }
+
+  /** Normalise multi-currency pricing rows to a clean JSON array. */
+  private sanitizePricing(input: unknown) {
+    if (!Array.isArray(input)) return [];
+    const money = (v: unknown) => (typeof v === 'number' && v >= 0 && Number.isFinite(v) ? Math.round(v * 100) / 100 : 0);
+    return input
+      .filter((p): p is Record<string, unknown> => !!p && typeof (p as any).currency === 'string' && (p as any).currency.trim())
+      .map((p) => ({
+        currency: String(p.currency).trim().toUpperCase().slice(0, 8),
+        monthlyPrice: money(p.monthlyPrice), monthlyBest: money(p.monthlyBest),
+        yearlyPrice: money(p.yearlyPrice), yearlyBest: money(p.yearlyBest),
+      }))
+      .slice(0, 30);
   }
 
   async remove(user: AuthUser, id: string) {
