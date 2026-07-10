@@ -89,7 +89,7 @@ export class LiPortalService {
   async updateCampaign(userId: string, id: string, dto: UpdateLiCampaignDto) { await this.assertCampaign(userId, id); return this.campaigns.update(id, dto); }
   async listCampaigns(userId: string, clientId: string) { await this.assertOwnsClient(userId, clientId); return this.campaigns.list(clientId); }
   async getCampaign(userId: string, id: string) { await this.assertCampaign(userId, id); return this.campaigns.get(id); }
-  async campaignStats(userId: string, id: string) { await this.assertCampaign(userId, id); return this.campaigns.stats(id); }
+  async campaignStats(userId: string, id: string, opts?: { period?: string; from?: string; to?: string }) { await this.assertCampaign(userId, id); return this.campaigns.stats(id, opts); }
   async campaignLeads(userId: string, id: string, opts: any) { await this.assertCampaign(userId, id); return this.campaigns.leads(id, opts); }
   async importLeads(userId: string, id: string, dto: ImportLiLeadsDto) { await this.assertCampaign(userId, id); return this.campaigns.importLeads(id, dto); }
   async updateAudience(userId: string, id: string, dto: UpsertLiAudienceDto) { await this.assertCampaign(userId, id); return this.campaigns.upsertAudience(id, dto); }

@@ -47,14 +47,23 @@ export default function CampaignDetailPage() {
   const [geo, setGeo] = useState<GeoData | null>(null);
   const [error, setError] = useState('');
   const [scheduleAt, setScheduleAt] = useState('');
+  const [period, setPeriod] = useState('lifetime');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
 
   const load = useCallback(() => {
     api.get<Campaign>(`/campaigns/${id}`).then(setCampaign).catch(() => {});
-    api.get<Analytics>(`/campaigns/${id}/analytics`).then(setAnalytics).catch(() => {});
     api.get<GeoData>(`/campaigns/${id}/geo`).then(setGeo).catch(() => {});
   }, [id]);
 
   useEffect(() => load(), [load]);
+
+  useEffect(() => {
+    if (period === 'custom' && (!from || !to)) return;
+    const qs = new URLSearchParams({ period });
+    if (period === 'custom') { qs.set('from', from); qs.set('to', to); }
+    api.get<Analytics>(`/campaigns/${id}/analytics?${qs}`).then(setAnalytics).catch(() => {});
+  }, [id, period, from, to]);
 
   async function act(path: string, body?: unknown) {
     setError('');
@@ -125,6 +134,23 @@ export default function CampaignDetailPage() {
       </div>
 
       {/* Analytics */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 text-sm">
+          {[['week', 'Week'], ['month', 'Month'], ['lifetime', 'Lifetime'], ['custom', 'Custom']].map(([k, l]) => (
+            <button key={k} onClick={() => setPeriod(k)}
+              className={`rounded-md px-3 py-1 font-medium transition ${period === k ? 'bg-brand-600 text-white' : 'text-slate-500 hover:text-slate-700'}`}>
+              {l}
+            </button>
+          ))}
+        </div>
+        {period === 'custom' && (
+          <span className="flex items-center gap-1 text-sm">
+            <input type="date" className="input py-1 text-sm" value={from} onChange={(e) => setFrom(e.target.value)} />
+            <span className="text-slate-400">→</span>
+            <input type="date" className="input py-1 text-sm" value={to} onChange={(e) => setTo(e.target.value)} />
+          </span>
+        )}
+      </div>
       <div className="mb-2 flex items-center justify-between">
         <h3 className="text-sm font-semibold text-slate-700">Campaign report</h3>
         <button

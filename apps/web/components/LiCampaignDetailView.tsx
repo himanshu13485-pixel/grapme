@@ -23,24 +23,55 @@ const STATUS_LABEL: Record<string, string> = {
 
 /** KPIs + sentiment + Setup/Analytics/Details for a campaign. Shared by admin
  *  ('/linkedin') and the client portal ('/linkedin/portal'). */
+const PERIODS: { key: string; label: string }[] = [
+  { key: 'week', label: 'Week' }, { key: 'month', label: 'Month' }, { key: 'lifetime', label: 'Lifetime' }, { key: 'custom', label: 'Custom' },
+];
+
 export function LiCampaignDetailView({ campaignId, base = '/linkedin' }: { campaignId: string; base?: string }) {
   const [c, setC] = useState<LiCampaignDetail | null>(null);
   const [stats, setStats] = useState<LiCampaignStats | null>(null);
   const [view, setView] = useState('setup');
+  const [period, setPeriod] = useState('lifetime');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
 
   useEffect(() => {
-    Promise.all([
-      api.get<LiCampaignDetail>(`${base}/campaigns/${campaignId}`),
-      api.get<LiCampaignStats>(`${base}/campaigns/${campaignId}/stats`),
-    ]).then(([cd, st]) => { setC(cd); setStats(st); }).catch(() => {});
+    api.get<LiCampaignDetail>(`${base}/campaigns/${campaignId}`).then(setC).catch(() => {});
   }, [campaignId, base]);
+
+  useEffect(() => {
+    if (period === 'custom' && (!from || !to)) return;
+    const qs = new URLSearchParams({ period });
+    if (period === 'custom') { qs.set('from', from); qs.set('to', to); }
+    api.get<LiCampaignStats>(`${base}/campaigns/${campaignId}/stats?${qs}`).then(setStats).catch(() => {});
+  }, [campaignId, base, period, from, to]);
 
   if (!c || !stats) return <EmptyState message="Loading…" />;
 
+  const periodSub = period === 'lifetime' ? 'in total' : period === 'custom' ? 'in range' : `this ${period}`;
+
   return (
     <div>
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 text-sm">
+          {PERIODS.map((p) => (
+            <button key={p.key} onClick={() => setPeriod(p.key)}
+              className={`rounded-md px-3 py-1 font-medium transition ${period === p.key ? 'bg-brand-600 text-white' : 'text-slate-500 hover:text-slate-700'}`}>
+              {p.label}
+            </button>
+          ))}
+        </div>
+        {period === 'custom' && (
+          <span className="flex items-center gap-1 text-sm">
+            <input type="date" className="input py-1 text-sm" value={from} onChange={(e) => setFrom(e.target.value)} />
+            <span className="text-slate-400">→</span>
+            <input type="date" className="input py-1 text-sm" value={to} onChange={(e) => setTo(e.target.value)} />
+          </span>
+        )}
+      </div>
+
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-        <Kpi label="Connections Sent" value={stats.sent} sub="in total" />
+        <Kpi label="Connections Sent" value={stats.sent} sub={periodSub} />
         <Kpi label="Acceptance Rate" value={`${stats.acceptanceRate}%`} sub={`${stats.accepted} accepted`} />
         <Kpi label="Reply Rate" value={`${stats.replyRate}%`} sub={`${stats.replied} replies`} />
         <Kpi label="Total Messages" value={stats.totalMessages} sub="sent & received" />

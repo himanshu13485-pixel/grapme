@@ -54,7 +54,7 @@ export class LiPortalController {
   @Patch('campaigns/:id')
   updateCampaign(@CurrentUser() u: AuthUser, @Param('id') id: string, @Body() dto: UpdateLiCampaignDto) { return this.portal.updateCampaign(u.userId, id, dto); }
   @Get('campaigns/:id/stats')
-  cstats(@CurrentUser() u: AuthUser, @Param('id') id: string) { return this.portal.campaignStats(u.userId, id); }
+  cstats(@CurrentUser() u: AuthUser, @Param('id') id: string, @Query('period') period?: string, @Query('from') from?: string, @Query('to') to?: string) { return this.portal.campaignStats(u.userId, id, { period, from, to }); }
   @Get('campaigns/:id/leads')
   leads(@CurrentUser() u: AuthUser, @Param('id') id: string, @Query('status') status?: LiLeadStatus, @Query('page') page?: string, @Query('pageSize') pageSize?: string, @Query('search') search?: string) {
     return this.portal.campaignLeads(u.userId, id, { status, search, page: page ? Number(page) : undefined, pageSize: pageSize ? Number(pageSize) : undefined });

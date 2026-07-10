@@ -194,28 +194,68 @@ export class LiCampaignsService {
     return { total, page, pageSize, pages: Math.ceil(total / pageSize), items, tabCounts };
   }
 
-  async stats(id: string) {
+  async stats(id: string, opts: { period?: string; from?: string; to?: string } = {}) {
     await this.assertExists(id);
-    const [byStatus, bySentiment, totalMessages] = await this.prisma.$transaction([
-      this.prisma.liLead.groupBy({ by: ['status'], where: { campaignId: id }, _count: true, orderBy: { status: 'asc' } }),
-      this.prisma.liLead.groupBy({ by: ['sentiment'], where: { campaignId: id, sentiment: { not: null } }, _count: true, orderBy: { sentiment: 'asc' } }),
-      this.prisma.liMessage.count({ where: { conversation: { lead: { campaignId: id } } } }),
-    ]);
-    const s = Object.fromEntries(byStatus.map((r) => [r.status, r._count])) as Record<string, number>;
-    const g = (k: string) => s[k] ?? 0;
-    const replied = g('REPLIED');
-    const accepted = g('CONNECTED') + g('MESSAGED') + replied;
-    const sent = g('CONNECTION_PENDING') + accepted;
-    const sentiment = { positive: 0, neutral: 0, negative: 0 };
-    for (const r of bySentiment) {
-      const n = Number(r._count);
-      if (r.sentiment === 'POSITIVE') sentiment.positive = n;
-      else if (r.sentiment === 'NEGATIVE') sentiment.negative = n;
-      else if (r.sentiment === 'NEUTRAL') sentiment.neutral = n;
+    const period = ['week', 'month', 'custom'].includes(opts.period ?? '') ? opts.period! : 'lifetime';
+    const now = new Date();
+    const midnight = (d: Date) => { const x = new Date(d); x.setUTCHours(0, 0, 0, 0); return x; };
+
+    // Resolve the [since, until] window driving both the series and the windowed KPIs.
+    let since: Date; let until = now;
+    if (period === 'week') { since = midnight(now); since.setUTCDate(since.getUTCDate() - 6); }
+    else if (period === 'month') { since = midnight(now); since.setUTCDate(since.getUTCDate() - 29); }
+    else if (period === 'custom') {
+      since = opts.from ? midnight(new Date(opts.from)) : midnight(new Date(now.getTime() - 29 * 864e5));
+      until = opts.to ? new Date(`${opts.to}T23:59:59Z`) : now;
+    } else {
+      const c = await this.prisma.liCampaign.findUnique({ where: { id }, select: { createdAt: true } });
+      since = midnight(c?.createdAt ?? new Date(now.getTime() - 29 * 864e5));
+      const cap = midnight(new Date(now.getTime() - 365 * 864e5));
+      if (since < cap) since = cap;
     }
-    const series = await this.dailySeries(id);
+    const series = await this.dailySeries(id, since, until);
+
+    const sentiment = { positive: 0, neutral: 0, negative: 0 };
+    let sent: number; let accepted: number; let replied: number; let totalMessages: number;
+
+    if (period === 'lifetime') {
+      const [byStatus, bySentiment, totalMsg] = await this.prisma.$transaction([
+        this.prisma.liLead.groupBy({ by: ['status'], where: { campaignId: id }, _count: true, orderBy: { status: 'asc' } }),
+        this.prisma.liLead.groupBy({ by: ['sentiment'], where: { campaignId: id, sentiment: { not: null } }, _count: true, orderBy: { sentiment: 'asc' } }),
+        this.prisma.liMessage.count({ where: { conversation: { lead: { campaignId: id } } } }),
+      ]);
+      const s = Object.fromEntries(byStatus.map((r) => [r.status, r._count])) as Record<string, number>;
+      const g = (k: string) => s[k] ?? 0;
+      replied = g('REPLIED');
+      accepted = g('CONNECTED') + g('MESSAGED') + replied;
+      sent = g('CONNECTION_PENDING') + accepted;
+      totalMessages = totalMsg;
+      for (const r of bySentiment) {
+        const n = Number(r._count);
+        if (r.sentiment === 'POSITIVE') sentiment.positive = n;
+        else if (r.sentiment === 'NEGATIVE') sentiment.negative = n;
+        else if (r.sentiment === 'NEUTRAL') sentiment.neutral = n;
+      }
+    } else {
+      // Windowed KPIs from the series; sentiment from replies received in-window.
+      sent = series.reduce((a, d) => a + d.sent, 0);
+      accepted = series.reduce((a, d) => a + d.accepted, 0);
+      replied = series.reduce((a, d) => a + d.replies, 0);
+      totalMessages = series.reduce((a, d) => a + d.messages + d.replies, 0);
+      const bySentiment = await this.prisma.liLead.groupBy({
+        by: ['sentiment'],
+        where: { campaignId: id, sentiment: { not: null }, lastReplyAt: { gte: since, lte: until } },
+        _count: true, orderBy: { sentiment: 'asc' },
+      });
+      for (const r of bySentiment) {
+        const n = Number(r._count);
+        if (r.sentiment === 'POSITIVE') sentiment.positive = n;
+        else if (r.sentiment === 'NEGATIVE') sentiment.negative = n;
+        else if (r.sentiment === 'NEUTRAL') sentiment.neutral = n;
+      }
+    }
     return {
-      sent, accepted, replied, totalMessages, sentiment,
+      period, sent, accepted, replied, totalMessages, sentiment,
       acceptanceRate: sent ? Math.round((accepted / sent) * 1000) / 10 : 0,
       replyRate: accepted ? Math.round((replied / accepted) * 1000) / 10 : 0,
       series,
@@ -225,20 +265,18 @@ export class LiCampaignsService {
   /** Daily buckets (last 30 days, UTC) powering the Analytics charts:
    *  connections Sent (completed SEND_CONNECTION actions), Accepted (connectedAt),
    *  Messages (outbound) and Replies (inbound). */
-  private async dailySeries(campaignId: string) {
-    const DAYS = 30;
-    const since = new Date();
-    since.setUTCHours(0, 0, 0, 0);
-    since.setUTCDate(since.getUTCDate() - (DAYS - 1));
+  private async dailySeries(campaignId: string, since: Date, until: Date) {
+    const start = new Date(since); start.setUTCHours(0, 0, 0, 0);
+    const DAYS = Math.min(400, Math.max(1, Math.floor((until.getTime() - start.getTime()) / 864e5) + 1));
 
     const [sentActions, acceptedLeads, msgs] = await Promise.all([
       this.prisma.liScheduledAction.findMany({
-        where: { lead: { campaignId }, type: 'SEND_CONNECTION', status: 'DONE', updatedAt: { gte: since } },
+        where: { lead: { campaignId }, type: 'SEND_CONNECTION', status: 'DONE', updatedAt: { gte: start, lte: until } },
         select: { updatedAt: true },
       }),
-      this.prisma.liLead.findMany({ where: { campaignId, connectedAt: { gte: since } }, select: { connectedAt: true } }),
+      this.prisma.liLead.findMany({ where: { campaignId, connectedAt: { gte: start, lte: until } }, select: { connectedAt: true } }),
       this.prisma.liMessage.findMany({
-        where: { conversation: { lead: { campaignId } }, sentAt: { gte: since } },
+        where: { conversation: { lead: { campaignId } }, sentAt: { gte: start, lte: until } },
         select: { sentAt: true, direction: true },
       }),
     ]);
@@ -246,7 +284,7 @@ export class LiCampaignsService {
     const key = (d: Date) => d.toISOString().slice(0, 10);
     const buckets = new Map<string, { date: string; sent: number; accepted: number; messages: number; replies: number }>();
     for (let i = 0; i < DAYS; i++) {
-      const d = new Date(since); d.setUTCDate(since.getUTCDate() + i);
+      const d = new Date(start); d.setUTCDate(start.getUTCDate() + i);
       buckets.set(key(d), { date: key(d), sent: 0, accepted: 0, messages: 0, replies: 0 });
     }
     for (const a of sentActions) { const b = buckets.get(key(a.updatedAt)); if (b) b.sent++; }

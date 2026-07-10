@@ -224,11 +224,21 @@ export class CampaignsService {
   }
 
   /** Aggregates events into the campaign performance card. */
-  async analytics(user: AuthUser, id: string) {
+  async analytics(user: AuthUser, id: string, opts: { period?: string; from?: string; to?: string } = {}) {
     await this.getOne(user, id);
+    // Window events by occurrence time (lifetime = no time filter).
+    const period = ['week', 'month', 'custom'].includes(opts.period ?? '') ? opts.period! : 'lifetime';
+    const now = new Date();
+    const midnight = (d: Date) => { const x = new Date(d); x.setUTCHours(0, 0, 0, 0); return x; };
+    let timeWhere: { occurredAt?: { gte: Date; lte: Date } } = {};
+    if (period === 'week') { const s = midnight(now); s.setUTCDate(s.getUTCDate() - 6); timeWhere = { occurredAt: { gte: s, lte: now } }; }
+    else if (period === 'month') { const s = midnight(now); s.setUTCDate(s.getUTCDate() - 29); timeWhere = { occurredAt: { gte: s, lte: now } }; }
+    else if (period === 'custom' && opts.from) { timeWhere = { occurredAt: { gte: midnight(new Date(opts.from)), lte: opts.to ? new Date(`${opts.to}T23:59:59Z`) : now } }; }
+    const eventWhere = { campaignId: id, ...timeWhere };
+
     const grouped = await this.prisma.emailEvent.groupBy({
       by: ['eventType'],
-      where: { campaignId: id },
+      where: eventWhere,
       _count: { _all: true },
     });
     const counts: Record<string, number> = {};
@@ -236,7 +246,7 @@ export class CampaignsService {
 
     // Forwarded (estimated) = messages opened from 2+ distinct IPs.
     const opensWithIp = await this.prisma.emailEvent.findMany({
-      where: { campaignId: id, eventType: EventType.OPEN },
+      where: { ...eventWhere, eventType: EventType.OPEN },
       select: { messageId: true, meta: true },
     });
     const ipsByMsg = new Map<string, Set<string>>();

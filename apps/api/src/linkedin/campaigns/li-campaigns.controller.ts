@@ -33,8 +33,8 @@ export class LiCampaignsController {
   }
 
   @Get(':id/stats')
-  stats(@Param('id') id: string) {
-    return this.campaigns.stats(id);
+  stats(@Param('id') id: string, @Query('period') period?: string, @Query('from') from?: string, @Query('to') to?: string) {
+    return this.campaigns.stats(id, { period, from, to });
   }
 
   @Patch(':id')
