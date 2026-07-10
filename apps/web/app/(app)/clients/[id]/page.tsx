@@ -15,6 +15,7 @@ import { MailboxesManager } from '@/components/MailboxesManager';
 import { MailboxManager } from '@/components/MailboxManager';
 import { WorldMap, GeoData } from '@/components/WorldMap';
 import { ValidityBadge } from '@/components/Validity';
+import { LiSubscription, LI_DEFAULTS } from '@/lib/linkedin';
 
 function hourLabel(h: number): string {
   const ampm = h < 12 ? 'AM' : 'PM';
@@ -65,6 +66,7 @@ interface Client {
   serviceType?: string;
   emailEnabled?: boolean;
   linkedInEnabled?: boolean;
+  linkedInCreditMetering?: boolean;
   reportDaily: boolean;
   reportWeekly: boolean;
   reportMonthly: boolean;
@@ -1775,40 +1777,90 @@ function ClientCampaigns({ clientId, onChanged }: { clientId: string; onChanged:
   );
 }
 
+const DETAIL_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const detailDays = (days?: number[] | null) =>
+  !days || days.length === 0 ? '—' : [...days].sort().map((x) => DETAIL_DAYS[x] ?? x).join(', ');
+
+type DetailRow = { label: string; value: string };
+function DetailSection({ title, rows }: { title: string; rows: DetailRow[] }) {
+  return (
+    <div>
+      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">{title}</div>
+      <div className="overflow-hidden rounded-lg border border-slate-200">
+        <table className="w-full text-sm">
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.label} className="border-b border-slate-100 last:border-0">
+                <td className="w-1/2 bg-slate-50 px-4 py-2.5 font-medium text-slate-500">{r.label}</td>
+                <td className="px-4 py-2.5 text-slate-800">{r.value}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function ClientDetails({ client }: { client: Client }) {
+  const { user } = useAuth();
+  const isClient = user?.role === 'CLIENT';
+  const base = isClient ? '/linkedin/portal' : '/linkedin';
   const serviceLabel = (s?: string) =>
     s === 'EXPORT' ? 'Export' : s === 'IMPORT' ? 'Import' : s === 'BOTH' ? 'Both' : '—';
   const active = (client.status ?? 'active').toLowerCase() === 'active';
-  const rows: { label: string; value: string }[] = [
+  const emailOn = client.emailEnabled !== false;
+  const linkedInOn = !!client.linkedInEnabled;
+  const [sub, setSub] = useState<LiSubscription | null>(null);
+
+  useEffect(() => {
+    if (!linkedInOn) return;
+    api.get<LiSubscription>(`${base}/clients/${client.id}/subscription`).then(setSub).catch(() => {});
+  }, [client.id, linkedInOn, base]);
+
+  const d = { ...LI_DEFAULTS, ...(sub?.campaignDefaults ?? {}) };
+  const clientRows: DetailRow[] = [
     { label: 'Company name', value: client.name },
     { label: 'Invoice no.', value: client.invoiceNo || '—' },
     { label: 'Contact person', value: client.contactPerson || '—' },
     { label: 'Contact email', value: client.email || '—' },
     { label: 'Mobile no.', value: client.mobile || '—' },
+    ...(linkedInOn ? [{ label: 'WhatsApp notifications', value: sub?.whatsappEnabled ? (sub?.whatsappNumber || 'Enabled') : 'Off' }] : []),
     { label: 'Product / Category', value: client.productCategory || '—' },
     { label: 'Service type', value: serviceLabel(client.serviceType) },
-    { label: 'Outreach channels', value: client.linkedInEnabled ? (client.emailEnabled !== false ? '📧 Email + 🔗 LinkedIn' : '🔗 LinkedIn only') : '📧 Email only' },
+    { label: 'Outreach channels', value: linkedInOn ? (emailOn ? '📧 Email + 🔗 LinkedIn' : '🔗 LinkedIn only') : '📧 Email only' },
     { label: 'Plan', value: client.plan },
-    { label: 'Status', value: active ? 'Active' : 'Inactive' },
     { label: 'Plan validity', value: client.validityDays ? `${client.validityDays} days` : '—' },
+    { label: 'Status', value: active ? 'Active' : 'Inactive' },
+  ];
+  const emailRows: DetailRow[] = emailOn ? [
     { label: 'Contacts / month', value: String(client.monthlyQuota) },
     { label: 'Sends / day', value: String(client.dailyBatchSize) },
+    { label: 'Batch window (days)', value: String(client.batchWindowDays) },
+    { label: 'Gap between stages (days)', value: String(client.stageIntervalDays) },
     { label: 'Follow-ups (after initial)', value: String(client.followUpCount) },
     { label: 'Send window', value: `${hourLabel(client.sendWindowStart)} – ${hourLabel(client.sendWindowEnd)}` },
+    { label: 'Interval jitter (± days)', value: String(client.stageIntervalJitterDays) },
     { label: 'Weekdays only', value: client.weekdaysOnly ? 'Yes' : 'No' },
-  ];
+  ] : [];
+  const linkedinRows: DetailRow[] = linkedInOn ? [
+    { label: 'Send window', value: `${hourLabel(d.workStartHour)} – ${hourLabel(d.workEndHour)}` },
+    { label: 'Send days', value: detailDays(d.workDays) },
+    { label: 'Max connection invites / day', value: String(d.dailyConnectionLimit) },
+    { label: 'Max messages / day', value: String(d.dailyMessageLimit) },
+    ...(!isClient ? [
+      { label: 'Seats', value: String(sub?.seats ?? '—') },
+      { label: 'Warm-up ramp', value: d.warmupEnabled ? `${d.warmupStartLimit}/day → full over ${d.warmupDays} days` : 'Off' },
+      { label: 'Auto lead sourcing (drip)', value: d.dripEnabled ? `${d.dripDailyTarget}/day · refill below ${d.dripBuffer}` : 'Off' },
+      { label: 'LinkedIn sourcing credits', value: client.linkedInCreditMetering ? 'Metered — 1 credit per run' : 'Not metered (free)' },
+    ] : []),
+  ] : [];
+
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-200">
-      <table className="w-full text-sm">
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.label} className="border-b border-slate-100 last:border-0">
-              <td className="w-48 bg-slate-50 px-4 py-2.5 font-medium text-slate-500">{r.label}</td>
-              <td className="px-4 py-2.5 text-slate-800">{r.value}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="space-y-5">
+      <DetailSection title="Client details" rows={clientRows} />
+      {emailRows.length > 0 && <DetailSection title="📧 Email business requirements" rows={emailRows} />}
+      {linkedinRows.length > 0 && <DetailSection title="🔗 LinkedIn business requirements" rows={linkedinRows} />}
     </div>
   );
 }
