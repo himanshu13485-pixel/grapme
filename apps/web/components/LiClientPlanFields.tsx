@@ -4,11 +4,13 @@ import { LiCampaignDefaults, LI_DEFAULTS } from '@/lib/linkedin';
 
 export interface LiPlanForm {
   seats: number;
+  credits: number;        // subscription.creditsBalance
+  campaignLimit: number;  // max LinkedIn campaigns (0 = unlimited)
   defaults: Required<LiCampaignDefaults>;
 }
 
 export function emptyLiPlan(): LiPlanForm {
-  return { seats: 1, defaults: { ...LI_DEFAULTS } };
+  return { seats: 1, credits: 0, campaignLimit: 0, defaults: { ...LI_DEFAULTS } };
 }
 
 const DAYS = [
@@ -83,13 +85,15 @@ export function LiClientPlanFields({
         Charge <strong>1 credit</strong> per LinkedIn lead-sourcing run (leave off to source free)
       </label>
 
-      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+      <div className="mt-3 grid gap-3 sm:grid-cols-3">
         <div>
           <label className="label">Seats</label>
           <select className="input" value={value.seats} onChange={(e) => onChange({ ...value, seats: Number(e.target.value) })}>
             {Array.from({ length: 100 }, (_, i) => i + 1).map((n) => <option key={n} value={n}>{n}</option>)}
           </select>
         </div>
+        <div><label className="label">Credits</label><input className="input" type="number" min={0} value={value.credits} onChange={(e) => onChange({ ...value, credits: Math.max(0, Number(e.target.value) || 0) })} /></div>
+        <div><label className="label">Campaigns (0=∞)</label><input className="input" type="number" min={0} value={value.campaignLimit} onChange={(e) => onChange({ ...value, campaignLimit: Math.max(0, Number(e.target.value) || 0) })} /></div>
       </div>
 
       {/* Send window */}

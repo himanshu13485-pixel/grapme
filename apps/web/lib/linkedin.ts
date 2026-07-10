@@ -28,6 +28,7 @@ export interface LiSubscription {
   clientId: string;
   planName?: string | null;
   seats: number;
+  campaignLimit?: number;
   creditsBalance: number;
   validityDays?: number | null;
   validityStartAt?: string | null;

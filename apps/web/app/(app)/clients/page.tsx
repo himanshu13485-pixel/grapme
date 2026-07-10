@@ -21,6 +21,9 @@ interface Client {
   emailEnabled?: boolean;
   linkedInEnabled?: boolean;
   linkedInCreditMetering?: boolean;
+  emailCredits?: number;
+  mailboxLimit?: number;
+  emailCampaignLimit?: number;
   plan: string;
   status: string;
   monthlyQuota: number;
@@ -358,6 +361,8 @@ function formatDays(days?: number[] | null): string {
   if (!days || days.length === 0) return '—';
   return [...days].sort().map((x) => DAY_LABELS[x] ?? x).join(', ');
 }
+/** A limit where 0 means unlimited. */
+const limitLabel = (n?: number | null) => (n && n > 0 ? String(n) : 'Unlimited');
 
 function ClientDetailView({ client }: { client: Client }) {
   const { user } = useAuth();
@@ -392,11 +397,9 @@ function ClientDetailView({ client }: { client: Client }) {
     { label: 'Status', value: client.status },
   ];
   const emailRows: DetailRow[] = emailOn ? [
-    ...(plan ? [
-      { label: 'Credits (as per plan)', value: String(plan.emailCredits ?? 0) },
-      { label: 'Mailboxes (as per plan)', value: String(plan.mailboxLimit ?? 0) },
-      { label: 'Campaigns (as per plan)', value: String(plan.emailCampaignLimit ?? 0) },
-    ] : []),
+    { label: 'Credits', value: String(client.emailCredits ?? 0) },
+    { label: 'Mailboxes (allowed)', value: limitLabel(client.mailboxLimit) },
+    { label: 'Campaigns (allowed)', value: limitLabel(client.emailCampaignLimit) },
     { label: 'Contacts / month', value: String(client.monthlyQuota) },
     { label: 'Sends / day', value: String(client.dailyBatchSize) },
     { label: 'Batch window (days)', value: String(client.batchWindowDays) },
@@ -407,18 +410,15 @@ function ClientDetailView({ client }: { client: Client }) {
     { label: 'Weekdays only', value: client.weekdaysOnly ? 'Yes' : 'No' },
   ] : [];
   const linkedinRows: DetailRow[] = linkedInOn ? [
-    ...(plan ? [
-      { label: 'Credits (as per plan)', value: String(plan.linkedInCredits ?? 0) },
-      { label: 'Seats (as per plan)', value: String(plan.seatLimit ?? 0) },
-      { label: 'Campaigns (as per plan)', value: String(plan.linkedInCampaignLimit ?? 0) },
-    ] : []),
+    { label: 'Credits', value: String(sub?.creditsBalance ?? 0) },
+    { label: 'Seats', value: String(sub?.seats ?? 0) },
+    { label: 'Campaigns (allowed)', value: limitLabel(sub?.campaignLimit) },
     { label: 'Send window', value: `${hourLabel(d.workStartHour)} – ${hourLabel(d.workEndHour)}` },
     { label: 'Send days', value: formatDays(d.workDays) },
     { label: 'Max connection invites / day', value: String(d.dailyConnectionLimit) },
     { label: 'Max messages / day', value: String(d.dailyMessageLimit) },
     // Admin-only tuning (kept secret from the client panel).
     ...(!isClient ? [
-      { label: 'Seats (configured)', value: String(sub?.seats ?? '—') },
       { label: 'Warm-up ramp', value: d.warmupEnabled ? `${d.warmupStartLimit}/day → full over ${d.warmupDays} days` : 'Off' },
       { label: 'Auto lead sourcing (drip)', value: d.dripEnabled ? `${d.dripDailyTarget}/day · refill below ${d.dripBuffer}` : 'Off' },
       { label: 'LinkedIn sourcing credits', value: client.linkedInCreditMetering ? 'Metered — 1 credit per run' : 'Not metered (free)' },
@@ -483,6 +483,8 @@ function liPlanPayload(p: LiPlanForm, planName: string, whatsappEnabled: boolean
   return {
     planName: planName || undefined,
     seats: p.seats,
+    campaignLimit: p.campaignLimit,
+    creditsBalance: p.credits,
     whatsappEnabled,
     whatsappNumber: whatsappNumber || undefined,
     campaignDefaults: p.defaults,
@@ -504,6 +506,9 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
     serviceType: 'EXPORT',
     whatsappEnabled: false,
     whatsappNumber: '',
+    emailCredits: 0,
+    mailboxLimit: 0,
+    emailCampaignLimit: 0,
     plan: 'Growth',
     monthlyQuota: 100,
     dailyBatchSize: 10,
@@ -710,9 +715,9 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
             value={form.plan}
             onChange={(e) => {
               const name = e.target.value;
-              setForm({ ...form, plan: name });
               const p = plans.find((pl) => pl.name === name);
-              if (p?.seatLimit) setLiPlan((lp) => ({ ...lp, seats: p.seatLimit! }));
+              setForm((f) => ({ ...f, plan: name, ...(p ? { emailCredits: p.emailCredits ?? 0, mailboxLimit: p.mailboxLimit ?? 0, emailCampaignLimit: p.emailCampaignLimit ?? 0 } : {}) }));
+              if (p) setLiPlan((lp) => ({ ...lp, seats: p.seatLimit || lp.seats, credits: p.linkedInCredits ?? 0, campaignLimit: p.linkedInCampaignLimit ?? 0 }));
             }}
           >
             {planNames.map((p) => (
@@ -729,6 +734,13 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
       {channels !== 'LINKEDIN' && (
         <div>
           <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">📧 Email business requirements</div>
+          {!isClient && (
+            <div className="mb-3 grid grid-cols-3 gap-3 rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+              <NumberField label="Credits" value={form.emailCredits} onChange={(v) => setForm({ ...form, emailCredits: v })} />
+              <NumberField label="Mailboxes (0=∞)" value={form.mailboxLimit} onChange={(v) => setForm({ ...form, mailboxLimit: v })} />
+              <NumberField label="Campaigns (0=∞)" value={form.emailCampaignLimit} onChange={(v) => setForm({ ...form, emailCampaignLimit: v })} />
+            </div>
+          )}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <NumberField label="Contacts / month" value={form.monthlyQuota} onChange={(v) => setForm({ ...form, monthlyQuota: v })} />
             <NumberField label="Sends / day" value={form.dailyBatchSize} onChange={(v) => setForm({ ...form, dailyBatchSize: v })} />
@@ -781,6 +793,9 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
     serviceType: client.serviceType ?? 'EXPORT',
     whatsappEnabled: false,
     whatsappNumber: '',
+    emailCredits: client.emailCredits ?? 0,
+    mailboxLimit: client.mailboxLimit ?? 0,
+    emailCampaignLimit: client.emailCampaignLimit ?? 0,
     plan: client.plan,
     monthlyQuota: client.monthlyQuota,
     dailyBatchSize: client.dailyBatchSize,
@@ -821,7 +836,7 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
   useEffect(() => {
     if (!client.linkedInEnabled) return;
     api.get<LiSubscription>(`/linkedin/clients/${client.id}/subscription`).then((s) => {
-      setLiPlan({ seats: s.seats ?? 1, defaults: { ...LI_DEFAULTS, ...(s.campaignDefaults ?? {}) } });
+      setLiPlan({ seats: s.seats ?? 1, credits: s.creditsBalance ?? 0, campaignLimit: s.campaignLimit ?? 0, defaults: { ...LI_DEFAULTS, ...(s.campaignDefaults ?? {}) } });
       setForm((f) => ({ ...f, whatsappEnabled: !!s.whatsappEnabled, whatsappNumber: s.whatsappNumber ?? '' }));
     }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -916,6 +931,9 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
         emailEnabled: channels === 'EMAIL' || channels === 'BOTH',
         linkedInEnabled: channels === 'LINKEDIN' || channels === 'BOTH',
         linkedInCreditMetering: channels !== 'EMAIL' ? creditMetering : false,
+        emailCredits: Number(form.emailCredits),
+        mailboxLimit: Number(form.mailboxLimit),
+        emailCampaignLimit: Number(form.emailCampaignLimit),
         plan: form.plan,
         monthlyQuota: Number(form.monthlyQuota),
         dailyBatchSize: Number(form.dailyBatchSize),
@@ -1028,9 +1046,9 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
             <select className="input" value={form.plan}
               onChange={(e) => {
                 const name = e.target.value;
-                setForm({ ...form, plan: name });
                 const p = plans.find((pl) => pl.name === name);
-                if (p?.seatLimit) setLiPlan((lp) => ({ ...lp, seats: p.seatLimit! }));
+                setForm((f) => ({ ...f, plan: name, ...(p ? { emailCredits: p.emailCredits ?? 0, mailboxLimit: p.mailboxLimit ?? 0, emailCampaignLimit: p.emailCampaignLimit ?? 0 } : {}) }));
+                if (p) setLiPlan((lp) => ({ ...lp, seats: p.seatLimit || lp.seats, credits: p.linkedInCredits ?? 0, campaignLimit: p.linkedInCampaignLimit ?? 0 }));
               }}>
               {planOptions.map((p) => (
                 <option key={p} value={p}>{p}</option>
@@ -1075,6 +1093,11 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
           ⚠ Changes apply to future scheduling only — running cohorts keep their
           already-scheduled sends.
         </p>
+        <div className="mb-3 grid grid-cols-3 gap-3 rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+          <NumberField label="Credits" value={form.emailCredits} onChange={(v) => setForm({ ...form, emailCredits: v })} />
+          <NumberField label="Mailboxes (0=∞)" value={form.mailboxLimit} onChange={(v) => setForm({ ...form, mailboxLimit: v })} />
+          <NumberField label="Campaigns (0=∞)" value={form.emailCampaignLimit} onChange={(v) => setForm({ ...form, emailCampaignLimit: v })} />
+        </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <NumberField label="Contacts / month" value={form.monthlyQuota} onChange={(v) => setForm({ ...form, monthlyQuota: v })} />
           <NumberField label="Sends / day" value={form.dailyBatchSize} onChange={(v) => setForm({ ...form, dailyBatchSize: v })} />

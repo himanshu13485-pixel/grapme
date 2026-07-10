@@ -411,11 +411,19 @@ export class ProgramsService {
 
   // ── Mailbox group ─────────────────────────────────────────
   async assignMailbox(user: AuthUser, clientId: string, dto: AssignMailboxDto) {
-    await this.assertClient(user, clientId);
+    const client = await this.assertClient(user, clientId);
     const mailbox = await this.prisma.emailAccount.findFirst({
       where: { id: dto.mailboxId, tenantId: user.tenantId },
     });
     if (!mailbox) throw new NotFoundException('Mailbox not found');
+    // Enforce the plan's mailbox limit (0 = unlimited). Re-assigning an already-
+    // assigned mailbox to the same client doesn't count against the limit.
+    if (client.mailboxLimit && client.mailboxLimit > 0 && mailbox.clientId !== clientId) {
+      const used = await this.prisma.emailAccount.count({ where: { clientId } });
+      if (used >= client.mailboxLimit) {
+        throw new BadRequestException(`Mailbox limit reached (${client.mailboxLimit}) for this client's plan.`);
+      }
+    }
     return this.prisma.emailAccount.update({
       where: { id: dto.mailboxId },
       data: { clientId, rotationOrder: dto.rotationOrder ?? 0 },

@@ -21,6 +21,8 @@ export interface LiCampaignDefaults {
 export interface UpdateLiSubscriptionDto {
   planName?: string;
   seats?: number;
+  campaignLimit?: number;
+  creditsBalance?: number;
   whatsappEnabled?: boolean;
   whatsappNumber?: string;
   timezone?: string;
@@ -55,6 +57,8 @@ export class LinkedInSubscriptionService {
       data: {
         planName: dto.planName,
         seats: dto.seats,
+        ...(typeof dto.campaignLimit === 'number' ? { campaignLimit: Math.max(0, Math.floor(dto.campaignLimit)) } : {}),
+        ...(typeof dto.creditsBalance === 'number' ? { creditsBalance: Math.max(0, Math.floor(dto.creditsBalance)) } : {}),
         whatsappEnabled: dto.whatsappEnabled,
         whatsappNumber: dto.whatsappNumber,
         timezone: dto.timezone,

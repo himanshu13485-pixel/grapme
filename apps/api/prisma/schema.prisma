@@ -731,6 +731,10 @@ model Client {
   emailEnabled      Boolean  @default(true)  // subscribed to the Email outreach channel
   linkedInEnabled   Boolean  @default(false) // subscribed to the LinkedIn outreach channel
   linkedInCreditMetering Boolean @default(false) // when true, each LinkedIn lead-sourcing run costs 1 credit
+  // Per-client entitlements (defaulted from the plan, overridable; 0 = unlimited/unset).
+  emailCredits        Int    @default(0)
+  mailboxLimit        Int    @default(0)
+  emailCampaignLimit  Int    @default(0)
   status            String   @default("active")
   plan              String   @default("Growth")
   reportDaily       Boolean  @default(false) // email a daily performance report
@@ -942,6 +946,7 @@ model LinkedInSubscription {
   clientId        String   @unique
   planName        String?
   seats           Int      @default(1)
+  campaignLimit   Int      @default(0) // max LinkedIn campaigns (0 = unlimited)
   creditsBalance  Int      @default(0)
   validityDays    Int?
   validityStartAt DateTime?

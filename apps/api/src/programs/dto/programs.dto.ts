@@ -31,6 +31,10 @@ export class CreateClientDto {
   @IsOptional() @IsBoolean() emailEnabled?: boolean;
   @IsOptional() @IsBoolean() linkedInEnabled?: boolean;
   @IsOptional() @IsBoolean() linkedInCreditMetering?: boolean;
+  // Per-client Email entitlements (defaulted from the plan, overridable).
+  @IsOptional() @IsInt() @Min(0) emailCredits?: number;
+  @IsOptional() @IsInt() @Min(0) mailboxLimit?: number;
+  @IsOptional() @IsInt() @Min(0) emailCampaignLimit?: number;
   // Client self-service LinkedIn request: the basic send window they'd like.
   @IsOptional() @ValidateNested() @Type(() => LiClientSendWindowDto) linkedin?: LiClientSendWindowDto;
   @IsOptional() @IsString() plan?: string;
@@ -56,6 +60,9 @@ export class UpdateClientDto {
   @IsOptional() @IsBoolean() emailEnabled?: boolean;
   @IsOptional() @IsBoolean() linkedInEnabled?: boolean;
   @IsOptional() @IsBoolean() linkedInCreditMetering?: boolean;
+  @IsOptional() @IsInt() @Min(0) emailCredits?: number;
+  @IsOptional() @IsInt() @Min(0) mailboxLimit?: number;
+  @IsOptional() @IsInt() @Min(0) emailCampaignLimit?: number;
   @IsOptional() @IsString() status?: string;
   @IsOptional() @IsString() plan?: string;
   @IsOptional() @IsInt() @Min(1) monthlyQuota?: number;

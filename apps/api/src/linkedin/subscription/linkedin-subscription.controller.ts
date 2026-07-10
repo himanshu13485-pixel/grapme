@@ -26,6 +26,8 @@ class CampaignDefaultsDto {
 class UpdateSubDto {
   @IsOptional() @IsString() planName?: string;
   @IsOptional() @IsInt() @Min(0) seats?: number;
+  @IsOptional() @IsInt() @Min(0) campaignLimit?: number;
+  @IsOptional() @IsInt() @Min(0) creditsBalance?: number;
   // Validity is governed by the shared client plan (email/Validity menu), not here.
   @IsOptional() @IsBoolean() whatsappEnabled?: boolean;
   @IsOptional() @IsString() whatsappNumber?: string;

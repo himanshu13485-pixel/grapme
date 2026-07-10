@@ -91,7 +91,20 @@ export class CampaignsService {
     return { ok: true };
   }
 
-  create(user: AuthUser, dto: CreateCampaignDto) {
+  async create(user: AuthUser, dto: CreateCampaignDto) {
+    // Enforce the plan's Email campaign limit for the target client (0 = unlimited).
+    if (dto.clientId) {
+      const client = await this.prisma.client.findFirst({
+        where: { id: dto.clientId, tenantId: user.tenantId },
+        select: { emailCampaignLimit: true },
+      });
+      if (client?.emailCampaignLimit && client.emailCampaignLimit > 0) {
+        const used = await this.prisma.campaign.count({ where: { clientId: dto.clientId } });
+        if (used >= client.emailCampaignLimit) {
+          throw new BadRequestException(`Email campaign limit reached (${client.emailCampaignLimit}) for this client's plan.`);
+        }
+      }
+    }
     return this.prisma.campaign.create({
       data: {
         tenantId: user.tenantId,

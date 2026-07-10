@@ -26,8 +26,17 @@ export class LiCampaignsService {
     // new campaign starts from the admin-approved working hours / caps / warm-up / drip.
     const sub = await this.prisma.linkedInSubscription.findUnique({
       where: { clientId: dto.clientId },
-      select: { timezone: true, campaignDefaults: true },
+      select: { timezone: true, campaignDefaults: true, campaignLimit: true },
     });
+    // Enforce the plan's LinkedIn campaign limit (0 = unlimited).
+    if (sub?.campaignLimit && sub.campaignLimit > 0) {
+      const used = await this.prisma.liCampaign.count({
+        where: { clientId: dto.clientId, status: { not: LiCampaignStatus.DELETED } },
+      });
+      if (used >= sub.campaignLimit) {
+        throw new BadRequestException(`LinkedIn campaign limit reached (${sub.campaignLimit}) for this client's plan.`);
+      }
+    }
     const d = (sub?.campaignDefaults ?? {}) as Record<string, unknown>;
     const num = (k: string) => (typeof d[k] === 'number' ? (d[k] as number) : undefined);
     const bool = (k: string) => (typeof d[k] === 'boolean' ? (d[k] as boolean) : undefined);
