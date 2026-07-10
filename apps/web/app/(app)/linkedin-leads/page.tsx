@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { PageHeader, EmptyState, Pagination, StatusBadge } from '@/components/ui';
 import { parseLeadTitleCompany } from '@/lib/linkedin';
+import { downloadCsv } from '@/lib/csv';
 
 interface LeadRow {
   id: string;
@@ -33,11 +34,40 @@ export default function LinkedInLeadsPage() {
   const [q, setQ] = useState('');
   const [dq, setDq] = useState('');
   const [status, setStatus] = useState('');
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setDq(q.trim()), 300);
     return () => clearTimeout(t);
   }, [q]);
+
+  async function exportCsv() {
+    setExporting(true);
+    try {
+      const params = new URLSearchParams({ all: 'true' });
+      if (dq) params.set('client', dq);
+      if (status) params.set('status', status);
+      const r = await api.get<{ items: LeadRow[] }>(`/linkedin/overview/leads?${params}`);
+      const rows = r.items.map((l) => {
+        const tc = parseLeadTitleCompany(l.title, l.company);
+        return [
+          l.fullName, l.profileUrl ?? '', tc.title, tc.company,
+          l.client?.name ?? '', l.client?.company ?? '', l.client?.invoice ?? '',
+          l.campaign.name, l.campaign.status, STATUS_LABEL[l.status] ?? l.status,
+          new Date(l.createdAt).toLocaleDateString(),
+        ];
+      });
+      downloadCsv(
+        `linkedin-leads-${new Date().toISOString().slice(0, 10)}`,
+        ['Name', 'Profile URL', 'Title', 'Company', 'Client', 'Client company', 'Invoice', 'Campaign', 'Campaign status', 'Lead status', 'Sourced'],
+        rows,
+      );
+    } catch (e: any) {
+      alert(e?.message ?? 'Export failed');
+    } finally {
+      setExporting(false);
+    }
+  }
   useEffect(() => { setPage(1); }, [dq, status]);
 
   useEffect(() => {
@@ -64,6 +94,9 @@ export default function LinkedInLeadsPage() {
           <option value="MESSAGED">Messaged</option>
           <option value="REPLIED">Replied</option>
         </select>
+        <button className="btn-ghost whitespace-nowrap" disabled={exporting || total === 0} onClick={exportCsv}>
+          {exporting ? 'Exporting…' : '⭳ Export CSV'}
+        </button>
       </div>
 
       {!loaded ? (

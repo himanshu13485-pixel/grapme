@@ -32,11 +32,13 @@ export class LiOverviewController {
     @Query('status') status?: LiLeadStatus,
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
+    @Query('all') all?: string,
   ) {
     return this.campaigns.globalLeads(u.tenantId, {
       clientSearch: client, status,
       page: page ? Number(page) : undefined,
       pageSize: pageSize ? Number(pageSize) : undefined,
+      all: all === 'true',
     });
   }
 }

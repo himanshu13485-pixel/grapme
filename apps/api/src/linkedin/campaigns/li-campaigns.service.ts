@@ -342,9 +342,10 @@ export class LiCampaignsService {
   }
 
   /** Admin cross-client leads view (leads sourced via drip / import / audience). */
-  async globalLeads(tenantId: string, opts: { clientSearch?: string; status?: LiLeadStatus; page?: number; pageSize?: number }) {
-    const page = Math.max(1, opts.page ?? 1);
-    const pageSize = Math.min(100, Math.max(1, opts.pageSize ?? 25));
+  async globalLeads(tenantId: string, opts: { clientSearch?: string; status?: LiLeadStatus; page?: number; pageSize?: number; all?: boolean }) {
+    // `all` (CSV export) returns every matching row, capped for safety.
+    const page = opts.all ? 1 : Math.max(1, opts.page ?? 1);
+    const pageSize = opts.all ? 10000 : Math.min(100, Math.max(1, opts.pageSize ?? 25));
     const clientIds = await this.clientIdsForSearch(tenantId, opts.clientSearch);
     if (clientIds && clientIds.length === 0) return { items: [], total: 0, page, pageSize };
 
