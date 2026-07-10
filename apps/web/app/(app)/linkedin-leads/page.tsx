@@ -35,39 +35,63 @@ export default function LinkedInLeadsPage() {
   const [dq, setDq] = useState('');
   const [status, setStatus] = useState('');
   const [exporting, setExporting] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const t = setTimeout(() => setDq(q.trim()), 300);
     return () => clearTimeout(t);
   }, [q]);
 
-  async function exportCsv() {
+  const CSV_HEADERS = ['Name', 'Profile URL', 'Title', 'Company', 'Client', 'Client company', 'Invoice', 'Campaign', 'Campaign status', 'Lead status', 'Sourced'];
+  const toRow = (l: LeadRow) => {
+    const tc = parseLeadTitleCompany(l.title, l.company);
+    return [
+      l.fullName, l.profileUrl ?? '', tc.title, tc.company,
+      l.client?.name ?? '', l.client?.company ?? '', l.client?.invoice ?? '',
+      l.campaign.name, l.campaign.status, STATUS_LABEL[l.status] ?? l.status,
+      new Date(l.createdAt).toLocaleDateString(),
+    ];
+  };
+  async function fetchAll(): Promise<LeadRow[]> {
+    const params = new URLSearchParams({ all: 'true' });
+    if (dq) params.set('client', dq);
+    if (status) params.set('status', status);
+    const r = await api.get<{ items: LeadRow[] }>(`/linkedin/overview/leads?${params}`);
+    return r.items;
+  }
+  async function download(scope: 'page' | 'all' | 'selected') {
+    setMenuOpen(false);
     setExporting(true);
     try {
-      const params = new URLSearchParams({ all: 'true' });
-      if (dq) params.set('client', dq);
-      if (status) params.set('status', status);
-      const r = await api.get<{ items: LeadRow[] }>(`/linkedin/overview/leads?${params}`);
-      const rows = r.items.map((l) => {
-        const tc = parseLeadTitleCompany(l.title, l.company);
-        return [
-          l.fullName, l.profileUrl ?? '', tc.title, tc.company,
-          l.client?.name ?? '', l.client?.company ?? '', l.client?.invoice ?? '',
-          l.campaign.name, l.campaign.status, STATUS_LABEL[l.status] ?? l.status,
-          new Date(l.createdAt).toLocaleDateString(),
-        ];
-      });
-      downloadCsv(
-        `linkedin-leads-${new Date().toISOString().slice(0, 10)}`,
-        ['Name', 'Profile URL', 'Title', 'Company', 'Client', 'Client company', 'Invoice', 'Campaign', 'Campaign status', 'Lead status', 'Sourced'],
-        rows,
-      );
+      let rows: LeadRow[];
+      if (scope === 'page') rows = items;
+      else {
+        const all = await fetchAll();
+        rows = scope === 'all' ? all : all.filter((l) => selected.has(l.id));
+      }
+      if (rows.length === 0) { alert('No leads to download for this option.'); return; }
+      downloadCsv(`linkedin-leads-${new Date().toISOString().slice(0, 10)}`, CSV_HEADERS, rows.map(toRow));
     } catch (e: any) {
       alert(e?.message ?? 'Export failed');
     } finally {
       setExporting(false);
     }
   }
+
+  const allPageSelected = items.length > 0 && items.every((l) => selected.has(l.id));
+  const toggleAllPage = () => setSelected((prev) => {
+    const next = new Set(prev);
+    if (allPageSelected) items.forEach((l) => next.delete(l.id));
+    else items.forEach((l) => next.add(l.id));
+    return next;
+  });
+  const toggleOne = (id: string) => setSelected((prev) => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+
   useEffect(() => { setPage(1); }, [dq, status]);
 
   useEffect(() => {
@@ -94,9 +118,27 @@ export default function LinkedInLeadsPage() {
           <option value="MESSAGED">Messaged</option>
           <option value="REPLIED">Replied</option>
         </select>
-        <button className="btn-ghost whitespace-nowrap" disabled={exporting || total === 0} onClick={exportCsv}>
-          {exporting ? 'Exporting…' : '⭳ Export CSV'}
-        </button>
+        <div className="relative">
+          <button className="btn-ghost whitespace-nowrap" disabled={exporting || total === 0} onClick={() => setMenuOpen((o) => !o)}>
+            {exporting ? 'Exporting…' : '⭳ Download ▾'}
+          </button>
+          {menuOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
+              <div className="absolute right-0 z-20 mt-1 w-60 overflow-hidden rounded-lg border border-slate-200 bg-white py-1 text-sm shadow-lg">
+                <button className="block w-full px-4 py-2 text-left hover:bg-slate-50 disabled:text-slate-300" disabled={selected.size === 0} onClick={() => download('selected')}>
+                  Download selected ({selected.size})
+                </button>
+                <button className="block w-full px-4 py-2 text-left hover:bg-slate-50" onClick={() => download('page')}>
+                  Download this page ({items.length})
+                </button>
+                <button className="block w-full px-4 py-2 text-left hover:bg-slate-50" onClick={() => download('all')}>
+                  Download all ({total})
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       {!loaded ? (
@@ -110,6 +152,7 @@ export default function LinkedInLeadsPage() {
             <table className="w-full min-w-[980px] text-sm">
               <thead className="bg-slate-50 text-left text-xs uppercase text-slate-400">
                 <tr>
+                  <th className="px-4 py-3"><input type="checkbox" checked={allPageSelected} onChange={toggleAllPage} aria-label="Select page" /></th>
                   <th className="px-4 py-3">Name</th>
                   <th className="px-4 py-3">Profile</th>
                   <th className="px-4 py-3">Title</th>
@@ -127,6 +170,7 @@ export default function LinkedInLeadsPage() {
                   const tc = parseLeadTitleCompany(l.title, l.company);
                   return (
                     <tr key={l.id} className="border-t border-slate-100 hover:bg-slate-50">
+                      <td className="px-4 py-3"><input type="checkbox" checked={selected.has(l.id)} onChange={() => toggleOne(l.id)} aria-label="Select lead" /></td>
                       <td className="px-4 py-3"><div className="max-w-[180px] truncate font-medium text-slate-800" title={l.fullName}>{l.fullName}</div></td>
                       <td className="px-4 py-3">
                         {l.profileUrl
