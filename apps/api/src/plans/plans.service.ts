@@ -72,7 +72,17 @@ export class PlansService {
     });
   }
 
-  async update(user: AuthUser, id: string, dto: { name?: string; color?: string }) {
+  async update(
+    user: AuthUser,
+    id: string,
+    dto: {
+      name?: string; color?: string;
+      validityDays?: number | null;
+      emailCredits?: number; linkedInCredits?: number;
+      mailboxLimit?: number; seatLimit?: number;
+      emailCampaignLimit?: number; linkedInCampaignLimit?: number;
+    },
+  ) {
     this.assertAdmin(user);
     const plan = await this.prisma.plan.findFirst({
       where: { id, tenantId: user.tenantId },
@@ -96,11 +106,20 @@ export class PlansService {
         data: { plan: dto.name.trim() },
       });
     }
+    // Non-negative integer, or undefined to leave the column unchanged.
+    const n = (v?: number) => (typeof v === 'number' && v >= 0 ? Math.floor(v) : undefined);
     return this.prisma.plan.update({
       where: { id },
       data: {
         ...(dto.name && dto.name.trim() ? { name: dto.name.trim() } : {}),
         ...(dto.color !== undefined ? { color: dto.color } : {}),
+        ...(dto.validityDays !== undefined ? { validityDays: dto.validityDays == null ? null : (n(dto.validityDays) ?? null) } : {}),
+        ...(n(dto.emailCredits) !== undefined ? { emailCredits: n(dto.emailCredits) } : {}),
+        ...(n(dto.linkedInCredits) !== undefined ? { linkedInCredits: n(dto.linkedInCredits) } : {}),
+        ...(n(dto.mailboxLimit) !== undefined ? { mailboxLimit: n(dto.mailboxLimit) } : {}),
+        ...(n(dto.seatLimit) !== undefined ? { seatLimit: n(dto.seatLimit) } : {}),
+        ...(n(dto.emailCampaignLimit) !== undefined ? { emailCampaignLimit: n(dto.emailCampaignLimit) } : {}),
+        ...(n(dto.linkedInCampaignLimit) !== undefined ? { linkedInCampaignLimit: n(dto.linkedInCampaignLimit) } : {}),
       },
     });
   }

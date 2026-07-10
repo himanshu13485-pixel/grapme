@@ -7,6 +7,13 @@ export interface Plan {
   id: string;
   name: string;
   color: string;
+  validityDays?: number | null;
+  emailCredits?: number;
+  linkedInCredits?: number;
+  mailboxLimit?: number;
+  seatLimit?: number;
+  emailCampaignLimit?: number;
+  linkedInCampaignLimit?: number;
 }
 
 /**

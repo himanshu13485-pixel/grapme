@@ -40,10 +40,10 @@ export default function MembershipPage() {
   }
 
   return (
-    <div className="max-w-2xl">
+    <div className="max-w-4xl">
       <PageHeader
         title="Membership"
-        subtitle="Membership plans and their theme colour — the client portal is styled by each client's membership"
+        subtitle="Each membership plan's entitlements — validity, credits, mailboxes/seats and campaign limits for Email and LinkedIn"
       />
 
       <form onSubmit={add} className="mb-4 flex flex-wrap items-end gap-2">
@@ -91,6 +91,8 @@ export default function MembershipPage() {
   );
 }
 
+const num = (v: unknown, fallback = 0) => (typeof v === 'number' ? v : fallback);
+
 function PlanRow({
   plan,
   onSaved,
@@ -101,13 +103,41 @@ function PlanRow({
   onDelete: (id: string, name: string) => void;
 }) {
   const [color, setColor] = useState(plan.color);
+  const [form, setForm] = useState({
+    validityDays: plan.validityDays ?? 0,
+    emailCredits: num(plan.emailCredits),
+    linkedInCredits: num(plan.linkedInCredits),
+    mailboxLimit: num(plan.mailboxLimit),
+    seatLimit: num(plan.seatLimit),
+    emailCampaignLimit: num(plan.emailCampaignLimit),
+    linkedInCampaignLimit: num(plan.linkedInCampaignLimit),
+  });
   const [busy, setBusy] = useState(false);
-  const dirty = color.toLowerCase() !== plan.color.toLowerCase();
+  const set = (k: keyof typeof form, v: number) => setForm((f) => ({ ...f, [k]: v }));
+
+  const dirty =
+    color.toLowerCase() !== plan.color.toLowerCase() ||
+    form.validityDays !== (plan.validityDays ?? 0) ||
+    form.emailCredits !== num(plan.emailCredits) ||
+    form.linkedInCredits !== num(plan.linkedInCredits) ||
+    form.mailboxLimit !== num(plan.mailboxLimit) ||
+    form.seatLimit !== num(plan.seatLimit) ||
+    form.emailCampaignLimit !== num(plan.emailCampaignLimit) ||
+    form.linkedInCampaignLimit !== num(plan.linkedInCampaignLimit);
 
   async function save() {
     setBusy(true);
     try {
-      await api.patch(`/plans/${plan.id}`, { color });
+      await api.patch(`/plans/${plan.id}`, {
+        color,
+        validityDays: form.validityDays > 0 ? form.validityDays : null,
+        emailCredits: form.emailCredits,
+        linkedInCredits: form.linkedInCredits,
+        mailboxLimit: form.mailboxLimit,
+        seatLimit: form.seatLimit,
+        emailCampaignLimit: form.emailCampaignLimit,
+        linkedInCampaignLimit: form.linkedInCampaignLimit,
+      });
       onSaved();
     } catch {
       setColor(plan.color);
@@ -117,40 +147,63 @@ function PlanRow({
   }
 
   return (
-    <div className="flex items-center justify-between gap-3 px-5 py-3">
-      <div className="flex items-center gap-3">
-        <span
-          className="h-8 w-8 rounded-lg border border-slate-200"
-          style={{ background: `linear-gradient(145deg, ${color}, color-mix(in srgb, ${color} 60%, black))` }}
-        />
-        <span className="font-medium text-slate-800">{plan.name}</span>
-      </div>
-      <div className="flex items-center gap-3">
-        <input
-          type="color"
-          className="h-8 w-12 cursor-pointer rounded border border-slate-200 bg-white p-0.5"
-          value={color}
-          onChange={(e) => setColor(e.target.value)}
-        />
-        <span className="w-16 font-mono text-xs text-slate-400">{color}</span>
-        {dirty && (
-          <button
-            type="button"
-            className="btn-primary px-3 py-1 text-xs"
-            onClick={save}
-            disabled={busy}
-          >
+    <div className="px-5 py-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span
+            className="h-8 w-8 rounded-lg border border-slate-200"
+            style={{ background: `linear-gradient(145deg, ${color}, color-mix(in srgb, ${color} 60%, black))` }}
+          />
+          <span className="text-base font-semibold text-slate-800">{plan.name}</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <input
+            type="color"
+            className="h-8 w-12 cursor-pointer rounded border border-slate-200 bg-white p-0.5"
+            value={color}
+            onChange={(e) => setColor(e.target.value)}
+          />
+          <button type="button" className="btn-primary px-3 py-1 text-xs disabled:opacity-40" onClick={save} disabled={busy || !dirty}>
             {busy ? '…' : 'Save'}
           </button>
-        )}
-        <button
-          type="button"
-          className="text-xs text-slate-400 hover:text-rose-600"
-          onClick={() => onDelete(plan.id, plan.name)}
-        >
-          Delete
-        </button>
+          <button type="button" className="text-xs text-slate-400 hover:text-rose-600" onClick={() => onDelete(plan.id, plan.name)}>
+            Delete
+          </button>
+        </div>
       </div>
+
+      <div className="mb-2">
+        <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">General</div>
+        <NumField label="Validity (days)" value={form.validityDays} onChange={(v) => set('validityDays', v)} hint="0 = no expiry" />
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">📧 Email</div>
+          <div className="grid grid-cols-3 gap-2">
+            <NumField label="Credits" value={form.emailCredits} onChange={(v) => set('emailCredits', v)} />
+            <NumField label="Mailboxes" value={form.mailboxLimit} onChange={(v) => set('mailboxLimit', v)} />
+            <NumField label="Campaigns" value={form.emailCampaignLimit} onChange={(v) => set('emailCampaignLimit', v)} />
+          </div>
+        </div>
+        <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">🔗 LinkedIn</div>
+          <div className="grid grid-cols-3 gap-2">
+            <NumField label="Credits" value={form.linkedInCredits} onChange={(v) => set('linkedInCredits', v)} />
+            <NumField label="Seats" value={form.seatLimit} onChange={(v) => set('seatLimit', v)} />
+            <NumField label="Campaigns" value={form.linkedInCampaignLimit} onChange={(v) => set('linkedInCampaignLimit', v)} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NumField({ label, value, onChange, hint }: { label: string; value: number; onChange: (v: number) => void; hint?: string }) {
+  return (
+    <div>
+      <label className="mb-0.5 block text-xs font-medium text-slate-500">{label}</label>
+      <input type="number" min={0} className="input py-1.5 text-sm" value={value} onChange={(e) => onChange(Math.max(0, Number(e.target.value) || 0))} />
+      {hint && <div className="mt-0.5 text-[10px] text-slate-400">{hint}</div>}
     </div>
   );
 }

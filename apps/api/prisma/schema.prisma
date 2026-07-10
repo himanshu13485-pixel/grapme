@@ -210,6 +210,14 @@ model Plan {
   name      String
   color     String   @default("#0f766e") // theme color for the client portal
   sortOrder Int      @default(0)
+  // Membership entitlements (reference values shown/applied per plan).
+  validityDays          Int? // plan validity window in days
+  emailCredits          Int  @default(0) // credits for the Email channel
+  linkedInCredits       Int  @default(0) // credits for the LinkedIn channel
+  mailboxLimit          Int  @default(0) // No. of mailboxes (Email)
+  seatLimit             Int  @default(0) // No. of seats (LinkedIn)
+  emailCampaignLimit    Int  @default(0) // No. of campaigns (Email)
+  linkedInCampaignLimit Int  @default(0) // No. of campaigns (LinkedIn)
   createdAt DateTime @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)

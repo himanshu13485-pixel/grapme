@@ -35,7 +35,13 @@ export class PlansController {
   update(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
-    @Body() dto: { name?: string; color?: string },
+    @Body() dto: {
+      name?: string; color?: string;
+      validityDays?: number | null;
+      emailCredits?: number; linkedInCredits?: number;
+      mailboxLimit?: number; seatLimit?: number;
+      emailCampaignLimit?: number; linkedInCampaignLimit?: number;
+    },
   ) {
     return this.plans.update(user, id, dto);
   }
