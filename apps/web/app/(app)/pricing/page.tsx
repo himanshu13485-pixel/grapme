@@ -2,7 +2,11 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { usePlans, Plan } from '@/lib/plans';
+import { useAuth } from '@/lib/auth';
+import { api } from '@/lib/api';
 import { PageHeader, EmptyState } from '@/components/ui';
+
+interface Profile { id: string; name: string; plan?: string }
 
 const CURRENCY_SYMBOL: Record<string, string> = {
   USD: '$', INR: '₹', EUR: '€', GBP: '£', AUD: 'A$', CAD: 'C$', AED: 'AED ', SGD: 'S$', JPY: '¥', ZAR: 'R',
@@ -11,8 +15,37 @@ const money = (cur: string, n: number) => `${CURRENCY_SYMBOL[cur] ?? cur + ' '}$
 
 export default function PricingPage() {
   const { plans, loading } = usePlans();
+  const { user } = useAuth();
+  const isClient = user?.role === 'CLIENT';
   const [period, setPeriod] = useState<'monthly' | 'yearly'>('monthly');
   const [currency, setCurrency] = useState('');
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [profileId, setProfileId] = useState('');
+  const [selecting, setSelecting] = useState('');
+
+  useEffect(() => {
+    if (!isClient) return;
+    api.get<Profile[]>('/my/clients').then((rows) => {
+      setProfiles(rows);
+      if (rows[0]) setProfileId(rows[0].id);
+    }).catch(() => {});
+  }, [isClient]);
+
+  async function selectPlan(plan: Plan) {
+    if (!profileId) { alert('Pick a workspace first.'); return; }
+    setSelecting(plan.id);
+    try {
+      const r = await api.post<{ mode: string; paymentLink?: string | null }>('/billing/plan-requests', {
+        clientId: profileId, plan: plan.name, currency, period,
+      });
+      if (r.paymentLink) { window.location.href = r.paymentLink; return; }
+      alert(r.mode === 'AUTO'
+        ? 'Request created. Online payment isn’t available yet — your account team will confirm activation.'
+        : 'Request submitted. Your account team will confirm the plan after payment.');
+    } catch (e: any) {
+      alert(e?.message ?? 'Could not submit the request.');
+    } finally { setSelecting(''); }
+  }
 
   // Currencies present across all plans' pricing.
   const currencies = useMemo(() => {
@@ -48,6 +81,11 @@ export default function PricingPage() {
             {currencies.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
         )}
+        {isClient && profiles.length > 1 && (
+          <select className="input w-56" value={profileId} onChange={(e) => setProfileId(e.target.value)}>
+            {profiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        )}
       </div>
 
       {loading ? (
@@ -56,14 +94,27 @@ export default function PricingPage() {
         <EmptyState message="No plans available." />
       ) : (
         <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-          {priced.map((p) => <PlanCard key={p.id} plan={p} period={period} currency={currency} />)}
+          {priced.map((p) => {
+            const current = isClient && profiles.find((x) => x.id === profileId)?.plan === p.name;
+            return (
+              <PlanCard
+                key={p.id}
+                plan={p}
+                period={period}
+                currency={currency}
+                onSelect={isClient ? () => selectPlan(p) : undefined}
+                selecting={selecting === p.id}
+                current={!!current}
+              />
+            );
+          })}
         </div>
       )}
     </div>
   );
 }
 
-function PlanCard({ plan, period, currency }: { plan: Plan; period: 'monthly' | 'yearly'; currency: string }) {
+function PlanCard({ plan, period, currency, onSelect, selecting, current }: { plan: Plan; period: 'monthly' | 'yearly'; currency: string; onSelect?: () => void; selecting?: boolean; current?: boolean }) {
   const pr = (plan.pricing ?? []).find((x) => x.currency === currency);
   const price = pr ? (period === 'monthly' ? pr.monthlyPrice : pr.yearlyPrice) : 0;
   const best = pr ? (period === 'monthly' ? pr.monthlyBest : pr.yearlyBest) : 0;
@@ -118,6 +169,18 @@ function PlanCard({ plan, period, currency }: { plan: Plan; period: 'monthly' | 
           </div>
         )}
       </div>
+
+      {onSelect && (
+        <div className="border-t border-slate-100 p-4">
+          {current ? (
+            <div className="rounded-lg bg-emerald-50 py-2 text-center text-sm font-medium text-emerald-700">✓ Current plan</div>
+          ) : (
+            <button className="btn-primary w-full" disabled={selecting} onClick={onSelect}>
+              {selecting ? 'Submitting…' : 'Select / Upgrade'}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

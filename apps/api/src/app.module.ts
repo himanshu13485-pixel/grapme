@@ -22,6 +22,7 @@ import { DeliverabilityModule } from './deliverability/deliverability.module';
 import { ComplianceModule } from './compliance/compliance.module';
 import { ProgramsModule } from './programs/programs.module';
 import { PlansModule } from './plans/plans.module';
+import { BillingModule } from './billing/billing.module';
 import { GreetingsModule } from './greetings/greetings.module';
 import { AssetsModule } from './assets/assets.module';
 import { LinkedinModule } from './linkedin/linkedin.module';
@@ -60,6 +61,7 @@ const engineModules = queueEnabled
     ComplianceModule,
     ProgramsModule,
     PlansModule,
+    BillingModule,
     GreetingsModule,
     AssetsModule,
     LinkedinModule,

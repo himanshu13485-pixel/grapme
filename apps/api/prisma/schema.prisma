@@ -152,6 +152,7 @@ model Tenant {
   settings        Json     @default("{}")
   greetingsEnabled Boolean @default(true) // show a daily login greeting to clients
   reportMailboxId String?  // explicit mailbox client reports are sent from (else auto-resolved)
+  paymentMode     String   @default("MANUAL") // AUTO (Cashfree self-serve) | MANUAL (offline via request)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -201,6 +202,27 @@ model Greeting {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
+}
+
+// A client's request to move onto a plan. AUTO requests are paid via Cashfree
+// then auto-activated; MANUAL requests are activated by an admin after offline payment.
+model PlanUpgradeRequest {
+  id            String   @id @default(uuid())
+  tenantId      String
+  clientId      String
+  requestedPlan String
+  currency      String?
+  period        String   @default("monthly") // monthly | yearly
+  amount        Int      @default(0)          // in the currency's minor-less unit (whole)
+  mode          String   @default("MANUAL")   // AUTO | MANUAL
+  status        String   @default("PENDING")  // PENDING | PAID | ACTIVATED | REJECTED
+  paymentRef    String?                       // Cashfree order/payment id
+  note          String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([tenantId, status])
+  @@index([clientId])
 }
 
 // Tenant-defined plan names shown in every plan picker/filter.

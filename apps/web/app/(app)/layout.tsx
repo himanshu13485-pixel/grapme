@@ -19,6 +19,8 @@ const NAV: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: '▦', module: 'dashboard' },
   { href: '/registered-clients', label: 'Registered Clients', icon: '👥', admin: true, module: 'registered-clients' },
   { href: '/clients', label: 'Clients Workspace', icon: '🏢', admin: true, module: 'clients' },
+  { href: '/plan-requests', label: 'Plan Upgrade Request', icon: '🧾', admin: true, module: 'plan-requests' },
+  { href: '/billing', label: 'Payment / Billing', icon: '💳', admin: true, module: 'billing' },
   // ── Email Outreach (collapsed under "More…") ──
   { href: '/cohort-schedule', label: 'Cohort Schedule', icon: '📅', admin: true, module: 'cohort-schedule', group: 'email' },
   { href: '/validity', label: 'Validity', icon: '⏳', admin: true, module: 'validity', group: 'email' },
@@ -40,7 +42,7 @@ const NAV: NavItem[] = [
   { href: '/greetings', label: 'Greetings', icon: '👋', admin: true, module: 'greetings' },
   { href: '/sub-admins', label: 'Sub Admins', icon: '⚇', admin: true, superOnly: true, module: 'sub-admins' },
   { href: '/activity-logs', label: 'Activity Logs', icon: '◷', admin: true, module: 'activity-logs' },
-  { href: '/pricing', label: 'Pricing', icon: '💳', module: 'pricing' },
+  { href: '/pricing', label: 'Membership', icon: '🪙', module: 'pricing' },
   { href: '/my-profile', label: 'My Account', icon: '👤', module: 'my-profile' },
 ];
 
