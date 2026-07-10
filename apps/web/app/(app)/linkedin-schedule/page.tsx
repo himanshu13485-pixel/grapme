@@ -21,6 +21,7 @@ interface ScheduleRow {
   dripEnabled: boolean;
   seat?: string | null;
   leads: number;
+  nextSendAt?: string | null;
   client?: { id: string; name: string; company?: string | null; invoice?: string | null } | null;
 }
 
@@ -37,13 +38,16 @@ export default function LinkedInSchedulePage() {
   const [q, setQ] = useState('');
   const [dq, setDq] = useState('');
   const [status, setStatus] = useState('');
+  const [range, setRange] = useState('week');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
   const [emBusy, setEmBusy] = useState('');
 
   useEffect(() => {
     const t = setTimeout(() => setDq(q.trim()), 300);
     return () => clearTimeout(t);
   }, [q]);
-  useEffect(() => { setPage(1); }, [dq, status]);
+  useEffect(() => { setPage(1); }, [dq, status, range, from, to]);
 
   async function emergency(action: 'pause-all' | 'resume-all' | 'stop-all') {
     const verb = action === 'pause-all' ? 'pause' : action === 'resume-all' ? 'resume' : 'stop';
@@ -58,18 +62,41 @@ export default function LinkedInSchedulePage() {
   }
 
   useEffect(() => {
-    const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
+    if (range === 'custom' && (!from || !to)) return;
+    const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE), range });
     if (dq) params.set('client', dq);
     if (status) params.set('status', status);
+    if (range === 'custom') { params.set('from', from); params.set('to', to); }
     api.get<{ items: ScheduleRow[]; total: number }>(`/linkedin/overview/schedule?${params}`)
       .then((r) => { setItems(r.items); setTotal(r.total); })
       .catch(() => {})
       .finally(() => setLoaded(true));
-  }, [page, dq, status]);
+  }, [page, dq, status, range, from, to]);
+
+  const RANGES: [string, string][] = [['today', 'Today'], ['week', 'Next 7 days'], ['upcoming', 'All upcoming'], ['all', 'All'], ['custom', 'Custom']];
 
   return (
     <div>
-      <PageHeader title="LinkedIn Campaigns Schedule" subtitle="Every client's LinkedIn campaigns and their send schedule in one board." />
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <PageHeader title="LinkedIn Campaigns Schedule" subtitle="Every client's LinkedIn campaigns and their next scheduled send." />
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 text-sm">
+            {RANGES.map(([k, l]) => (
+              <button key={k} onClick={() => setRange(k)}
+                className={`rounded-md px-3 py-1 font-medium transition ${range === k ? 'bg-brand-600 text-white' : 'text-slate-500 hover:text-slate-700'}`}>
+                {l}
+              </button>
+            ))}
+          </div>
+          {range === 'custom' && (
+            <span className="flex items-center gap-1 text-sm">
+              <input type="date" className="input py-1 text-sm" value={from} onChange={(e) => setFrom(e.target.value)} />
+              <span className="text-slate-400">→</span>
+              <input type="date" className="input py-1 text-sm" value={to} onChange={(e) => setTo(e.target.value)} />
+            </span>
+          )}
+        </div>
+      </div>
 
       {/* Emergency controls — act on every client's LinkedIn campaigns at once. */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-3">
@@ -112,6 +139,7 @@ export default function LinkedInSchedulePage() {
                   <th className="px-4 py-3">Company</th>
                   <th className="px-4 py-3">Invoice</th>
                   <th className="px-4 py-3">Seat</th>
+                  <th className="px-4 py-3">Next send</th>
                   <th className="px-4 py-3">Send window</th>
                   <th className="px-4 py-3">Caps/day</th>
                   <th className="px-4 py-3">Automation</th>
@@ -133,6 +161,11 @@ export default function LinkedInSchedulePage() {
                     <td className="px-4 py-3 text-slate-600">{c.client?.company || '—'}</td>
                     <td className="px-4 py-3 text-slate-500">{c.client?.invoice || '—'}</td>
                     <td className="px-4 py-3 text-slate-500">{c.seat || '—'}</td>
+                    <td className="whitespace-nowrap px-4 py-3">
+                      {c.nextSendAt
+                        ? <span className="font-medium text-slate-700">{new Date(c.nextSendAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                        : <span className="text-slate-300">—</span>}
+                    </td>
                     <td className="whitespace-nowrap px-4 py-3 text-slate-600">
                       {c.run247 ? '24/7' : `${hr(c.workStartHour)}–${hr(c.workEndHour)}`}
                       <div className="text-[11px] text-slate-400">{fmtDays(c.workDays)}</div>

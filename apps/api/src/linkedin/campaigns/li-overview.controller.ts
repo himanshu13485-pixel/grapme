@@ -15,11 +15,14 @@ export class LiOverviewController {
     @CurrentUser() u: AuthUser,
     @Query('client') client?: string,
     @Query('status') status?: LiCampaignStatus,
+    @Query('range') range?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
   ) {
     return this.campaigns.globalSchedule(u.tenantId, {
-      clientSearch: client, status,
+      clientSearch: client, status, range, from, to,
       page: page ? Number(page) : undefined,
       pageSize: pageSize ? Number(pageSize) : undefined,
     });

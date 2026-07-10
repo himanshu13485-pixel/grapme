@@ -376,7 +376,7 @@ export class LiCampaignsService {
   }
 
   /** Admin cross-client campaign schedule board. */
-  async globalSchedule(tenantId: string, opts: { clientSearch?: string; status?: LiCampaignStatus; page?: number; pageSize?: number }) {
+  async globalSchedule(tenantId: string, opts: { clientSearch?: string; status?: LiCampaignStatus; range?: string; from?: string; to?: string; page?: number; pageSize?: number }) {
     const page = Math.max(1, opts.page ?? 1);
     const pageSize = Math.min(100, Math.max(1, opts.pageSize ?? 25));
     const clientIds = await this.clientIdsForSearch(tenantId, opts.clientSearch);
@@ -387,20 +387,57 @@ export class LiCampaignsService {
       status: opts.status ?? { not: LiCampaignStatus.DELETED },
       ...(clientIds ? { clientId: { in: clientIds } } : {}),
     };
-    const [total, rows] = await this.prisma.$transaction([
-      this.prisma.liCampaign.count({ where }),
-      this.prisma.liCampaign.findMany({
-        where, orderBy: { createdAt: 'desc' }, skip: (page - 1) * pageSize, take: pageSize,
-        include: { linkedInAccount: { select: { fullName: true } }, _count: { select: { leads: true } } },
-      }),
-    ]);
-    const cmap = await this.clientMap(rows.map((r) => r.clientId));
-    const items = rows.map((c) => ({
+    // Load all matching campaigns, then annotate each with its next scheduled send
+    // and apply the date-window filter — mirrors the email cohort agenda.
+    const campaigns = await this.prisma.liCampaign.findMany({
+      where,
+      include: { linkedInAccount: { select: { fullName: true } }, _count: { select: { leads: true } } },
+    });
+
+    // Earliest upcoming scheduled action per campaign (via lead → campaign).
+    const now = new Date();
+    const actions = campaigns.length
+      ? await this.prisma.liScheduledAction.findMany({
+          where: { status: { in: ['PENDING', 'QUEUED'] }, runAt: { gte: now }, lead: { campaignId: { in: campaigns.map((c) => c.id) } } },
+          select: { runAt: true, lead: { select: { campaignId: true } } },
+          orderBy: { runAt: 'asc' },
+        })
+      : [];
+    const nextByCampaign = new Map<string, Date>();
+    for (const a of actions) { const cid = a.lead.campaignId; if (!nextByCampaign.has(cid)) nextByCampaign.set(cid, a.runAt); }
+
+    // Date-window filter on the next send.
+    const range = opts.range ?? 'all';
+    let winFrom: Date | null = null; let winTo: Date | null = null;
+    const startOfToday = new Date(now); startOfToday.setHours(0, 0, 0, 0);
+    if (range === 'today') { winFrom = startOfToday; winTo = new Date(startOfToday.getTime() + 864e5); }
+    else if (range === 'week') { winFrom = startOfToday; winTo = new Date(startOfToday.getTime() + 7 * 864e5); }
+    else if (range === 'custom' && opts.from) { winFrom = new Date(opts.from); winTo = opts.to ? new Date(`${opts.to}T23:59:59`) : new Date(winFrom.getTime() + 864e5); }
+    // 'all' / 'upcoming' → any future send (or no window).
+
+    let annotated = campaigns.map((c) => ({ c, nextSendAt: nextByCampaign.get(c.id) ?? null }));
+    if (range === 'today' || range === 'week' || range === 'custom') {
+      annotated = annotated.filter((x) => x.nextSendAt && x.nextSendAt >= winFrom! && x.nextSendAt < winTo!);
+    } else if (range === 'upcoming') {
+      annotated = annotated.filter((x) => !!x.nextSendAt);
+    }
+    // Soonest send first (nulls last), then newest.
+    annotated.sort((a, b) => {
+      const av = a.nextSendAt?.getTime() ?? Infinity; const bv = b.nextSendAt?.getTime() ?? Infinity;
+      if (av !== bv) return av - bv;
+      return b.c.createdAt.getTime() - a.c.createdAt.getTime();
+    });
+
+    const total = annotated.length;
+    const pageRows = annotated.slice((page - 1) * pageSize, page * pageSize);
+    const cmap = await this.clientMap(pageRows.map((x) => x.c.clientId));
+    const items = pageRows.map(({ c, nextSendAt }) => ({
       id: c.id, name: c.name, status: c.status, clientId: c.clientId,
       timezone: c.timezone, run247: c.run247, workStartHour: c.workStartHour, workEndHour: c.workEndHour,
       workDays: c.workDays, dailyConnectionLimit: c.dailyConnectionLimit, dailyMessageLimit: c.dailyMessageLimit,
       warmupEnabled: c.warmupEnabled, dripEnabled: c.dripEnabled,
       seat: c.linkedInAccount?.fullName ?? null, leads: c._count.leads,
+      nextSendAt: nextSendAt ?? null,
       client: cmap.get(c.clientId) ?? null,
     }));
     return { items, total, page, pageSize };
