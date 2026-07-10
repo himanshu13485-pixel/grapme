@@ -358,7 +358,7 @@ export class LiCampaignsService {
         where, orderBy: { createdAt: 'desc' }, skip: (page - 1) * pageSize, take: pageSize,
         select: {
           id: true, fullName: true, title: true, company: true, profileUrl: true, status: true, currentStep: true, createdAt: true,
-          campaign: { select: { id: true, name: true, clientId: true } },
+          campaign: { select: { id: true, name: true, status: true, clientId: true } },
         },
       }),
     ]);
@@ -366,7 +366,7 @@ export class LiCampaignsService {
     const items = rows.map((l) => ({
       id: l.id, fullName: l.fullName, title: l.title, company: l.company, profileUrl: l.profileUrl,
       status: l.status, currentStep: l.currentStep, createdAt: l.createdAt,
-      campaign: { id: l.campaign.id, name: l.campaign.name },
+      campaign: { id: l.campaign.id, name: l.campaign.name, status: l.campaign.status },
       client: cmap.get(l.campaign.clientId) ?? null,
     }));
     return { items, total, page, pageSize };

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
-import { PageHeader, EmptyState, Pagination } from '@/components/ui';
+import { PageHeader, EmptyState, Pagination, StatusBadge } from '@/components/ui';
 import { parseLeadTitleCompany } from '@/lib/linkedin';
 
 interface LeadRow {
@@ -15,7 +15,7 @@ interface LeadRow {
   status: string;
   currentStep: number;
   createdAt: string;
-  campaign: { id: string; name: string };
+  campaign: { id: string; name: string; status: string };
   client?: { id: string; name: string; company?: string | null; invoice?: string | null } | null;
 }
 
@@ -85,7 +85,8 @@ export default function LinkedInLeadsPage() {
                   <th className="px-4 py-3">Client company</th>
                   <th className="px-4 py-3">Invoice</th>
                   <th className="px-4 py-3">Campaign</th>
-                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Campaign status</th>
+                  <th className="px-4 py-3">Lead status</th>
                 </tr>
               </thead>
               <tbody>
@@ -113,6 +114,7 @@ export default function LinkedInLeadsPage() {
                           ? <Link href={`/linkedin/${l.client.id}/campaigns/${l.campaign.id}`} className="text-brand-700 hover:underline">{l.campaign.name}</Link>
                           : <span className="text-slate-600">{l.campaign.name}</span>}
                       </td>
+                      <td className="px-4 py-3"><StatusBadge status={l.campaign.status} /></td>
                       <td className="px-4 py-3"><span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs">{STATUS_LABEL[l.status] ?? l.status}</span></td>
                     </tr>
                   );
