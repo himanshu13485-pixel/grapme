@@ -33,6 +33,7 @@ export class CreateClientDto {
   @IsOptional() @IsBoolean() linkedInCreditMetering?: boolean;
   // Per-client Email entitlements (defaulted from the plan, overridable).
   @IsOptional() @IsInt() @Min(0) emailCredits?: number;
+  @IsOptional() @IsBoolean() emailCreditMetering?: boolean;
   @IsOptional() @IsInt() @Min(0) mailboxLimit?: number;
   @IsOptional() @IsInt() @Min(0) emailCampaignLimit?: number;
   // Client self-service LinkedIn request: the basic send window they'd like.
@@ -61,6 +62,7 @@ export class UpdateClientDto {
   @IsOptional() @IsBoolean() linkedInEnabled?: boolean;
   @IsOptional() @IsBoolean() linkedInCreditMetering?: boolean;
   @IsOptional() @IsInt() @Min(0) emailCredits?: number;
+  @IsOptional() @IsBoolean() emailCreditMetering?: boolean;
   @IsOptional() @IsInt() @Min(0) mailboxLimit?: number;
   @IsOptional() @IsInt() @Min(0) emailCampaignLimit?: number;
   @IsOptional() @IsString() status?: string;

@@ -54,6 +54,19 @@ export class SendProcessor extends WorkerHost {
     });
     if (!contact || contact.status !== ContactStatus.ACTIVE) return;
 
+    // Email credit metering: each send costs 1 credit from the client's balance.
+    // When metering is on and the balance is empty, hold the send (retry later)
+    // so it goes out once the admin tops the client up.
+    if (campaign.clientId) {
+      const client = await this.prisma.client.findUnique({
+        where: { id: campaign.clientId },
+        select: { emailCreditMetering: true, emailCredits: true },
+      });
+      if (client?.emailCreditMetering && client.emailCredits < 1) {
+        throw new Error('Out of email credits — retry later');
+      }
+    }
+
     // Follow-up guards: a reply always stops the sequence, then the step's
     // own condition (NO_REPLY / OPENED / NOT_OPENED) decides whether to send.
     if (stepId) {
@@ -162,6 +175,13 @@ export class SendProcessor extends WorkerHost {
       await this.prisma.emailEvent.create({
         data: { messageId: message.id, campaignId, eventType: EventType.SENT },
       });
+      // Debit 1 email credit for the send (atomic; only when metering is on).
+      if (campaign.clientId) {
+        await this.prisma.client.updateMany({
+          where: { id: campaign.clientId, emailCreditMetering: true, emailCredits: { gte: 1 } },
+          data: { emailCredits: { decrement: 1 } },
+        });
+      }
 
       await this.maybeComplete(campaignId, job.id);
     } catch (err) {

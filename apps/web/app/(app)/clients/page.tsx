@@ -22,6 +22,7 @@ interface Client {
   linkedInEnabled?: boolean;
   linkedInCreditMetering?: boolean;
   emailCredits?: number;
+  emailCreditMetering?: boolean;
   mailboxLimit?: number;
   emailCampaignLimit?: number;
   plan: string;
@@ -397,7 +398,7 @@ function ClientDetailView({ client }: { client: Client }) {
     { label: 'Status', value: client.status },
   ];
   const emailRows: DetailRow[] = emailOn ? [
-    { label: 'Credits', value: String(client.emailCredits ?? 0) },
+    { label: 'Credits', value: `${client.emailCredits ?? 0}${client.emailCreditMetering ? ' · metered (1/email)' : ' · unmetered'}` },
     { label: 'Mailboxes (allowed)', value: limitLabel(client.mailboxLimit) },
     { label: 'Campaigns (allowed)', value: limitLabel(client.emailCampaignLimit) },
     { label: 'Contacts / month', value: String(client.monthlyQuota) },
@@ -507,6 +508,7 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
     whatsappEnabled: false,
     whatsappNumber: '',
     emailCredits: 0,
+    emailCreditMetering: false,
     mailboxLimit: 0,
     emailCampaignLimit: 0,
     plan: 'Growth',
@@ -735,10 +737,16 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
         <div>
           <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">📧 Email business requirements</div>
           {!isClient && (
-            <div className="mb-3 grid grid-cols-3 gap-3 rounded-lg border border-slate-100 bg-slate-50/60 p-3">
-              <NumberField label="Credits" value={form.emailCredits} onChange={(v) => setForm({ ...form, emailCredits: v })} />
-              <NumberField label="Mailboxes (0=∞)" value={form.mailboxLimit} onChange={(v) => setForm({ ...form, mailboxLimit: v })} />
-              <NumberField label="Campaigns (0=∞)" value={form.emailCampaignLimit} onChange={(v) => setForm({ ...form, emailCampaignLimit: v })} />
+            <div className="mb-3 rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+              <div className="grid grid-cols-3 gap-3">
+                <NumberField label="Credits" value={form.emailCredits} onChange={(v) => setForm({ ...form, emailCredits: v })} />
+                <NumberField label="Mailboxes (0=∞)" value={form.mailboxLimit} onChange={(v) => setForm({ ...form, mailboxLimit: v })} />
+                <NumberField label="Campaigns (0=∞)" value={form.emailCampaignLimit} onChange={(v) => setForm({ ...form, emailCampaignLimit: v })} />
+              </div>
+              <label className="mt-2 flex items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" checked={form.emailCreditMetering} onChange={(e) => setForm({ ...form, emailCreditMetering: e.target.checked })} />
+                Meter email sends — <strong>1 credit per email</strong> (off = unlimited)
+              </label>
             </div>
           )}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -794,6 +802,7 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
     whatsappEnabled: false,
     whatsappNumber: '',
     emailCredits: client.emailCredits ?? 0,
+    emailCreditMetering: client.emailCreditMetering ?? false,
     mailboxLimit: client.mailboxLimit ?? 0,
     emailCampaignLimit: client.emailCampaignLimit ?? 0,
     plan: client.plan,
@@ -932,6 +941,7 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
         linkedInEnabled: channels === 'LINKEDIN' || channels === 'BOTH',
         linkedInCreditMetering: channels !== 'EMAIL' ? creditMetering : false,
         emailCredits: Number(form.emailCredits),
+        emailCreditMetering: form.emailCreditMetering,
         mailboxLimit: Number(form.mailboxLimit),
         emailCampaignLimit: Number(form.emailCampaignLimit),
         plan: form.plan,
@@ -1093,10 +1103,16 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
           ⚠ Changes apply to future scheduling only — running cohorts keep their
           already-scheduled sends.
         </p>
-        <div className="mb-3 grid grid-cols-3 gap-3 rounded-lg border border-slate-100 bg-slate-50/60 p-3">
-          <NumberField label="Credits" value={form.emailCredits} onChange={(v) => setForm({ ...form, emailCredits: v })} />
-          <NumberField label="Mailboxes (0=∞)" value={form.mailboxLimit} onChange={(v) => setForm({ ...form, mailboxLimit: v })} />
-          <NumberField label="Campaigns (0=∞)" value={form.emailCampaignLimit} onChange={(v) => setForm({ ...form, emailCampaignLimit: v })} />
+        <div className="mb-3 rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+          <div className="grid grid-cols-3 gap-3">
+            <NumberField label="Credits" value={form.emailCredits} onChange={(v) => setForm({ ...form, emailCredits: v })} />
+            <NumberField label="Mailboxes (0=∞)" value={form.mailboxLimit} onChange={(v) => setForm({ ...form, mailboxLimit: v })} />
+            <NumberField label="Campaigns (0=∞)" value={form.emailCampaignLimit} onChange={(v) => setForm({ ...form, emailCampaignLimit: v })} />
+          </div>
+          <label className="mt-2 flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" checked={form.emailCreditMetering} onChange={(e) => setForm({ ...form, emailCreditMetering: e.target.checked })} />
+            Meter email sends — <strong>1 credit per email</strong> (off = unlimited)
+          </label>
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <NumberField label="Contacts / month" value={form.monthlyQuota} onChange={(v) => setForm({ ...form, monthlyQuota: v })} />

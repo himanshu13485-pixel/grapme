@@ -733,6 +733,7 @@ model Client {
   linkedInCreditMetering Boolean @default(false) // when true, each LinkedIn lead-sourcing run costs 1 credit
   // Per-client entitlements (defaulted from the plan, overridable; 0 = unlimited/unset).
   emailCredits        Int    @default(0)
+  emailCreditMetering Boolean @default(false) // when true, each email send debits 1 credit
   mailboxLimit        Int    @default(0)
   emailCampaignLimit  Int    @default(0)
   status            String   @default("active")

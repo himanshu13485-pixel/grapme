@@ -69,6 +69,7 @@ interface Client {
   linkedInEnabled?: boolean;
   linkedInCreditMetering?: boolean;
   emailCredits?: number;
+  emailCreditMetering?: boolean;
   mailboxLimit?: number;
   emailCampaignLimit?: number;
   reportDaily: boolean;
@@ -1842,7 +1843,7 @@ function ClientDetails({ client }: { client: Client }) {
     { label: 'Status', value: active ? 'Active' : 'Inactive' },
   ];
   const emailRows: DetailRow[] = emailOn ? [
-    { label: 'Credits', value: String(client.emailCredits ?? 0) },
+    { label: 'Credits', value: `${client.emailCredits ?? 0}${client.emailCreditMetering ? ' · metered (1/email)' : ' · unmetered'}` },
     { label: 'Mailboxes (allowed)', value: detailLimit(client.mailboxLimit) },
     { label: 'Campaigns (allowed)', value: detailLimit(client.emailCampaignLimit) },
     { label: 'Contacts / month', value: String(client.monthlyQuota) },
