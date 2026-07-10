@@ -223,6 +223,7 @@ export class ProgramsService {
       status?: string;
       plan?: string;
       linkedInEnabled?: string;
+      channel?: string;
     },
   ) {
     const page = Math.max(1, parseInt(query.page ?? '1', 10) || 1);
@@ -245,6 +246,12 @@ export class ProgramsService {
     }
     if (query.plan) and.push({ plan: query.plan });
     if (query.linkedInEnabled === 'true') and.push({ linkedInEnabled: true });
+    // Channel filter — matches the card's label logic (email is on unless explicitly off).
+    switch ((query.channel ?? '').toUpperCase()) {
+      case 'EMAIL': and.push({ linkedInEnabled: false }); break;
+      case 'LINKEDIN': and.push({ linkedInEnabled: true, emailEnabled: false }); break;
+      case 'BOTH': and.push({ linkedInEnabled: true, emailEnabled: { not: false } }); break;
+    }
     if (query.invoice) and.push({ invoiceNo: ci(query.invoice) });
     if (query.email) {
       and.push({

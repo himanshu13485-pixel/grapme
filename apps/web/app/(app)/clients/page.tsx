@@ -50,6 +50,7 @@ export default function ClientsPage() {
   const [emailQ, setEmailQ] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [planFilter, setPlanFilter] = useState('ALL');
+  const [channelFilter, setChannelFilter] = useState('ALL');
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 12;
   const canDelete = useCanDelete();
@@ -78,7 +79,7 @@ export default function ClientsPage() {
   }, [invoiceQ]);
 
   const hasFilters =
-    !!dq || !!dEmail || !!dInvoice || statusFilter !== 'ALL' || planFilter !== 'ALL';
+    !!dq || !!dEmail || !!dInvoice || statusFilter !== 'ALL' || planFilter !== 'ALL' || channelFilter !== 'ALL';
 
   const load = useCallback(() => {
     const params = new URLSearchParams();
@@ -89,6 +90,7 @@ export default function ClientsPage() {
     if (dInvoice && !isClient) params.set('invoice', dInvoice);
     if (statusFilter !== 'ALL') params.set('status', statusFilter.toLowerCase());
     if (planFilter !== 'ALL') params.set('plan', planFilter);
+    if (channelFilter !== 'ALL') params.set('channel', channelFilter);
     api
       .get<{ items: Client[]; total: number }>(`/clients/paged?${params.toString()}`)
       .then((r) => {
@@ -97,10 +99,10 @@ export default function ClientsPage() {
       })
       .catch(() => {})
       .finally(() => setLoaded(true));
-  }, [page, dq, dEmail, dInvoice, statusFilter, planFilter, isClient]);
+  }, [page, dq, dEmail, dInvoice, statusFilter, planFilter, channelFilter, isClient]);
 
   // Reset to page 1 whenever the filters change, then (re)fetch.
-  useEffect(() => setPage(1), [dq, dEmail, dInvoice, statusFilter, planFilter]);
+  useEffect(() => setPage(1), [dq, dEmail, dInvoice, statusFilter, planFilter, channelFilter]);
   useEffect(() => {
     load();
   }, [load]);
@@ -201,6 +203,18 @@ export default function ClientsPage() {
               ))}
             </select>
           )}
+          {!isClient && (
+            <select
+              className="input w-44"
+              value={channelFilter}
+              onChange={(e) => setChannelFilter(e.target.value)}
+            >
+              <option value="ALL">All channels</option>
+              <option value="EMAIL">📧 Email only</option>
+              <option value="LINKEDIN">🔗 LinkedIn only</option>
+              <option value="BOTH">📧 + 🔗 Both</option>
+            </select>
+          )}
           <span className="ml-auto text-sm text-slate-400">{total} total</span>
         </div>
         {loaded && total === 0 ? (
@@ -230,6 +244,11 @@ export default function ClientsPage() {
               <div className="mt-1 text-xs text-slate-400">
                 {c.plan}
                 {c.invoiceNo && <span> · Invoice {c.invoiceNo}</span>}
+              </div>
+              <div className="mt-2">
+                <span className="inline-flex items-center rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-700">
+                  {channelLabel(c)}
+                </span>
               </div>
               <div className="mt-4 grid grid-cols-3 gap-2 text-center">
                 <Stat label="Mailboxes" value={c._count?.mailboxes ?? 0} />
