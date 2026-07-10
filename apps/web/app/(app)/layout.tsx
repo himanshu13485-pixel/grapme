@@ -294,6 +294,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               label="My Profile"
               color={themeColor}
             />
+            <ClientNavItem
+              href="/pricing"
+              active={pathname === '/pricing'}
+              icon="🪙"
+              label="Membership"
+              color={themeColor}
+            />
           </nav>
 
           <div className="border-t border-white/10 p-4">
