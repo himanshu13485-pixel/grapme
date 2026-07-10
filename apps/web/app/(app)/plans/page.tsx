@@ -103,7 +103,10 @@ function PlanRow({
   onDelete: (id: string, name: string) => void;
 }) {
   const [color, setColor] = useState(plan.color);
+  const [emailOn, setEmailOn] = useState(plan.emailEnabled !== false);
+  const [linkedInOn, setLinkedInOn] = useState(plan.linkedInEnabled !== false);
   const [form, setForm] = useState({
+    sortOrder: num(plan.sortOrder),
     validityDays: plan.validityDays ?? 0,
     emailCredits: num(plan.emailCredits),
     linkedInCredits: num(plan.linkedInCredits),
@@ -117,6 +120,9 @@ function PlanRow({
 
   const dirty =
     color.toLowerCase() !== plan.color.toLowerCase() ||
+    emailOn !== (plan.emailEnabled !== false) ||
+    linkedInOn !== (plan.linkedInEnabled !== false) ||
+    form.sortOrder !== num(plan.sortOrder) ||
     form.validityDays !== (plan.validityDays ?? 0) ||
     form.emailCredits !== num(plan.emailCredits) ||
     form.linkedInCredits !== num(plan.linkedInCredits) ||
@@ -130,6 +136,9 @@ function PlanRow({
     try {
       await api.patch(`/plans/${plan.id}`, {
         color,
+        sortOrder: form.sortOrder,
+        emailEnabled: emailOn,
+        linkedInEnabled: linkedInOn,
         validityDays: form.validityDays > 0 ? form.validityDays : null,
         emailCredits: form.emailCredits,
         linkedInCredits: form.linkedInCredits,
@@ -150,6 +159,15 @@ function PlanRow({
     <div className="px-5 py-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
+          <div>
+            <label className="block text-[10px] font-medium uppercase text-slate-400">Serial</label>
+            <input
+              type="number" min={0}
+              className="input w-16 py-1.5 text-center text-sm"
+              value={form.sortOrder}
+              onChange={(e) => set('sortOrder', Math.max(0, Number(e.target.value) || 0))}
+            />
+          </div>
           <span
             className="h-8 w-8 rounded-lg border border-slate-200"
             style={{ background: `linear-gradient(145deg, ${color}, color-mix(in srgb, ${color} 60%, black))` }}
@@ -177,17 +195,23 @@ function PlanRow({
         <NumField label="Validity (days)" value={form.validityDays} onChange={(v) => set('validityDays', v)} hint="0 = no expiry" />
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
-        <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
-          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">📧 Email</div>
-          <div className="grid grid-cols-3 gap-2">
+        <div className={`rounded-lg border p-3 transition ${emailOn ? 'border-brand-100 bg-brand-50/40' : 'border-slate-100 bg-slate-50/60'}`}>
+          <label className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            <input type="checkbox" checked={emailOn} onChange={(e) => setEmailOn(e.target.checked)} />
+            📧 Email {emailOn ? '' : '· off'}
+          </label>
+          <div className={`grid grid-cols-3 gap-2 ${emailOn ? '' : 'pointer-events-none opacity-40'}`}>
             <NumField label="Credits" value={form.emailCredits} onChange={(v) => set('emailCredits', v)} />
             <NumField label="Mailboxes" value={form.mailboxLimit} onChange={(v) => set('mailboxLimit', v)} />
             <NumField label="Campaigns" value={form.emailCampaignLimit} onChange={(v) => set('emailCampaignLimit', v)} />
           </div>
         </div>
-        <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
-          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">🔗 LinkedIn</div>
-          <div className="grid grid-cols-3 gap-2">
+        <div className={`rounded-lg border p-3 transition ${linkedInOn ? 'border-brand-100 bg-brand-50/40' : 'border-slate-100 bg-slate-50/60'}`}>
+          <label className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            <input type="checkbox" checked={linkedInOn} onChange={(e) => setLinkedInOn(e.target.checked)} />
+            🔗 LinkedIn {linkedInOn ? '' : '· off'}
+          </label>
+          <div className={`grid grid-cols-3 gap-2 ${linkedInOn ? '' : 'pointer-events-none opacity-40'}`}>
             <NumField label="Credits" value={form.linkedInCredits} onChange={(v) => set('linkedInCredits', v)} />
             <NumField label="Seats" value={form.seatLimit} onChange={(v) => set('seatLimit', v)} />
             <NumField label="Campaigns" value={form.linkedInCampaignLimit} onChange={(v) => set('linkedInCampaignLimit', v)} />

@@ -7,6 +7,9 @@ export interface Plan {
   id: string;
   name: string;
   color: string;
+  sortOrder?: number;
+  emailEnabled?: boolean;
+  linkedInEnabled?: boolean;
   validityDays?: number | null;
   emailCredits?: number;
   linkedInCredits?: number;

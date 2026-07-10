@@ -36,7 +36,8 @@ export class PlansController {
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
     @Body() dto: {
-      name?: string; color?: string;
+      name?: string; color?: string; sortOrder?: number;
+      emailEnabled?: boolean; linkedInEnabled?: boolean;
       validityDays?: number | null;
       emailCredits?: number; linkedInCredits?: number;
       mailboxLimit?: number; seatLimit?: number;

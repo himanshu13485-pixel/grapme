@@ -209,7 +209,10 @@ model Plan {
   tenantId  String
   name      String
   color     String   @default("#0f766e") // theme color for the client portal
-  sortOrder Int      @default(0)
+  sortOrder Int      @default(0) // serial / display order
+  // Which channels this plan provides.
+  emailEnabled          Boolean @default(true)
+  linkedInEnabled       Boolean @default(true)
   // Membership entitlements (reference values shown/applied per plan).
   validityDays          Int? // plan validity window in days
   emailCredits          Int  @default(0) // credits for the Email channel

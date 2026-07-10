@@ -76,7 +76,8 @@ export class PlansService {
     user: AuthUser,
     id: string,
     dto: {
-      name?: string; color?: string;
+      name?: string; color?: string; sortOrder?: number;
+      emailEnabled?: boolean; linkedInEnabled?: boolean;
       validityDays?: number | null;
       emailCredits?: number; linkedInCredits?: number;
       mailboxLimit?: number; seatLimit?: number;
@@ -113,6 +114,9 @@ export class PlansService {
       data: {
         ...(dto.name && dto.name.trim() ? { name: dto.name.trim() } : {}),
         ...(dto.color !== undefined ? { color: dto.color } : {}),
+        ...(dto.emailEnabled !== undefined ? { emailEnabled: !!dto.emailEnabled } : {}),
+        ...(dto.linkedInEnabled !== undefined ? { linkedInEnabled: !!dto.linkedInEnabled } : {}),
+        ...(n(dto.sortOrder) !== undefined ? { sortOrder: n(dto.sortOrder) } : {}),
         ...(dto.validityDays !== undefined ? { validityDays: dto.validityDays == null ? null : (n(dto.validityDays) ?? null) } : {}),
         ...(n(dto.emailCredits) !== undefined ? { emailCredits: n(dto.emailCredits) } : {}),
         ...(n(dto.linkedInCredits) !== undefined ? { linkedInCredits: n(dto.linkedInCredits) } : {}),
