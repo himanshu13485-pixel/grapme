@@ -31,7 +31,7 @@ export function ClientLinkedIn({ clientId }: { clientId: string }) {
   // Plan validity = shared client window (same as email), not the LinkedIn-only field.
   const v = validityInfo(sub?.clientValidityDays, sub?.clientValidityStartAt);
   const planValidity = {
-    label: v.none ? '—' : `${v.days}d`,
+    label: v.none ? '—' : `${v.days}`,
     sub: v.none ? 'No expiry set' : v.remaining != null ? (v.expired ? 'Expired' : `${v.remaining} days left`) : undefined,
   };
 
@@ -41,7 +41,7 @@ export function ClientLinkedIn({ clientId }: { clientId: string }) {
       <div className="mb-3 grid grid-cols-2 gap-4 md:grid-cols-4">
         <Stat label="Seats" value={sub?.seats ?? '—'} />
         <Stat label="Credits" value={sub?.creditsBalance ?? '—'} />
-        <Stat label="Plan validity" value={planValidity.label} sub={planValidity.sub} />
+        <Stat label="Plan validity (days)" value={planValidity.label} sub={planValidity.sub} />
         <Stat label="AI Knowledge" value={`${stats?.aiKnowledgePct ?? 0}%`} sub={`${stats?.profileCount ?? 0} profiles`} />
       </div>
 

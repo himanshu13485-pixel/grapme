@@ -116,7 +116,7 @@ export class BillingService {
     this.assertAdmin(user);
     const req = await this.prisma.planUpgradeRequest.findFirst({ where: { id, tenantId: user.tenantId } });
     if (!req) throw new NotFoundException('Request not found');
-    await this.applyPlanToClient(user.tenantId, req.clientId, req.requestedPlan);
+    await this.applyPlanToClient(user.tenantId, req.clientId, req.requestedPlan, req.period);
     return this.prisma.planUpgradeRequest.update({ where: { id }, data: { status: 'ACTIVATED' } });
   }
   async reject(user: AuthUser, id: string) {
@@ -127,9 +127,11 @@ export class BillingService {
   }
 
   /** Apply a plan's entitlements to a client (used on activation / paid webhook). */
-  private async applyPlanToClient(tenantId: string, clientId: string, planName: string) {
+  private async applyPlanToClient(tenantId: string, clientId: string, planName: string, period = 'monthly') {
     const plan = await this.prisma.plan.findFirst({ where: { tenantId, name: planName } });
     if (!plan) throw new BadRequestException('Plan not found');
+    // Monthly billing grants a 30-day window; yearly uses the plan's validity.
+    const validity = period === 'yearly' ? (plan.validityDays ?? 0) : 30;
     await this.prisma.client.update({
       where: { id: clientId },
       data: {
@@ -139,8 +141,8 @@ export class BillingService {
         emailCredits: plan.emailCredits,
         mailboxLimit: plan.mailboxLimit,
         emailCampaignLimit: plan.emailCampaignLimit,
-        ...(plan.validityDays && plan.validityDays > 0
-          ? { validityDays: plan.validityDays, validityStartAt: new Date(), validityNotifyStage: 0 }
+        ...(validity > 0
+          ? { validityDays: validity, validityStartAt: new Date(), validityNotifyStage: 0 }
           : {}),
       },
     });
@@ -160,7 +162,7 @@ export class BillingService {
     if (!orderId || !paid) return { ok: true, ignored: true };
     const req = await this.prisma.planUpgradeRequest.findFirst({ where: { paymentRef: orderId } });
     if (!req || req.status === 'ACTIVATED') return { ok: true };
-    await this.applyPlanToClient(req.tenantId, req.clientId, req.requestedPlan);
+    await this.applyPlanToClient(req.tenantId, req.clientId, req.requestedPlan, req.period);
     await this.prisma.planUpgradeRequest.update({ where: { id: req.id }, data: { status: 'ACTIVATED' } });
     return { ok: true };
   }

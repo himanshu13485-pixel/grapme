@@ -121,7 +121,7 @@ function StatsHeader({ clientId }: { clientId: string }) {
     <div className="mb-5 grid grid-cols-2 gap-4 md:grid-cols-4">
       <Stat label="Seats" value={sub?.seats ?? '—'} />
       <Stat label="Credits" value={sub?.creditsBalance ?? '—'} action={<button onClick={adjustCredits} className="text-xs font-medium text-brand-700 hover:text-brand-800">Adjust</button>} />
-      <Stat label="Plan validity" value={client?.validityDays ? `${client.validityDays}d` : '—'} sub={validityLeft(client?.validityDays, client?.validityStartAt)} />
+      <Stat label="Plan validity (days)" value={client?.validityDays ?? '—'} sub={validityLeft(client?.validityDays, client?.validityStartAt)} />
       <Stat label="AI Knowledge" value={`${stats?.aiKnowledgePct ?? 0}%`} sub={`${stats?.profileCount ?? 0} profiles`} />
     </div>
   );

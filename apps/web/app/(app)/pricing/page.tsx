@@ -62,7 +62,7 @@ export default function PricingPage() {
 
   return (
     <div>
-      <PageHeader title="Pricing" subtitle="Choose the plan that fits — switch between monthly and yearly billing." />
+      <PageHeader title="Pricing" subtitle="Choose the plan that fits — switch between monthly and yearly billing. All prices are exclusive of taxes." />
 
       <div className="mb-6 flex flex-wrap items-center gap-4">
         <div className="inline-flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
@@ -120,6 +120,8 @@ function PlanCard({ plan, period, currency, onSelect, selecting, current }: { pl
   const best = pr ? (period === 'monthly' ? pr.monthlyBest : pr.yearlyBest) : 0;
   const showPrice = pr && (price > 0 || best > 0);
   const effective = best > 0 ? best : price;
+  // Monthly billing = a 30-day window; yearly uses the plan's validity.
+  const validDays = period === 'monthly' ? 30 : (plan.validityDays ?? 0);
   const emailOn = plan.emailEnabled !== false;
   const linkedInOn = plan.linkedInEnabled !== false;
 
@@ -135,15 +137,18 @@ function PlanCard({ plan, period, currency, onSelect, selecting, current }: { pl
         </div>
         <div className="mt-3">
           {showPrice ? (
-            <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-extrabold text-slate-900">{money(currency, effective)}</span>
-              <span className="text-sm text-slate-400">/{period === 'monthly' ? 'mo' : 'yr'}</span>
-              {best > 0 && price > best && <span className="text-sm text-slate-400 line-through">{money(currency, price)}</span>}
-            </div>
+            <>
+              <div className="flex items-baseline gap-2">
+                <span className="text-3xl font-extrabold text-slate-900">{money(currency, effective)}</span>
+                <span className="text-sm text-slate-400">/{period === 'monthly' ? 'mo' : 'yr'}</span>
+                {best > 0 && price > best && <span className="text-sm text-slate-400 line-through">{money(currency, price)}</span>}
+              </div>
+              <div className="text-[11px] text-slate-400">+ Taxes extra</div>
+            </>
           ) : (
             <div className="text-sm font-medium text-slate-500">Contact us for pricing</div>
           )}
-          {plan.validityDays ? <div className="mt-1 text-xs text-slate-400">Valid for {plan.validityDays} days</div> : null}
+          {validDays ? <div className="mt-1 text-xs text-slate-400">Valid for {validDays} days</div> : null}
         </div>
       </div>
 

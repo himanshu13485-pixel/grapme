@@ -233,7 +233,7 @@ function PlanRow({
       {/* Multi-currency pricing */}
       <div className="mt-4">
         <div className="mb-2 flex items-center gap-3">
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">💳 Pricing</div>
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">💳 Pricing <span className="font-normal normal-case text-slate-400">· taxes extra</span></div>
           <select
             className="input h-8 w-40 py-0 text-xs"
             value=""

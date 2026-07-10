@@ -97,7 +97,7 @@ export default function PlanRequestsPage() {
                     <td className="px-4 py-3 text-slate-500">{r.client?.mobile || '—'}</td>
                     <td className="px-4 py-3 text-slate-500">{r.client?.invoice || '—'}</td>
                     <td className="px-4 py-3">{r.requestedPlan}</td>
-                    <td className="whitespace-nowrap px-4 py-3 text-slate-600">{r.amount > 0 ? `${r.currency ?? ''} ${r.amount.toLocaleString()} / ${r.period === 'yearly' ? 'yr' : 'mo'}` : '—'}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-slate-600">{r.amount > 0 ? `${r.currency ?? ''} ${r.amount.toLocaleString()} / ${r.period === 'yearly' ? 'yr' : 'mo'} + tax` : '—'}</td>
                     <td className="px-4 py-3"><span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${r.mode === 'AUTO' ? 'bg-brand-50 text-brand-700' : 'bg-slate-100 text-slate-600'}`}>{r.mode}</span></td>
                     <td className="px-4 py-3"><StatusBadge status={r.status} /></td>
                     <td className="whitespace-nowrap px-4 py-3 text-right">
