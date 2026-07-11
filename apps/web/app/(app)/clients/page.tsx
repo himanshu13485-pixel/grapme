@@ -437,7 +437,7 @@ function ClientDetailView({ client }: { client: Client }) {
     { label: 'Campaigns (allowed)', value: limitLabel(sub?.campaignLimit) },
     { label: 'Send window', value: `${hourLabel(d.workStartHour)} – ${hourLabel(d.workEndHour)}` },
     { label: 'Send days', value: formatDays(d.workDays) },
-    { label: 'Action spacing (sec)', value: `${d.jitterMinSeconds ?? 20}–${d.jitterMaxSeconds ?? 90}` },
+    { label: 'Send wobble (± sec)', value: `${d.jitterMinSeconds ?? 20}–${d.jitterMaxSeconds ?? 90}` },
     { label: 'Max connection invites / day', value: String(d.dailyConnectionLimit) },
     { label: 'Max messages / day', value: String(d.dailyMessageLimit) },
     // Admin-only tuning (kept secret from the client panel).

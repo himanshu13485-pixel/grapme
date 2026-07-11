@@ -1864,7 +1864,7 @@ function ClientDetails({ client }: { client: Client }) {
     { label: 'Campaigns (allowed)', value: detailLimit(sub?.campaignLimit) },
     { label: 'Send window', value: `${hourLabel(d.workStartHour)} – ${hourLabel(d.workEndHour)}` },
     { label: 'Send days', value: detailDays(d.workDays) },
-    { label: 'Action spacing (sec)', value: `${d.jitterMinSeconds ?? 20}–${d.jitterMaxSeconds ?? 90}` },
+    { label: 'Send wobble (± sec)', value: `${d.jitterMinSeconds ?? 20}–${d.jitterMaxSeconds ?? 90}` },
     { label: 'Max connection invites / day', value: String(d.dailyConnectionLimit) },
     { label: 'Max messages / day', value: String(d.dailyMessageLimit) },
     ...(!isClient ? [

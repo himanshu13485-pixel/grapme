@@ -124,10 +124,11 @@ export function LiClientPlanFields({
         <div><label className="label">Max messages / day</label><input className="input" type="number" min={1} max={200} value={d.dailyMessageLimit} onChange={(e) => setD({ dailyMessageLimit: Number(e.target.value) })} /></div>
       </div>
 
-      {/* Action spacing (jitter) — random human-like gap between actions */}
-      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-        <div><label className="label">Min gap between actions (sec)</label><input className="input" type="number" min={0} max={3600} value={d.jitterMinSeconds} onChange={(e) => setD({ jitterMinSeconds: Number(e.target.value) })} /></div>
-        <div><label className="label">Max gap between actions (sec)</label><input className="input" type="number" min={1} max={3600} value={d.jitterMaxSeconds} onChange={(e) => setD({ jitterMaxSeconds: Number(e.target.value) })} /></div>
+      {/* Send pacing — the daily cap is spread evenly across the window; wobble adds a random ± nudge */}
+      <div className="mt-4 text-xs text-slate-500">Actions are spread evenly across the send window (e.g. 20/day over 9 h ≈ one every ~27 min). The wobble adds a random ± nudge to each slot so it isn’t clockwork.</div>
+      <div className="mt-1 grid gap-3 sm:grid-cols-2">
+        <div><label className="label">Wobble min (sec)</label><input className="input" type="number" min={0} max={3600} value={d.jitterMinSeconds} onChange={(e) => setD({ jitterMinSeconds: Number(e.target.value) })} /></div>
+        <div><label className="label">Wobble max (sec)</label><input className="input" type="number" min={1} max={3600} value={d.jitterMaxSeconds} onChange={(e) => setD({ jitterMaxSeconds: Number(e.target.value) })} /></div>
       </div>
 
       {/* Warm-up ramp */}

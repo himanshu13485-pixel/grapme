@@ -69,14 +69,22 @@ export class LiSchedulerService implements OnModuleInit {
       select: { id: true },
     });
     const limit = Math.max(1, direct ? campaign.dailyMessageLimit : this.effectiveConnectionCap(campaign));
-    // Random gap between actions within a day (human-like), tuned per campaign.
-    const jMin = Math.max(0, campaign.jitterMinSeconds ?? 20) * 1000;
-    const jMax = Math.max(jMin + 1000, (campaign.jitterMaxSeconds ?? 90) * 1000);
-    const gap = () => jMin + Math.floor(Math.random() * (jMax - jMin));
+    // Spread the daily cap EVENLY across the send window (not a burst), with a small
+    // ± random wobble per slot for a human feel. E.g. 20/day over a 9h window ≈ one
+    // action every ~27 min. Actions past the window roll to the next day's window.
+    const windowSecs = campaign.run247 ? 86_400 : Math.max(1, campaign.workEndHour - campaign.workStartHour) * 3600;
+    const baseSpacing = windowSecs / limit; // seconds between consecutive sends
+    const jMin = Math.max(0, campaign.jitterMinSeconds ?? 20);
+    const jMax = Math.max(jMin, campaign.jitterMaxSeconds ?? 90);
+    const wobble = () => (jMin + Math.random() * (jMax - jMin)) * (Math.random() < 0.5 ? -1 : 1);
     let index = 0;
     for (const lead of freshLeads) {
       const day = Math.floor(index / limit);
-      const runAt = new Date(Date.now() + day * 864e5 + (index % limit) * gap());
+      const slot = index % limit;
+      // Anchor each day to the START of its send window; never schedule in the past.
+      const winStart = this.nextAllowedSlot(campaign, new Date(this.startOfToday().getTime() + day * 864e5));
+      const anchor = day === 0 ? Math.max(winStart.getTime(), Date.now()) : winStart.getTime();
+      const runAt = new Date(anchor + Math.max(0, slot * baseSpacing + wobble()) * 1000);
       if (direct) await this.schedule(lead.id, LiScheduledActionType.SEND_MESSAGE, 1, runAt);
       else await this.schedule(lead.id, LiScheduledActionType.SEND_CONNECTION, undefined, runAt);
       index++;
