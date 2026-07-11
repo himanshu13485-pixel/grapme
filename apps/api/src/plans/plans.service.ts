@@ -83,6 +83,7 @@ export class PlansService {
       mailboxLimit?: number; seatLimit?: number;
       emailCampaignLimit?: number; linkedInCampaignLimit?: number;
       pricing?: unknown;
+      yearlyEntitlements?: unknown;
     },
   ) {
     this.assertAdmin(user);
@@ -126,8 +127,21 @@ export class PlansService {
         ...(n(dto.emailCampaignLimit) !== undefined ? { emailCampaignLimit: n(dto.emailCampaignLimit) } : {}),
         ...(n(dto.linkedInCampaignLimit) !== undefined ? { linkedInCampaignLimit: n(dto.linkedInCampaignLimit) } : {}),
         ...(dto.pricing !== undefined ? { pricing: this.sanitizePricing(dto.pricing) } : {}),
+        ...(dto.yearlyEntitlements !== undefined ? { yearlyEntitlements: this.sanitizeYearly(dto.yearlyEntitlements) } : {}),
       },
     });
+  }
+
+  /** Keep only the known numeric entitlement keys for the yearly override set. */
+  private sanitizeYearly(input: unknown): Record<string, number> {
+    const o = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
+    const n = (v: unknown) => (typeof v === 'number' && v >= 0 && Number.isFinite(v) ? Math.floor(v) : undefined);
+    const out: Record<string, number> = {};
+    for (const k of ['emailCredits', 'linkedInCredits', 'mailboxLimit', 'seatLimit', 'emailCampaignLimit', 'linkedInCampaignLimit', 'validityDays']) {
+      const v = n(o[k]);
+      if (v !== undefined) out[k] = v;
+    }
+    return out;
   }
 
   /** Normalise multi-currency pricing rows to a clean JSON array. */

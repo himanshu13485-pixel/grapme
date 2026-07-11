@@ -120,10 +120,20 @@ function PlanCard({ plan, period, currency, onSelect, selecting, current }: { pl
   const best = pr ? (period === 'monthly' ? pr.monthlyBest : pr.yearlyBest) : 0;
   const showPrice = pr && (price > 0 || best > 0);
   const effective = best > 0 ? best : price;
-  // Monthly billing = a 30-day window; yearly uses the plan's validity.
-  const validDays = period === 'monthly' ? 30 : (plan.validityDays ?? 0);
   const emailOn = plan.emailEnabled !== false;
   const linkedInOn = plan.linkedInEnabled !== false;
+  // Entitlements can differ by period: yearly overrides fall back to the base (monthly) value.
+  const ye = plan.yearlyEntitlements ?? {};
+  const ent = (key: keyof typeof ye, base?: number | null) =>
+    period === 'yearly' && typeof ye[key] === 'number' ? (ye[key] as number) : (base ?? 0);
+  const emailCredits = ent('emailCredits', plan.emailCredits);
+  const mailboxLimit = ent('mailboxLimit', plan.mailboxLimit);
+  const emailCampaignLimit = ent('emailCampaignLimit', plan.emailCampaignLimit);
+  const linkedInCredits = ent('linkedInCredits', plan.linkedInCredits);
+  const seatLimit = ent('seatLimit', plan.seatLimit);
+  const linkedInCampaignLimit = ent('linkedInCampaignLimit', plan.linkedInCampaignLimit);
+  // Monthly billing = a 30-day window; yearly uses the plan's (period) validity.
+  const validDays = period === 'monthly' ? 30 : ent('validityDays', plan.validityDays);
 
   return (
     <div className="card flex flex-col overflow-hidden p-0">
@@ -157,9 +167,9 @@ function PlanCard({ plan, period, currency, onSelect, selecting, current }: { pl
           <div className="mb-3">
             <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">📧 Email</div>
             <ul className="space-y-1 text-slate-600">
-              <li>✓ {plan.emailCredits ?? 0} credits</li>
-              <li>✓ {(plan.mailboxLimit ?? 0) > 0 ? plan.mailboxLimit : 'Unlimited'} mailboxes</li>
-              <li>✓ {(plan.emailCampaignLimit ?? 0) > 0 ? plan.emailCampaignLimit : 'Unlimited'} campaigns</li>
+              <li>✓ {emailCredits} credits</li>
+              <li>✓ {mailboxLimit > 0 ? mailboxLimit : 'Unlimited'} mailboxes</li>
+              <li>✓ {emailCampaignLimit > 0 ? emailCampaignLimit : 'Unlimited'} campaigns</li>
             </ul>
           </div>
         )}
@@ -167,9 +177,9 @@ function PlanCard({ plan, period, currency, onSelect, selecting, current }: { pl
           <div>
             <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">🔗 LinkedIn</div>
             <ul className="space-y-1 text-slate-600">
-              <li>✓ {plan.linkedInCredits ?? 0} credits</li>
-              <li>✓ {plan.seatLimit ?? 0} seats</li>
-              <li>✓ {(plan.linkedInCampaignLimit ?? 0) > 0 ? plan.linkedInCampaignLimit : 'Unlimited'} campaigns</li>
+              <li>✓ {linkedInCredits} credits</li>
+              <li>✓ {seatLimit} seats</li>
+              <li>✓ {linkedInCampaignLimit > 0 ? linkedInCampaignLimit : 'Unlimited'} campaigns</li>
             </ul>
           </div>
         )}

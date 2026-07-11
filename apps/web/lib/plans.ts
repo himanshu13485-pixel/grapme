@@ -11,6 +11,16 @@ export interface PlanPrice {
   yearlyBest: number;
 }
 
+export interface PlanEntitlements {
+  emailCredits?: number;
+  linkedInCredits?: number;
+  mailboxLimit?: number;
+  seatLimit?: number;
+  emailCampaignLimit?: number;
+  linkedInCampaignLimit?: number;
+  validityDays?: number;
+}
+
 export interface Plan {
   id: string;
   name: string;
@@ -26,6 +36,8 @@ export interface Plan {
   seatLimit?: number;
   emailCampaignLimit?: number;
   linkedInCampaignLimit?: number;
+  // Optional yearly overrides for the entitlements above (base = monthly).
+  yearlyEntitlements?: PlanEntitlements | null;
 }
 
 /**

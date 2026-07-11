@@ -130,17 +130,28 @@ export class BillingService {
   private async applyPlanToClient(tenantId: string, clientId: string, planName: string, period = 'monthly') {
     const plan = await this.prisma.plan.findFirst({ where: { tenantId, name: planName } });
     if (!plan) throw new BadRequestException('Plan not found');
-    // Monthly billing grants a 30-day window; yearly uses the plan's validity.
-    const validity = period === 'yearly' ? (plan.validityDays ?? 0) : 30;
+    // Per-period entitlements: base columns = monthly; yearlyEntitlements JSON
+    // overrides them for yearly (falling back to the base value when unset).
+    const ye = (plan.yearlyEntitlements ?? {}) as Record<string, number>;
+    const pick = (key: string, base: number) =>
+      period === 'yearly' && typeof ye[key] === 'number' ? ye[key] : base;
+    const emailCredits = pick('emailCredits', plan.emailCredits);
+    const mailboxLimit = pick('mailboxLimit', plan.mailboxLimit);
+    const emailCampaignLimit = pick('emailCampaignLimit', plan.emailCampaignLimit);
+    const seatLimit = pick('seatLimit', plan.seatLimit);
+    const linkedInCredits = pick('linkedInCredits', plan.linkedInCredits);
+    const linkedInCampaignLimit = pick('linkedInCampaignLimit', plan.linkedInCampaignLimit);
+    // Monthly billing grants a 30-day window; yearly uses the plan's (period) validity.
+    const validity = period === 'yearly' ? pick('validityDays', plan.validityDays ?? 0) : 30;
     await this.prisma.client.update({
       where: { id: clientId },
       data: {
         plan: plan.name,
         emailEnabled: plan.emailEnabled,
         linkedInEnabled: plan.linkedInEnabled,
-        emailCredits: plan.emailCredits,
-        mailboxLimit: plan.mailboxLimit,
-        emailCampaignLimit: plan.emailCampaignLimit,
+        emailCredits,
+        mailboxLimit,
+        emailCampaignLimit,
         ...(validity > 0
           ? { validityDays: validity, validityStartAt: new Date(), validityNotifyStage: 0 }
           : {}),
@@ -148,8 +159,8 @@ export class BillingService {
     });
     if (plan.linkedInEnabled) {
       await this.liSubs.update(tenantId, clientId, {
-        planName: plan.name, seats: plan.seatLimit || 1,
-        creditsBalance: plan.linkedInCredits, campaignLimit: plan.linkedInCampaignLimit,
+        planName: plan.name, seats: seatLimit || 1,
+        creditsBalance: linkedInCredits, campaignLimit: linkedInCampaignLimit,
       });
     }
   }

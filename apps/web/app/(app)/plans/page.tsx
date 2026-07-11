@@ -118,6 +118,28 @@ function PlanRow({
   const [pricing, setPricing] = useState<PlanPrice[]>(() => plan.pricing ?? []);
   const [busy, setBusy] = useState(false);
   const set = (k: keyof typeof form, v: number) => setForm((f) => ({ ...f, [k]: v }));
+  // Per-period entitlements: base `form` = monthly; `yearly` holds the yearly overrides.
+  const [period, setPeriod] = useState<'monthly' | 'yearly'>('monthly');
+  const [yearly, setYearly] = useState(() => {
+    const ye = plan.yearlyEntitlements ?? {};
+    return {
+      validityDays: ye.validityDays ?? 0,
+      emailCredits: ye.emailCredits ?? 0,
+      linkedInCredits: ye.linkedInCredits ?? 0,
+      mailboxLimit: ye.mailboxLimit ?? 0,
+      seatLimit: ye.seatLimit ?? 0,
+      emailCampaignLimit: ye.emailCampaignLimit ?? 0,
+      linkedInCampaignLimit: ye.linkedInCampaignLimit ?? 0,
+    };
+  });
+  const active = period === 'yearly' ? yearly : form;
+  const setActive = (k: string, v: number) =>
+    period === 'yearly'
+      ? setYearly((y) => ({ ...y, [k]: v }))
+      : set(k as keyof typeof form, v);
+  const yeInit = (plan.yearlyEntitlements ?? {}) as Record<string, number>;
+  const yearlyDirty = (['validityDays', 'emailCredits', 'linkedInCredits', 'mailboxLimit', 'seatLimit', 'emailCampaignLimit', 'linkedInCampaignLimit'] as const)
+    .some((k) => (yearly[k] ?? 0) !== (yeInit[k] ?? 0));
 
   const setPrice = (i: number, k: keyof PlanPrice, v: string | number) =>
     setPricing((rows) => rows.map((r, j) => (j === i ? { ...r, [k]: k === 'currency' ? String(v).toUpperCase() : Math.max(0, Number(v) || 0) } : r)));
@@ -139,7 +161,8 @@ function PlanRow({
     form.mailboxLimit !== num(plan.mailboxLimit) ||
     form.seatLimit !== num(plan.seatLimit) ||
     form.emailCampaignLimit !== num(plan.emailCampaignLimit) ||
-    form.linkedInCampaignLimit !== num(plan.linkedInCampaignLimit);
+    form.linkedInCampaignLimit !== num(plan.linkedInCampaignLimit) ||
+    yearlyDirty;
 
   async function save() {
     setBusy(true);
@@ -157,6 +180,7 @@ function PlanRow({
         emailCampaignLimit: form.emailCampaignLimit,
         linkedInCampaignLimit: form.linkedInCampaignLimit,
         pricing,
+        yearlyEntitlements: yearly,
       });
       onSaved();
     } catch {
@@ -202,8 +226,17 @@ function PlanRow({
       </div>
 
       <div className="mb-2">
-        <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">General</div>
-        <NumField label="Validity (days)" value={form.validityDays} onChange={(v) => set('validityDays', v)} hint="0 = no expiry" />
+        <div className="mb-1 flex flex-wrap items-center gap-2">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Entitlements</span>
+          <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 text-xs">
+            {(['monthly', 'yearly'] as const).map((p) => (
+              <button key={p} type="button" onClick={() => setPeriod(p)}
+                className={`rounded px-2.5 py-0.5 font-medium capitalize transition ${period === p ? 'bg-brand-600 text-white' : 'text-slate-500'}`}>{p}</button>
+            ))}
+          </div>
+          <span className="text-[11px] text-slate-400">values applied to a {period} subscription</span>
+        </div>
+        <NumField label="Validity (days)" value={active.validityDays} onChange={(v) => setActive('validityDays', v)} hint="0 = no expiry" />
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <div className={`rounded-lg border p-3 transition ${emailOn ? 'border-brand-100 bg-brand-50/40' : 'border-slate-100 bg-slate-50/60'}`}>
@@ -212,9 +245,9 @@ function PlanRow({
             📧 Email {emailOn ? '' : '· off'}
           </label>
           <div className={`grid grid-cols-3 gap-2 ${emailOn ? '' : 'pointer-events-none opacity-40'}`}>
-            <NumField label="Credits" value={form.emailCredits} onChange={(v) => set('emailCredits', v)} />
-            <NumField label="Mailboxes" value={form.mailboxLimit} onChange={(v) => set('mailboxLimit', v)} />
-            <NumField label="Campaigns" value={form.emailCampaignLimit} onChange={(v) => set('emailCampaignLimit', v)} />
+            <NumField label="Credits" value={active.emailCredits} onChange={(v) => setActive('emailCredits', v)} />
+            <NumField label="Mailboxes" value={active.mailboxLimit} onChange={(v) => setActive('mailboxLimit', v)} />
+            <NumField label="Campaigns" value={active.emailCampaignLimit} onChange={(v) => setActive('emailCampaignLimit', v)} />
           </div>
         </div>
         <div className={`rounded-lg border p-3 transition ${linkedInOn ? 'border-brand-100 bg-brand-50/40' : 'border-slate-100 bg-slate-50/60'}`}>
@@ -223,9 +256,9 @@ function PlanRow({
             🔗 LinkedIn {linkedInOn ? '' : '· off'}
           </label>
           <div className={`grid grid-cols-3 gap-2 ${linkedInOn ? '' : 'pointer-events-none opacity-40'}`}>
-            <NumField label="Credits" value={form.linkedInCredits} onChange={(v) => set('linkedInCredits', v)} />
-            <NumField label="Seats" value={form.seatLimit} onChange={(v) => set('seatLimit', v)} />
-            <NumField label="Campaigns" value={form.linkedInCampaignLimit} onChange={(v) => set('linkedInCampaignLimit', v)} />
+            <NumField label="Credits" value={active.linkedInCredits} onChange={(v) => setActive('linkedInCredits', v)} />
+            <NumField label="Seats" value={active.seatLimit} onChange={(v) => setActive('seatLimit', v)} />
+            <NumField label="Campaigns" value={active.linkedInCampaignLimit} onChange={(v) => setActive('linkedInCampaignLimit', v)} />
           </div>
         </div>
       </div>

@@ -246,6 +246,10 @@ model Plan {
   // Multi-currency pricing. Shape:
   // [{ currency, monthlyPrice, monthlyBest, yearlyPrice, yearlyBest }]
   pricing               Json?
+  // Optional YEARLY entitlement overrides (the columns above are the MONTHLY set).
+  // Shape: { emailCredits, linkedInCredits, mailboxLimit, seatLimit,
+  //          emailCampaignLimit, linkedInCampaignLimit, validityDays }
+  yearlyEntitlements    Json?
   createdAt DateTime @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
