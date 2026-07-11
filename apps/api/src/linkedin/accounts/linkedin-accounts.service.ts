@@ -17,13 +17,21 @@ export class LinkedInAccountsService {
   /** Begin connecting a new LinkedIn account (seat) for a client. Returns a hosted-auth URL. */
   async createConnectLink(tenantId: string, clientId: string, successRedirect?: string) {
     const sub = await this.subs.getOrCreate(tenantId, clientId);
-    const used = await this.prisma.linkedInAccount.count({ where: { clientId } });
-    if (used >= sub.seats) {
-      throw new BadRequestException('All LinkedIn seats in use — increase seats in the subscription to add accounts');
-    }
-    const account = await this.prisma.linkedInAccount.create({
-      data: { tenantId, clientId, status: LinkedInAccountStatus.PENDING },
+    // Reuse an existing un-connected (pending) seat instead of creating a new row —
+    // so abandoning the Unipile login and retrying doesn't pile up orphan seats.
+    let account = await this.prisma.linkedInAccount.findFirst({
+      where: { clientId, status: LinkedInAccountStatus.PENDING, unipileAccountId: null },
+      orderBy: { createdAt: 'desc' },
     });
+    if (!account) {
+      const used = await this.prisma.linkedInAccount.count({ where: { clientId } });
+      if (used >= sub.seats) {
+        throw new BadRequestException('All LinkedIn seats in use — increase seats in the subscription to add accounts');
+      }
+      account = await this.prisma.linkedInAccount.create({
+        data: { tenantId, clientId, status: LinkedInAccountStatus.PENDING },
+      });
+    }
     const link = await this.provider.createHostedAuthLink({ name: account.id, successRedirect });
     return { accountId: account.id, url: link.url };
   }

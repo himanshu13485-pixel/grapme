@@ -75,6 +75,13 @@ export class LiPortalService {
     await this.assertOwnsClient(userId, clientId);
     return this.accounts.createConnectLink(tenantId, clientId, successRedirect);
   }
+  /** Client removes one of their own seats (e.g. a stuck pending connection). */
+  async removeAccount(userId: string, id: string) {
+    const a = await this.prisma.linkedInAccount.findUnique({ where: { id }, select: { clientId: true } });
+    if (!a) throw new BadRequestException('Account not found');
+    await this.assertOwnsClient(userId, a.clientId);
+    return this.accounts.remove(id);
+  }
   async knowledgeStats(userId: string, clientId: string) { await this.assertOwnsClient(userId, clientId); return this.knowledge.clientStats(clientId); }
 
   // ── knowledge (business/strategy interviews) ─────────────────────────

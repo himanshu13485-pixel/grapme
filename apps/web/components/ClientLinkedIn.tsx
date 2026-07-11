@@ -80,14 +80,29 @@ function ClientAccounts({ clientId, accounts, seats, reload }: { clientId: strin
 
   async function connect() {
     setBusy(true);
+    // Open the tab synchronously (inside the click) so popup blockers allow it,
+    // then point it at the Unipile URL once we have it.
+    const w = typeof window !== 'undefined' ? window.open('', '_blank') : null;
     try {
       const res = await api.post<{ accountId: string; url: string }>(
         `${BASE}/clients/${clientId}/linkedin-accounts/connect`,
         { successRedirect: typeof window !== 'undefined' ? window.location.href : undefined },
       );
       reload();
-      if (res.url) window.location.href = res.url; // send them to Unipile; it returns here after auth
-    } catch (e: any) { alert(e.message ?? 'Could not start the connection'); setBusy(false); }
+      if (res.url) {
+        if (w) w.location.href = res.url;              // new tab → Unipile (returns to portal after auth)
+        else window.location.href = res.url;           // popup blocked → same tab fallback
+      } else if (w) { w.close(); }
+    } catch (e: any) {
+      if (w) w.close();
+      alert(e.message ?? 'Could not start the connection');
+    } finally { setBusy(false); }
+  }
+
+  async function remove(id: string) {
+    if (!confirm('Remove this LinkedIn seat? If it never finished connecting, this clears the pending row.')) return;
+    try { await api.del(`${BASE}/linkedin-accounts/${id}`); reload(); }
+    catch (e: any) { alert(e.message ?? 'Could not remove the account'); }
   }
 
   return (
@@ -119,9 +134,12 @@ function ClientAccounts({ clientId, accounts, seats, reload }: { clientId: strin
                 </div>
               </div>
             </div>
-            <span className={`inline-flex items-center gap-1.5 rounded-full bg-slate-50 px-2.5 py-1 text-xs font-medium ${h.text}`}>
-              <span className={`h-2 w-2 rounded-full ${h.dot}`} />{h.label}
-            </span>
+            <div className="flex items-center gap-3">
+              <span className={`inline-flex items-center gap-1.5 rounded-full bg-slate-50 px-2.5 py-1 text-xs font-medium ${h.text}`}>
+                <span className={`h-2 w-2 rounded-full ${h.dot}`} />{h.label}
+              </span>
+              <button className="text-sm text-rose-500 hover:text-rose-700" onClick={() => remove(a.id)}>Remove</button>
+            </div>
           </div>
         );
       })}

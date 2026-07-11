@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { IsEnum, IsIn, IsInt, IsOptional, IsString, Max, Min, MinLength } from 'class-validator';
 import { LiCampaignStatus, LiLeadStatus, LiMessageSource, LiOutreachType, Role } from '@prisma/client';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -28,6 +28,9 @@ export class LiPortalController {
 
   @Post('clients/:clientId/linkedin-accounts/connect')
   connect(@CurrentUser() u: AuthUser, @Param('clientId') clientId: string, @Body() d: ConnectDto) { return this.portal.connectAccount(u.userId, u.tenantId, clientId, d.successRedirect); }
+
+  @Delete('linkedin-accounts/:id')
+  removeAccount(@CurrentUser() u: AuthUser, @Param('id') id: string) { return this.portal.removeAccount(u.userId, id); }
 
   @Get('clients/:clientId/knowledge-stats')
   stats(@CurrentUser() u: AuthUser, @Param('clientId') clientId: string) { return this.portal.knowledgeStats(u.userId, clientId); }
