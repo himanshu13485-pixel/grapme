@@ -52,9 +52,6 @@ function addBusinessDays(base: Date, n: number): Date {
   return d;
 }
 
-function isWeekend(d: Date): boolean {
-  return d.getDay() === 0 || d.getDay() === 6;
-}
 
 function randomInt(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -1244,7 +1241,10 @@ export class ProgramsService {
         skipped += enrollments.length;
         continue;
       }
-      if (client.weekdaysOnly && isWeekend(now)) {
+      // Send only on the client's selected days (0=Sun … 6=Sat). Falls back to
+      // Mon–Fri if unset. Supersedes the legacy weekdaysOnly flag.
+      const sendDays = client.workDays?.length ? client.workDays : [1, 2, 3, 4, 5];
+      if (!sendDays.includes(now.getDay())) {
         skipped += enrollments.length;
         continue;
       }

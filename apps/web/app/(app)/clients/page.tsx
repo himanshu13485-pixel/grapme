@@ -33,6 +33,7 @@ interface Client {
   stageIntervalDays: number;
   followUpCount: number;
   weekdaysOnly: boolean;
+  workDays: number[];
   sendWindowStart: number;
   sendWindowEnd: number;
   stageIntervalJitterDays: number;
@@ -358,9 +359,27 @@ function channelLabel(c: { emailEnabled?: boolean; linkedInEnabled?: boolean }):
 }
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0]; // Mon … Sun
 function formatDays(days?: number[] | null): string {
   if (!days || days.length === 0) return '—';
   return [...days].sort().map((x) => DAY_LABELS[x] ?? x).join(', ');
+}
+/** Mon–Sun multi-select for send days (0=Sun … 6=Sat). */
+function DaysField({ label, value, onChange }: { label: string; value: number[]; onChange: (v: number[]) => void }) {
+  const toggle = (d: number) => onChange(value.includes(d) ? value.filter((x) => x !== d) : [...value, d].sort());
+  return (
+    <div className="sm:col-span-2">
+      <label className="label">{label}</label>
+      <div className="mt-1 flex flex-wrap gap-1.5">
+        {DAY_ORDER.map((d) => (
+          <button key={d} type="button" onClick={() => toggle(d)}
+            className={`rounded-lg px-2.5 py-1 text-xs font-medium transition ${value.includes(d) ? 'bg-brand-600 text-white' : 'bg-white text-slate-500 border border-slate-200'}`}>
+            {DAY_LABELS[d]}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 /** A limit where 0 means unlimited. */
 const limitLabel = (n?: number | null) => (n && n > 0 ? String(n) : 'Unlimited');
@@ -408,7 +427,7 @@ function ClientDetailView({ client }: { client: Client }) {
     { label: 'Follow-ups (after initial)', value: String(client.followUpCount) },
     { label: 'Send window', value: `${hourLabel(client.sendWindowStart)} – ${hourLabel(client.sendWindowEnd)}` },
     { label: 'Interval jitter (± days)', value: String(client.stageIntervalJitterDays) },
-    { label: 'Weekdays only', value: client.weekdaysOnly ? 'Yes' : 'No' },
+    { label: 'Send days', value: formatDays(client.workDays) },
   ] : [];
   const linkedinRows: DetailRow[] = linkedInOn ? [
     { label: 'Credits', value: String(sub?.creditsBalance ?? 0) },
@@ -519,6 +538,7 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
     stageIntervalDays: 10,
     followUpCount: 4,
     weekdaysOnly: true,
+    workDays: [1, 2, 3, 4, 5] as number[],
     sendWindowStart: 9,
     sendWindowEnd: 17,
     stageIntervalJitterDays: 2,
@@ -577,6 +597,7 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
         sendWindowStart: Number(form.sendWindowStart),
         sendWindowEnd: Number(form.sendWindowEnd),
         stageIntervalJitterDays: Number(form.stageIntervalJitterDays),
+        workDays: form.workDays,
       });
       // Admin set LinkedIn defaults → persist them onto the client's LinkedIn plan.
       if (!isClient && created?.id && channels !== 'EMAIL') {
@@ -765,16 +786,7 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
             <HourField label="Send window start" value={form.sendWindowStart} onChange={(v) => setForm({ ...form, sendWindowStart: v })} />
             <HourField label="Send window end" value={form.sendWindowEnd} onChange={(v) => setForm({ ...form, sendWindowEnd: v })} />
             <NumberField label="Interval jitter (± days)" value={form.stageIntervalJitterDays} onChange={(v) => setForm({ ...form, stageIntervalJitterDays: v })} />
-            <div className="flex items-end">
-              <label className="flex items-center gap-2 text-sm text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={form.weekdaysOnly}
-                  onChange={(e) => setForm({ ...form, weekdaysOnly: e.target.checked })}
-                />
-                Weekdays only
-              </label>
-            </div>
+            <DaysField label="Send days" value={form.workDays} onChange={(v) => setForm({ ...form, workDays: v })} />
           </div>
         </div>
       )}
@@ -820,6 +832,7 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
     stageIntervalDays: client.stageIntervalDays,
     followUpCount: client.followUpCount,
     weekdaysOnly: client.weekdaysOnly,
+    workDays: client.workDays ?? [1, 2, 3, 4, 5],
     sendWindowStart: client.sendWindowStart,
     sendWindowEnd: client.sendWindowEnd,
     stageIntervalJitterDays: client.stageIntervalJitterDays,
@@ -959,7 +972,7 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
         batchWindowDays: Number(form.batchWindowDays),
         stageIntervalDays: Number(form.stageIntervalDays),
         followUpCount: Number(form.followUpCount),
-        weekdaysOnly: form.weekdaysOnly,
+        workDays: form.workDays,
         sendWindowStart: Number(form.sendWindowStart),
         sendWindowEnd: Number(form.sendWindowEnd),
         stageIntervalJitterDays: Number(form.stageIntervalJitterDays),
@@ -1137,13 +1150,7 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
           <HourField label="Send window start" value={form.sendWindowStart} onChange={(v) => setForm({ ...form, sendWindowStart: v })} />
           <HourField label="Send window end" value={form.sendWindowEnd} onChange={(v) => setForm({ ...form, sendWindowEnd: v })} />
           <NumberField label="Interval jitter (± days)" value={form.stageIntervalJitterDays} onChange={(v) => setForm({ ...form, stageIntervalJitterDays: v })} />
-          <div className="flex items-end">
-            <label className="flex items-center gap-2 text-sm text-slate-700">
-              <input type="checkbox" checked={form.weekdaysOnly}
-                onChange={(e) => setForm({ ...form, weekdaysOnly: e.target.checked })} />
-              Weekdays only
-            </label>
-          </div>
+          <DaysField label="Send days" value={form.workDays} onChange={(v) => setForm({ ...form, workDays: v })} />
         </div>
       </div>
       )}

@@ -773,7 +773,8 @@ model Client {
   batchWindowDays   Int      @default(10)  // days to spread a stage across
   stageIntervalDays Int      @default(10)  // gap between sequence stages
   followUpCount     Int      @default(4)   // follow-ups after the initial (capped)
-  weekdaysOnly      Boolean  @default(true)
+  weekdaysOnly      Boolean  @default(true)  // legacy; superseded by workDays (kept for back-compat)
+  workDays          Int[]    @default([1, 2, 3, 4, 5]) // email send days (0=Sun … 6=Sat)
   sendWindowStart   Int      @default(9)    // send only between these hours (human-like)
   sendWindowEnd     Int      @default(17)
   stageIntervalJitterDays Int @default(2)   // ± random days on each follow-up gap

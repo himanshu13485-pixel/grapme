@@ -71,6 +71,10 @@ export function LiClientPlanFields({
 }) {
   const d = value.defaults;
   const setD = (patch: Partial<LiCampaignDefaults>) => onChange({ ...value, defaults: { ...value.defaults, ...patch } });
+  const toggleDay = (day: number) => {
+    const has = d.workDays.includes(day);
+    setD({ workDays: has ? d.workDays.filter((x) => x !== day) : [...d.workDays, day].sort() });
+  };
 
   return (
     <div className="rounded-xl border border-brand-100 bg-brand-50/40 p-4">
@@ -101,6 +105,17 @@ export function LiClientPlanFields({
       <div className="mt-1 grid gap-3 sm:grid-cols-2">
         <div><label className="label">Start hour (0–23)</label><input className="input" type="number" min={0} max={23} value={d.workStartHour} onChange={(e) => setD({ workStartHour: Number(e.target.value) })} /></div>
         <div><label className="label">End hour (0–23)</label><input className="input" type="number" min={1} max={23} value={d.workEndHour} onChange={(e) => setD({ workEndHour: Number(e.target.value) })} /></div>
+      </div>
+      {/* Send days */}
+      <div className="mt-3"><label className="label">Send days</label>
+        <div className="mt-1 flex flex-wrap gap-1.5">
+          {DAYS.map((day) => (
+            <button key={day.v} type="button" onClick={() => toggleDay(day.v)}
+              className={`rounded-lg px-2.5 py-1 text-xs font-medium transition ${d.workDays.includes(day.v) ? 'bg-brand-600 text-white' : 'bg-white text-slate-500 border border-slate-200'}`}>
+              {day.l}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Daily caps */}

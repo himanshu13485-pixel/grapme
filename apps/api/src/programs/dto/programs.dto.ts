@@ -46,6 +46,7 @@ export class CreateClientDto {
   @IsOptional() @IsInt() @Min(1) stageIntervalDays?: number;
   @IsOptional() @IsInt() @Min(0) followUpCount?: number;
   @IsOptional() @IsBoolean() weekdaysOnly?: boolean;
+  @IsOptional() @IsArray() @IsInt({ each: true }) @Min(0, { each: true }) @Max(6, { each: true }) workDays?: number[];
   @IsOptional() @IsInt() @Min(0) sendWindowStart?: number;
   @IsOptional() @IsInt() @Min(1) sendWindowEnd?: number;
   @IsOptional() @IsInt() @Min(0) stageIntervalJitterDays?: number;
@@ -75,6 +76,7 @@ export class UpdateClientDto {
   @IsOptional() @IsInt() @Min(1) stageIntervalDays?: number;
   @IsOptional() @IsInt() @Min(0) followUpCount?: number;
   @IsOptional() @IsBoolean() weekdaysOnly?: boolean;
+  @IsOptional() @IsArray() @IsInt({ each: true }) @Min(0, { each: true }) @Max(6, { each: true }) workDays?: number[];
   @IsOptional() @IsBoolean() autoCohortEnabled?: boolean;
   @IsOptional() @IsString() autoCohortListId?: string;
   @IsOptional() @IsInt() @Min(1) autoCohortDay?: number;

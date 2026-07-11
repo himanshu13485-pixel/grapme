@@ -53,6 +53,7 @@ interface Client {
   stageIntervalDays: number;
   followUpCount: number;
   weekdaysOnly: boolean;
+  workDays: number[];
   sendWindowStart: number;
   sendWindowEnd: number;
   stageIntervalJitterDays: number;
@@ -256,7 +257,7 @@ export default function ClientCockpit() {
       </div>
       <PageHeader
         title={client.name}
-        subtitle={`${client.plan} · ${client.dailyBatchSize}/day · ${client.followUpCount} follow-ups · ${client.weekdaysOnly ? 'weekdays only' : 'all days'}`}
+        subtitle={`${client.plan} · ${client.dailyBatchSize}/day · ${client.followUpCount} follow-ups · ${detailDays(client.workDays)}`}
         action={
           <div className="flex flex-wrap items-center gap-3">
             <span
@@ -315,7 +316,7 @@ export default function ClientCockpit() {
             </strong>
             <span className="ml-3 text-slate-400">
               Send window {hourLabel(client.sendWindowStart)}–{hourLabel(client.sendWindowEnd)} ·{' '}
-              {client.weekdaysOnly ? 'weekdays only' : 'all days'}
+              {detailDays(client.workDays)}
             </span>
           </div>
         );
@@ -1853,7 +1854,7 @@ function ClientDetails({ client }: { client: Client }) {
     { label: 'Follow-ups (after initial)', value: String(client.followUpCount) },
     { label: 'Send window', value: `${hourLabel(client.sendWindowStart)} – ${hourLabel(client.sendWindowEnd)}` },
     { label: 'Interval jitter (± days)', value: String(client.stageIntervalJitterDays) },
-    { label: 'Weekdays only', value: client.weekdaysOnly ? 'Yes' : 'No' },
+    { label: 'Send days', value: detailDays(client.workDays) },
   ] : [];
   const linkedinRows: DetailRow[] = linkedInOn ? [
     { label: 'Credits', value: String(sub?.creditsBalance ?? 0) },
