@@ -197,7 +197,7 @@ export class ProgramsService {
   }
 
   private readonly clientListInclude = {
-    _count: { select: { mailboxes: true, cohorts: true, enrollments: true } },
+    _count: { select: { mailboxes: true, cohorts: true, enrollments: true, contacts: true } },
     owner: { select: { id: true, name: true, email: true, contactMobile: true } },
   } as const;
 
@@ -285,7 +285,45 @@ export class ProgramsService {
       }),
       this.prisma.client.count({ where }),
     ]);
-    return { items, total, page, pageSize };
+    // Per-client headline stats for the Workspace card (Email: sent/opens/contacts;
+    // LinkedIn: invites/connected/leads). Computed only for the visible page.
+    const stats = await Promise.all(
+      items.map(async (c) => {
+        const [emailSent, emailOpens, liByStatus] = await Promise.all([
+          this.prisma.emailMessage.count({
+            where: { emailAccount: { clientId: c.id }, direction: MessageDirection.OUTBOUND, status: { in: [MessageStatus.SENT, MessageStatus.DELIVERED] } },
+          }),
+          this.prisma.emailEvent.count({
+            where: { eventType: EventType.OPEN, message: { emailAccount: { clientId: c.id } } },
+          }),
+          this.prisma.liLead.groupBy({ by: ['status'], where: { campaign: { clientId: c.id } }, _count: { _all: true } }),
+        ]);
+        let liLeads = 0, liConnected = 0, liInvites = 0;
+        for (const g of liByStatus) {
+          const n = g._count._all;
+          liLeads += n;
+          if (g.status === 'CONNECTED' || g.status === 'MESSAGED' || g.status === 'REPLIED') liConnected += n;
+          if (g.status === 'CONNECTION_PENDING' || g.status === 'CONNECTED' || g.status === 'MESSAGED' || g.status === 'REPLIED') liInvites += n;
+        }
+        return { id: c.id, emailSent, emailOpens, liLeads, liConnected, liInvites };
+      }),
+    );
+    const statsById = new Map(stats.map((s) => [s.id, s]));
+    const itemsWithStats = items.map((c) => {
+      const s = statsById.get(c.id);
+      return {
+        ...c,
+        stats: {
+          emailSent: s?.emailSent ?? 0,
+          emailOpens: s?.emailOpens ?? 0,
+          contacts: c._count.contacts ?? 0,
+          liInvites: s?.liInvites ?? 0,
+          liConnected: s?.liConnected ?? 0,
+          liLeads: s?.liLeads ?? 0,
+        },
+      };
+    });
+    return { items: itemsWithStats, total, page, pageSize };
   }
 
   /**

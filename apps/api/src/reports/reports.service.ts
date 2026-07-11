@@ -3,6 +3,7 @@ import {
   CampaignStatus,
   EnrollmentStatus,
   EventType,
+  LinkedInAccountStatus,
   MessageStatus,
   Role,
 } from '@prisma/client';
@@ -138,6 +139,25 @@ export class ReportsService {
     let forwarded = 0;
     for (const ips of ipsByMsg.values()) if (ips.size >= 2) forwarded++;
 
+    // ── LinkedIn metrics (admins only; scoped to their clients, like cohorts) ──
+    const li = { accountsConnected: 0, invitesSent: 0, connected: 0, leads: 0, replies: 0 };
+    if (seeCohorts) {
+      const acctWhere = ccids === null ? { tenantId: user.tenantId } : { clientId: { in: ccids } };
+      const leadWhere = ccids === null ? { campaign: { tenantId: user.tenantId } } : { campaign: { clientId: { in: ccids } } };
+      const [accts, leadStatuses] = await Promise.all([
+        this.prisma.linkedInAccount.count({ where: { ...acctWhere, status: LinkedInAccountStatus.CONNECTED } }),
+        this.prisma.liLead.groupBy({ by: ['status'], where: leadWhere, _count: { _all: true } }),
+      ]);
+      li.accountsConnected = accts;
+      for (const g of leadStatuses) {
+        const n = g._count._all;
+        li.leads += n;
+        if (g.status === 'CONNECTION_PENDING' || g.status === 'CONNECTED' || g.status === 'MESSAGED' || g.status === 'REPLIED') li.invitesSent += n;
+        if (g.status === 'CONNECTED' || g.status === 'MESSAGED' || g.status === 'REPLIED') li.connected += n;
+        if (g.status === 'REPLIED') li.replies += n;
+      }
+    }
+
     const sent = ev[EventType.SENT] ?? 0;
     const bounces = ev[EventType.BOUNCE] ?? 0;
     const rate = (n: number) =>
@@ -169,6 +189,15 @@ export class ReportsService {
       replyRate: rate(ev[EventType.REPLY] ?? 0),
       bounceRate: rate(ev[EventType.BOUNCE] ?? 0),
       forwardRate: rate(forwarded),
+      linkedin: {
+        accountsConnected: li.accountsConnected,
+        invitesSent: li.invitesSent,
+        connected: li.connected,
+        leads: li.leads,
+        replies: li.replies,
+        acceptanceRate: li.invitesSent ? Math.round((li.connected / li.invitesSent) * 1000) / 10 : 0,
+        replyRate: li.connected ? Math.round((li.replies / li.connected) * 1000) / 10 : 0,
+      },
     };
   }
 

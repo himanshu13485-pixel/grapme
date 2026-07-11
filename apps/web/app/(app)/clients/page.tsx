@@ -40,7 +40,8 @@ interface Client {
   stageIntervalJitterDays: number;
   validityDays?: number | null;
   validityStartAt?: string | null;
-  _count?: { mailboxes: number; cohorts: number; enrollments: number };
+  _count?: { mailboxes: number; cohorts: number; enrollments: number; contacts: number };
+  stats?: { emailSent: number; emailOpens: number; contacts: number; liInvites: number; liConnected: number; liLeads: number };
   owner?: { id: string; name: string; email: string; contactMobile?: string | null } | null;
 }
 
@@ -257,11 +258,20 @@ export default function ClientsPage() {
                   {channelLabel(c)}
                 </span>
               </div>
-              <div className="mt-4 grid grid-cols-3 gap-2 text-center">
-                <Stat label="Mailboxes" value={c._count?.mailboxes ?? 0} />
-                <Stat label="Cohorts" value={c._count?.cohorts ?? 0} />
-                <Stat label="Contacts" value={c._count?.enrollments ?? 0} />
-              </div>
+              {c.emailEnabled !== false && (
+                <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+                  <Stat label="Sent" value={c.stats?.emailSent ?? 0} />
+                  <Stat label="Opens" value={c.stats?.emailOpens ?? 0} />
+                  <Stat label="Contacts" value={c.stats?.contacts ?? c._count?.contacts ?? 0} />
+                </div>
+              )}
+              {c.linkedInEnabled && (
+                <div className="mt-2 grid grid-cols-3 gap-2 text-center">
+                  <Stat label="Invites" value={c.stats?.liInvites ?? 0} />
+                  <Stat label="Connected" value={c.stats?.liConnected ?? 0} />
+                  <Stat label="Leads" value={c.stats?.liLeads ?? 0} />
+                </div>
+              )}
               <div className="mt-3 flex items-center justify-between text-xs text-slate-400">
                 <span>{c.dailyBatchSize}/day · {c.followUpCount} follow-ups · {c.monthlyQuota}/mo</span>
                 <span className="flex gap-3">

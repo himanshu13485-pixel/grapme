@@ -35,6 +35,15 @@ interface Summary {
   replyRate: number;
   forwardRate: number;
   bounceRate: number;
+  linkedin?: {
+    accountsConnected: number;
+    invitesSent: number;
+    connected: number;
+    leads: number;
+    replies: number;
+    acceptanceRate: number;
+    replyRate: number;
+  };
 }
 
 export default function DashboardPage() {
@@ -62,6 +71,18 @@ export default function DashboardPage() {
     { label: 'Total campaigns', value: summary?.totalCampaigns ?? 0 },
   ];
 
+  const li = summary?.linkedin;
+  const showLi = !!li && (li.accountsConnected > 0 || li.leads > 0 || li.invitesSent > 0);
+  const liCards = [
+    { label: 'Accounts connected', value: li?.accountsConnected ?? 0 },
+    { label: 'Invites sent', value: li?.invitesSent ?? 0 },
+    { label: 'Connected', value: li?.connected ?? 0 },
+    { label: 'Acceptance rate', value: `${li?.acceptanceRate ?? 0}%` },
+    { label: 'Replies', value: li?.replies ?? 0 },
+    { label: 'Reply rate', value: `${li?.replyRate ?? 0}%` },
+    { label: 'Total leads', value: li?.leads ?? 0 },
+  ];
+
   return (
     <div>
       <PageHeader
@@ -69,6 +90,7 @@ export default function DashboardPage() {
         subtitle="Your outreach at a glance"
       />
 
+      {showLi && <div className="mb-3 text-sm font-semibold text-slate-500">📧 Email</div>}
       <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-4">
         {cards.map((c) => (
           <div key={c.label} className="card p-5">
@@ -79,6 +101,20 @@ export default function DashboardPage() {
           </div>
         ))}
       </div>
+
+      {showLi && (
+        <>
+          <div className="mb-3 text-sm font-semibold text-slate-500">🔗 LinkedIn</div>
+          <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-4">
+            {liCards.map((c) => (
+              <div key={c.label} className="card p-5">
+                <div className="text-sm text-slate-500">{c.label}</div>
+                <div className="mt-2 text-3xl font-semibold text-slate-900">{c.value}</div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
       {user && user.role !== 'USER' && pending > 0 && (
         <Link
