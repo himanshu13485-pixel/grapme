@@ -75,6 +75,9 @@ export function LiClientPlanFields({
     const has = d.workDays.includes(day);
     setD({ workDays: has ? d.workDays.filter((x) => x !== day) : [...d.workDays, day].sort() });
   };
+  // Effective pace = send-window length ÷ daily cap (how the scheduler spreads sends).
+  const windowHours = value.defaults.run247 ? 24 : Math.max(1, (d.workEndHour ?? 18) - (d.workStartHour ?? 9));
+  const paceMin = (cap?: number) => (cap && cap > 0 ? Math.max(1, Math.round((windowHours * 60) / cap)) : null);
 
   return (
     <div className="rounded-xl border border-brand-100 bg-brand-50/40 p-4">
@@ -122,6 +125,9 @@ export function LiClientPlanFields({
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <div><label className="label">Max connection invites / day</label><input className="input" type="number" min={1} max={200} value={d.dailyConnectionLimit} onChange={(e) => setD({ dailyConnectionLimit: Number(e.target.value) })} /></div>
         <div><label className="label">Max messages / day</label><input className="input" type="number" min={1} max={200} value={d.dailyMessageLimit} onChange={(e) => setD({ dailyMessageLimit: Number(e.target.value) })} /></div>
+      </div>
+      <div className="mt-2 rounded-lg bg-white/70 px-3 py-2 text-xs text-slate-500">
+        ⏱ Effective pace over a {windowHours}h window: {paceMin(d.dailyConnectionLimit) ? `~1 invite every ${paceMin(d.dailyConnectionLimit)} min` : '—'} · {paceMin(d.dailyMessageLimit) ? `~1 message every ${paceMin(d.dailyMessageLimit)} min` : '—'}
       </div>
 
       {/* Send pacing — the daily cap is spread evenly across the window; wobble adds a random ± nudge */}
