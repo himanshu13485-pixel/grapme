@@ -48,6 +48,8 @@ export class ProgramsController {
     @Query('invoice') invoice?: string,
     @Query('status') status?: string,
     @Query('plan') plan?: string,
+    @Query('linkedInEnabled') linkedInEnabled?: string,
+    @Query('channel') channel?: string,
   ) {
     return this.programs.listClientsPaged(user, {
       page,
@@ -57,7 +59,22 @@ export class ProgramsController {
       invoice,
       status,
       plan,
+      linkedInEnabled,
+      channel,
     });
+  }
+
+  /** Registered client logins (self-registration visibility), admin-only. */
+  @Get('clients/registrations')
+  listRegistrations(
+    @CurrentUser() user: AuthUser,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('q') q?: string,
+    @Query('status') status?: string,
+    @Query('verified') verified?: string,
+  ) {
+    return this.programs.listRegisteredClients(user, { page, pageSize, q, status, verified });
   }
 
   /** Profiles the signed-in client-portal user owns (panel switcher). */

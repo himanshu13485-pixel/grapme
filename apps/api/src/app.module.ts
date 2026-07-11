@@ -22,14 +22,23 @@ import { DeliverabilityModule } from './deliverability/deliverability.module';
 import { ComplianceModule } from './compliance/compliance.module';
 import { ProgramsModule } from './programs/programs.module';
 import { PlansModule } from './plans/plans.module';
+import { BillingModule } from './billing/billing.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { GreetingsModule } from './greetings/greetings.module';
 import { AssetsModule } from './assets/assets.module';
+import { LinkedinModule } from './linkedin/linkedin.module';
+import { LiPortalModule } from './linkedin/portal/li-portal.module';
 import { HealthController } from './health.controller';
 
 // The sending engine needs Redis. Set QUEUE_ENABLED=false to run the rest of
 // the platform (auth, campaigns, approvals, …) with only Postgres.
+// EMAIL_ENGINE_ENABLED=false keeps the queue (so the LinkedIn engine runs) but
+// disables the email sending engine — e.g. to test LinkedIn without touching email.
 const queueEnabled = process.env.QUEUE_ENABLED !== 'false';
-const engineModules = queueEnabled ? [QueueModule, SendingModule] : [];
+const emailEngineEnabled = process.env.EMAIL_ENGINE_ENABLED !== 'false';
+const engineModules = queueEnabled
+  ? [QueueModule, ...(emailEngineEnabled ? [SendingModule] : [])]
+  : [];
 
 @Module({
   imports: [
@@ -53,8 +62,12 @@ const engineModules = queueEnabled ? [QueueModule, SendingModule] : [];
     ComplianceModule,
     ProgramsModule,
     PlansModule,
+    BillingModule,
+    NotificationsModule,
     GreetingsModule,
     AssetsModule,
+    LinkedinModule,
+    LiPortalModule,
     ...engineModules,
   ],
   controllers: [HealthController],

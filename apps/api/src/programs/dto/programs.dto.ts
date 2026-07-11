@@ -6,9 +6,19 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  Max,
   Min,
   ValidateNested,
 } from 'class-validator';
+
+/** Client-facing LinkedIn send window (basic), collected at self-service setup. */
+export class LiClientSendWindowDto {
+  @IsOptional() @IsInt() @Min(0) @Max(23) workStartHour?: number;
+  @IsOptional() @IsInt() @Min(1) @Max(23) workEndHour?: number;
+  @IsOptional() @IsArray() @IsInt({ each: true }) @Min(0, { each: true }) @Max(6, { each: true }) workDays?: number[];
+  @IsOptional() @IsInt() @Min(1) @Max(200) dailyConnectionLimit?: number;
+  @IsOptional() @IsInt() @Min(1) @Max(200) dailyMessageLimit?: number;
+}
 
 export class CreateClientDto {
   @IsString() name: string;
@@ -18,6 +28,17 @@ export class CreateClientDto {
   @IsOptional() @IsString() mobile?: string;
   @IsOptional() @IsString() productCategory?: string;
   @IsOptional() @IsString() serviceType?: string;
+  @IsOptional() @IsBoolean() emailEnabled?: boolean;
+  @IsOptional() @IsBoolean() linkedInEnabled?: boolean;
+  @IsOptional() @IsBoolean() linkedInCreditMetering?: boolean;
+  @IsOptional() @IsInt() @Min(0) validityDays?: number; // plan validity window in days (0 = no expiry)
+  // Per-client Email entitlements (defaulted from the plan, overridable).
+  @IsOptional() @IsInt() @Min(0) emailCredits?: number;
+  @IsOptional() @IsBoolean() emailCreditMetering?: boolean;
+  @IsOptional() @IsInt() @Min(0) mailboxLimit?: number;
+  @IsOptional() @IsInt() @Min(0) emailCampaignLimit?: number;
+  // Client self-service LinkedIn request: the basic send window they'd like.
+  @IsOptional() @ValidateNested() @Type(() => LiClientSendWindowDto) linkedin?: LiClientSendWindowDto;
   @IsOptional() @IsString() plan?: string;
   @IsOptional() @IsInt() @Min(1) monthlyQuota?: number;
   @IsOptional() @IsInt() @Min(1) dailyBatchSize?: number;
@@ -38,6 +59,14 @@ export class UpdateClientDto {
   @IsOptional() @IsString() mobile?: string;
   @IsOptional() @IsString() productCategory?: string;
   @IsOptional() @IsString() serviceType?: string;
+  @IsOptional() @IsBoolean() emailEnabled?: boolean;
+  @IsOptional() @IsBoolean() linkedInEnabled?: boolean;
+  @IsOptional() @IsBoolean() linkedInCreditMetering?: boolean;
+  @IsOptional() @IsInt() @Min(0) validityDays?: number;
+  @IsOptional() @IsInt() @Min(0) emailCredits?: number;
+  @IsOptional() @IsBoolean() emailCreditMetering?: boolean;
+  @IsOptional() @IsInt() @Min(0) mailboxLimit?: number;
+  @IsOptional() @IsInt() @Min(0) emailCampaignLimit?: number;
   @IsOptional() @IsString() status?: string;
   @IsOptional() @IsString() plan?: string;
   @IsOptional() @IsInt() @Min(1) monthlyQuota?: number;

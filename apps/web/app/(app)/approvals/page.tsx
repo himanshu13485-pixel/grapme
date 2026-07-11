@@ -28,6 +28,8 @@ const TYPE_LABEL: Record<string, string> = {
   MESSAGE_DELETE: 'Message deletion',
   CLIENT_DELETE: 'Client deletion',
   CLIENT_ACTIVATION: 'Client activation',
+  LI_CAMPAIGN: 'LinkedIn campaign',
+  LI_CHANNEL_REQUEST: 'LinkedIn channel request',
 };
 function typeLabel(t: string) {
   return TYPE_LABEL[t] ?? t;
@@ -36,21 +38,34 @@ function typeLabel(t: string) {
 export default function ApprovalsPage() {
   const [items, setItems] = useState<Approval[]>([]);
   const [filter, setFilter] = useState('PENDING');
+  const [typeFilter, setTypeFilter] = useState('');
+  const [search, setSearch] = useState('');
   const [error, setError] = useState('');
   const [open, setOpen] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 20;
-  const paged = items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  // Client-side search across the visible columns (type / client / what / submitter).
+  const q = search.trim().toLowerCase();
+  const filtered = q
+    ? items.filter((a) =>
+        [typeLabel(a.entityType), a.clientName, a.target, a.submittedBy?.name, a.submittedBy?.email]
+          .some((v) => (v ?? '').toLowerCase().includes(q)),
+      )
+    : items;
+  const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   function load() {
+    const params = new URLSearchParams({ status: filter });
+    if (typeFilter) params.set('entityType', typeFilter);
     api
-      .get<Approval[]>(`/approvals?status=${filter}`)
+      .get<Approval[]>(`/approvals?${params}`)
       .then(setItems)
       .catch((e) => setError(e.message));
   }
 
-  useEffect(load, [filter]);
-  useEffect(() => setPage(1), [filter]);
+  useEffect(load, [filter, typeFilter]);
+  useEffect(() => setPage(1), [filter, typeFilter, search]);
 
   async function decide(id: string, decision: 'approve' | 'reject') {
     setError('');
@@ -91,11 +106,26 @@ export default function ApprovalsPage() {
         </p>
       )}
 
-      {items.length === 0 ? (
-        <EmptyState message={`No ${filter.toLowerCase()} items.`} />
+      <div className="mb-4 flex flex-wrap gap-3">
+        <select className="input w-52" value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+          <option value="">All types</option>
+          {Object.entries(TYPE_LABEL).map(([key, label]) => (
+            <option key={key} value={key}>{label}</option>
+          ))}
+        </select>
+        <input
+          className="input max-w-sm"
+          placeholder="Search client, what, or submitter…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </div>
+
+      {filtered.length === 0 ? (
+        <EmptyState message={`No ${filter.toLowerCase()} items${q || typeFilter ? ' match these filters' : ''}.`} />
       ) : (
         <>
-        <div className="mb-3 text-sm text-slate-400">{items.length} item{items.length === 1 ? '' : 's'}</div>
+        <div className="mb-3 text-sm text-slate-400">{filtered.length} item{filtered.length === 1 ? '' : 's'}</div>
         <div className="card overflow-x-auto">
           <table className="w-full min-w-[860px] text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase text-slate-400">
@@ -201,7 +231,7 @@ export default function ApprovalsPage() {
             </tbody>
           </table>
         </div>
-        <Pagination page={page} pageSize={PAGE_SIZE} total={items.length} onPage={setPage} />
+        <Pagination page={page} pageSize={PAGE_SIZE} total={filtered.length} onPage={setPage} />
         </>
       )}
     </div>

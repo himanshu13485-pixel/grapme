@@ -3,6 +3,7 @@ export const QUEUE_DISPATCH = 'dispatch';
 export const QUEUE_SEND = 'send';
 export const QUEUE_REPLIES = 'replies';
 export const QUEUE_ENROLL = 'enroll';
+export const QUEUE_LINKEDIN = 'li-outreach'; // LinkedIn channel scheduler (separate engine)
 
 export const JOB_SCAN = 'scan-due-schedules';
 export const JOB_SEND_EMAIL = 'send-email';

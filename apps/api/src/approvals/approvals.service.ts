@@ -4,6 +4,7 @@ import {
   ApprovalStatus,
   CampaignStatus,
   ImportStatus,
+  LiCampaignStatus,
   MailboxStatus,
   Role,
   ScheduleStatus,
@@ -12,6 +13,7 @@ import { createHash } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActivityService } from '../common/services/activity.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
+import { LiCampaignsService } from '../linkedin/campaigns/li-campaigns.service';
 import { ListApprovalsQuery } from './dto/approvals.dto';
 
 @Injectable()
@@ -19,6 +21,7 @@ export class ApprovalsService {
   constructor(
     private prisma: PrismaService,
     private activity: ActivityService,
+    private liCampaigns: LiCampaignsService,
   ) {}
 
   /** Called by other modules when a user submits an entity for review. */
@@ -99,7 +102,7 @@ export class ApprovalsService {
     const idsOf = (t: ApprovalEntity) =>
       approvals.filter((a) => a.entityType === t).map((a) => a.entityId);
 
-    const [mailboxes, imports, campaigns, schedules, messages, activations] =
+    const [mailboxes, imports, campaigns, schedules, messages, activations, liCampaigns] =
       await Promise.all([
       this.prisma.emailAccount.findMany({
         where: { id: { in: idsOf(ApprovalEntity.SMTP) } },
@@ -141,15 +144,20 @@ export class ApprovalsService {
         where: { id: { in: idsOf(ApprovalEntity.CLIENT_ACTIVATION) } },
         select: { id: true, name: true, email: true, companyName: true },
       }),
+      this.prisma.liCampaign.findMany({
+        where: { id: { in: idsOf(ApprovalEntity.LI_CAMPAIGN) } },
+        select: { id: true, name: true, clientId: true },
+      }),
     ]);
 
     // Resolve every referenced clientId to a name in one query.
-    const clientIds = new Set<string>(idsOf(ApprovalEntity.CLIENT_DELETE));
+    const clientIds = new Set<string>([...idsOf(ApprovalEntity.CLIENT_DELETE), ...idsOf(ApprovalEntity.LI_CHANNEL_REQUEST)]);
     mailboxes.forEach((m) => m.clientId && clientIds.add(m.clientId));
     imports.forEach((j) => j.clientId && clientIds.add(j.clientId));
     campaigns.forEach((c) => c.clientId && clientIds.add(c.clientId));
     schedules.forEach((s) => s.campaign?.clientId && clientIds.add(s.campaign.clientId));
     messages.forEach((m) => m.emailAccount?.clientId && clientIds.add(m.emailAccount.clientId));
+    liCampaigns.forEach((c) => c.clientId && clientIds.add(c.clientId));
     const clientRows = await this.prisma.client.findMany({
       where: { id: { in: [...clientIds] } },
       select: { id: true, name: true },
@@ -207,6 +215,12 @@ export class ApprovalsService {
         },
       ]),
     );
+    const lc = new Map(
+      liCampaigns.map((c) => [
+        c.id,
+        { name: c.name, clientName: c.clientId ? clientName.get(c.clientId) : undefined },
+      ]),
+    );
 
     for (const a of approvals) {
       switch (a.entityType) {
@@ -242,6 +256,16 @@ export class ApprovalsService {
         case ApprovalEntity.CLIENT_ACTIVATION:
           if (ac.has(a.entityId)) out.set(a.id, ac.get(a.entityId)!);
           break;
+        case ApprovalEntity.LI_CAMPAIGN: {
+          const c = lc.get(a.entityId);
+          if (c) out.set(a.id, { target: `LinkedIn campaign · ${c.name}`, clientName: c.clientName });
+          break;
+        }
+        case ApprovalEntity.LI_CHANNEL_REQUEST: {
+          const n = clientName.get(a.entityId);
+          out.set(a.id, { target: 'Enable LinkedIn channel', clientName: n });
+          break;
+        }
       }
     }
     return out;
@@ -356,6 +380,21 @@ export class ApprovalsService {
         // mailboxes/contacts/lists/templates/campaigns are kept + unlinked).
         if (approved) {
           await this.prisma.client.deleteMany({ where: { id: entityId } });
+        }
+        break;
+      case ApprovalEntity.LI_CAMPAIGN:
+        // Approve = launch the LinkedIn campaign (RUNNING + scheduler picks it up);
+        // reject = leave it DRAFT so the client can edit and resubmit.
+        if (approved) {
+          const exists = await this.prisma.liCampaign.count({ where: { id: entityId } });
+          if (exists) await this.liCampaigns.setStatus(entityId, LiCampaignStatus.RUNNING);
+        }
+        break;
+      case ApprovalEntity.LI_CHANNEL_REQUEST:
+        // Approve = turn the LinkedIn channel on for a client who requested it at
+        // self-service setup; reject = leave it off (Email stays active either way).
+        if (approved) {
+          await this.prisma.client.updateMany({ where: { id: entityId }, data: { linkedInEnabled: true } });
         }
         break;
       case ApprovalEntity.CLIENT_ACTIVATION:

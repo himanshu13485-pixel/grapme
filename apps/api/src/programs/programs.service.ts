@@ -18,6 +18,7 @@ import {
   MessageDirection,
   MessageStatus,
   Role,
+  UserStatus,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailerService } from '../sending/mailer.service';
@@ -27,6 +28,8 @@ import { AuthUser } from '../common/decorators/current-user.decorator';
 import { ActivityService } from '../common/services/activity.service';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { GeoService } from '../common/services/geo.service';
+import { LiCampaignsService } from '../linkedin/campaigns/li-campaigns.service';
+import { LinkedInSubscriptionService } from '../linkedin/subscription/linkedin-subscription.service';
 import {
   AssignMailboxDto,
   CreateClientDto,
@@ -76,6 +79,8 @@ export class ProgramsService {
     private activity: ActivityService,
     private geo: GeoService,
     private approvals: ApprovalsService,
+    private liCampaigns: LiCampaignsService,
+    private liSubs: LinkedInSubscriptionService,
   ) {}
 
   /**
@@ -151,9 +156,38 @@ export class ProgramsService {
       }
       ownerData.ownerUserId = user.userId;
     }
+    // `linkedin` is the client's self-service send-window request — not a Client column.
+    const { linkedin, validityDays, ...clientData } = dto;
+    // Setting a validity window starts the clock now (mirrors the Validity menu).
+    const validity: { validityDays?: number | null; validityStartAt?: Date | null } =
+      validityDays === undefined ? {}
+        : validityDays > 0 ? { validityDays: Math.floor(validityDays), validityStartAt: new Date() }
+          : { validityDays: null, validityStartAt: null };
+    // A CLIENT can't self-enable the paid LinkedIn channel: create the profile with
+    // Email active as a baseline and route LinkedIn through admin approval instead.
+    const clientRequestsLinkedIn = user.role === Role.CLIENT && !!clientData.linkedInEnabled;
+    if (clientRequestsLinkedIn) {
+      clientData.emailEnabled = true;
+      clientData.linkedInEnabled = false;
+    }
     const client = await this.prisma.client.create({
-      data: { tenantId: user.tenantId, ...dto, ...ownerData },
+      data: { tenantId: user.tenantId, ...clientData, ...validity, ...ownerData },
     });
+
+    if (clientRequestsLinkedIn) {
+      // Seed the subscription with the send window the client asked for, then queue
+      // an approval; the admin approves to actually switch LinkedIn on.
+      if (linkedin) {
+        await this.liSubs.update(user.tenantId, client.id, { campaignDefaults: linkedin }).catch(() => undefined);
+      }
+      await this.approvals.submit({
+        tenantId: user.tenantId,
+        entityType: ApprovalEntity.LI_CHANNEL_REQUEST,
+        entityId: client.id,
+        submittedById: user.userId,
+      });
+    }
+
     await this.activity.log({
       tenantId: user.tenantId,
       actorId: user.userId,
@@ -193,6 +227,8 @@ export class ProgramsService {
       invoice?: string;
       status?: string;
       plan?: string;
+      linkedInEnabled?: string;
+      channel?: string;
     },
   ) {
     const page = Math.max(1, parseInt(query.page ?? '1', 10) || 1);
@@ -214,6 +250,13 @@ export class ProgramsService {
       and.push({ status: { equals: status, mode: 'insensitive' } });
     }
     if (query.plan) and.push({ plan: query.plan });
+    if (query.linkedInEnabled === 'true') and.push({ linkedInEnabled: true });
+    // Channel filter — matches the card's label logic (email is on unless explicitly off).
+    switch ((query.channel ?? '').toUpperCase()) {
+      case 'EMAIL': and.push({ linkedInEnabled: false }); break;
+      case 'LINKEDIN': and.push({ linkedInEnabled: true, emailEnabled: false }); break;
+      case 'BOTH': and.push({ linkedInEnabled: true, emailEnabled: { not: false } }); break;
+    }
     if (query.invoice) and.push({ invoiceNo: ci(query.invoice) });
     if (query.email) {
       and.push({
@@ -248,6 +291,76 @@ export class ProgramsService {
     return { items, total, page, pageSize };
   }
 
+  /**
+   * Registered clients directory (admin visibility into self-registration + spam).
+   * A "row" is either a CLIENT login (self-registered, verified or not — may own 0
+   * profiles) OR an admin-created client profile that has no login. Merged so admins
+   * see every client identity in one place, including sign-ups that never built a
+   * workspace ("No workspace") and admin-managed profiles ("No login").
+   *
+   * verified/status filters are login concepts, so when either is set only logins
+   * are returned; the default (unfiltered) view includes login-less profiles.
+   */
+  async listRegisteredClients(
+    user: AuthUser,
+    query: { page?: string; pageSize?: string; q?: string; status?: string; verified?: string },
+  ) {
+    this.assertAdmin(user);
+    const page = Math.max(1, parseInt(query.page ?? '1', 10) || 1);
+    const pageSize = Math.min(100, Math.max(1, parseInt(query.pageSize ?? '20', 10) || 20));
+    const q = query.q?.trim();
+    const ci = (contains: string) => ({ contains, mode: 'insensitive' }) as const;
+
+    const userAnd: Prisma.UserWhereInput[] = [{ tenantId: user.tenantId, role: Role.CLIENT }];
+    if (query.verified === 'true') userAnd.push({ emailVerified: true });
+    if (query.verified === 'false') userAnd.push({ emailVerified: false });
+    if (query.status) userAnd.push({ status: { equals: query.status.toUpperCase() as UserStatus } });
+    if (q) userAnd.push({ OR: [{ name: ci(q) }, { email: ci(q) }, { companyName: ci(q) }] });
+
+    const includeProfiles = !query.verified && !query.status;
+    const [users, profiles] = await Promise.all([
+      this.prisma.user.findMany({
+        where: { AND: userAnd },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true, name: true, email: true, companyName: true, contactMobile: true,
+          status: true, emailVerified: true, lastLoginAt: true, createdAt: true,
+          _count: { select: { ownedClients: true } },
+        },
+      }),
+      includeProfiles
+        ? this.prisma.client.findMany({
+            where: {
+              tenantId: user.tenantId,
+              ownerUserId: null,
+              ...(q ? { OR: [{ name: ci(q) }, { email: ci(q) }, { productCategory: ci(q) }] } : {}),
+            },
+            orderBy: { createdAt: 'desc' },
+            select: { id: true, name: true, email: true, productCategory: true, mobile: true, status: true, createdAt: true },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const rows = [
+      ...users.map((u) => ({
+        id: u.id, source: 'login' as const, name: u.name, email: u.email,
+        company: u.companyName ?? null, mobile: u.contactMobile ?? null,
+        status: u.status, emailVerified: u.emailVerified as boolean | null,
+        profiles: u._count.ownedClients, createdAt: u.createdAt, lastLoginAt: u.lastLoginAt as Date | null,
+      })),
+      ...profiles.map((c) => ({
+        id: c.id, source: 'profile' as const, name: c.name, email: c.email ?? '—',
+        company: c.productCategory ?? null, mobile: c.mobile ?? null,
+        status: (c.status ?? 'active').toUpperCase(), emailVerified: null as boolean | null,
+        profiles: 1, createdAt: c.createdAt, lastLoginAt: null as Date | null,
+      })),
+    ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+    const total = rows.length;
+    const items = rows.slice((page - 1) * pageSize, page * pageSize);
+    return { items, total, page, pageSize };
+  }
+
   async getClient(user: AuthUser, id: string) {
     const client = await this.prisma.client.findFirst({
       where: {
@@ -279,7 +392,21 @@ export class ProgramsService {
 
   async updateClient(user: AuthUser, id: string, dto: UpdateClientDto) {
     const before = await this.assertClient(user, id);
-    const updated = await this.prisma.client.update({ where: { id }, data: dto });
+    // Validity is stored with a start date; changing the window (re)starts the clock.
+    const { validityDays, ...rest } = dto;
+    const data: Prisma.ClientUpdateInput = { ...rest };
+    if (validityDays !== undefined && validityDays !== (before.validityDays ?? 0)) {
+      if (validityDays > 0) {
+        data.validityDays = Math.floor(validityDays);
+        data.validityStartAt = new Date();
+        data.validityNotifyStage = 0;
+      } else {
+        data.validityDays = null;
+        data.validityStartAt = null;
+        data.validityNotifyStage = 0;
+      }
+    }
+    const updated = await this.prisma.client.update({ where: { id }, data });
     // Record only the fields that actually changed, so the audit trail is clear.
     const changedBefore: Record<string, unknown> = { name: before.name };
     const changedAfter: Record<string, unknown> = { name: updated.name };
@@ -303,11 +430,19 @@ export class ProgramsService {
 
   // ── Mailbox group ─────────────────────────────────────────
   async assignMailbox(user: AuthUser, clientId: string, dto: AssignMailboxDto) {
-    await this.assertClient(user, clientId);
+    const client = await this.assertClient(user, clientId);
     const mailbox = await this.prisma.emailAccount.findFirst({
       where: { id: dto.mailboxId, tenantId: user.tenantId },
     });
     if (!mailbox) throw new NotFoundException('Mailbox not found');
+    // Enforce the plan's mailbox limit (0 = unlimited). Re-assigning an already-
+    // assigned mailbox to the same client doesn't count against the limit.
+    if (client.mailboxLimit && client.mailboxLimit > 0 && mailbox.clientId !== clientId) {
+      const used = await this.prisma.emailAccount.count({ where: { clientId } });
+      if (used >= client.mailboxLimit) {
+        throw new BadRequestException(`Mailbox limit reached (${client.mailboxLimit}) for this client's plan.`);
+      }
+    }
     return this.prisma.emailAccount.update({
       where: { id: dto.mailboxId },
       data: { clientId, rotationOrder: dto.rotationOrder ?? 0 },
@@ -1640,9 +1775,29 @@ export class ProgramsService {
         where: { clientId: c.id, status: 'RUNNING' },
         data: { status: 'PAUSED' },
       });
+      // LinkedIn channel: pause running campaigns and deactivate seats too.
+      await this.suspendLinkedIn(c.id);
       this.logger.log(
-        `Validity expired for "${c.name}" → set inactive, running cohorts paused`,
+        `Validity expired for "${c.name}" → set inactive, running cohorts + LinkedIn campaigns paused`,
       );
+    }
+  }
+
+  /** Pause a client's LinkedIn campaigns when it's suspended (validity expiry / deactivation). */
+  private async suspendLinkedIn(clientId: string): Promise<void> {
+    try {
+      await this.liCampaigns.pauseAllForClient(clientId);
+    } catch (err) {
+      this.logger.warn(`LinkedIn suspend failed for client ${clientId}: ${err}`);
+    }
+  }
+
+  /** Resume a client's LinkedIn campaigns when it's reactivated / renewed. */
+  private async resumeLinkedIn(clientId: string): Promise<void> {
+    try {
+      await this.liCampaigns.resumeAllForClient(clientId);
+    } catch (err) {
+      this.logger.warn(`LinkedIn resume failed for client ${clientId}: ${err}`);
     }
   }
 
@@ -1667,6 +1822,7 @@ export class ProgramsService {
         where: { clientId, status: 'PAUSED' },
         data: { status: 'RUNNING' },
       });
+      await this.resumeLinkedIn(clientId);
     } else {
       await this.prisma.client.update({
         where: { id: clientId },
@@ -1676,6 +1832,7 @@ export class ProgramsService {
         where: { clientId, status: 'RUNNING' },
         data: { status: 'PAUSED' },
       });
+      await this.suspendLinkedIn(clientId);
     }
     await this.activity.log({
       tenantId: user.tenantId,

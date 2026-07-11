@@ -12,6 +12,13 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
     "prisma:seed": "ts-node prisma/seed.ts",
+    "prisma:seed:linkedin": "ts-node prisma/seed-linkedin-demo.ts",
+    "prisma:seed:linkedin-login": "ts-node prisma/seed-linkedin-login.ts",
+    "unipile:ping": "ts-node --transpile-only scripts/unipile-ping.ts",
+    "link:unipile": "ts-node --transpile-only scripts/link-unipile-account.ts",
+    "unipile:resolve": "ts-node --transpile-only scripts/unipile-resolve.ts",
+    "unipile:webhook": "ts-node --transpile-only scripts/unipile-webhook.ts",
+    "unipile:search": "ts-node --transpile-only scripts/unipile-search.ts",
     "db:embedded": "ts-node --transpile-only scripts/dev-db.ts",
     "dev:smtp": "ts-node --transpile-only scripts/dev-smtp.ts",
     "lint": "eslint \"src/**/*.ts\""
@@ -20,6 +27,7 @@
     "seed": "ts-node prisma/seed.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
     "@nestjs/bullmq": "^10.2.1",
     "@nestjs/common": "^10.4.4",
     "@nestjs/config": "^3.2.3",
@@ -34,6 +42,7 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
     "embedded-postgres": "^18.4.0-beta.17",
+    "unipile-node-sdk": "^1.9.0",
     "geoip-lite": "^2.0.3",
     "imapflow": "^1.0.171",
     "nodemailer": "^6.9.15",

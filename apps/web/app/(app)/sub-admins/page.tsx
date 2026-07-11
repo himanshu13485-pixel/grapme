@@ -18,6 +18,10 @@ interface SubAdmin {
 // Modules a sub-admin can be granted access to (keys match the left-menu routes).
 const MODULES: { key: string; label: string }[] = [
   { key: 'clients', label: 'Clients Workspace' },
+  { key: 'registered-clients', label: 'Registered Clients' },
+  { key: 'plan-requests', label: 'Plan Upgrade Request' },
+  { key: 'billing', label: 'Payment / Billing' },
+  { key: 'whatsapp', label: 'WhatsApp' },
   { key: 'cohort-schedule', label: 'Cohort Schedule' },
   { key: 'campaigns', label: 'Campaigns' },
   { key: 'contacts', label: 'Contacts' },
@@ -25,6 +29,10 @@ const MODULES: { key: string; label: string }[] = [
   { key: 'mailbox', label: 'Inbox & Sent' },
   { key: 'mailboxes', label: 'Mailboxes' },
   { key: 'deliverability', label: 'Deliverability' },
+  { key: 'linkedin', label: 'LinkedIn Outreach' },
+  { key: 'linkedin-inbox', label: 'LinkedIn Inbox' },
+  { key: 'linkedin-schedule', label: 'LinkedIn Campaigns Schedule' },
+  { key: 'linkedin-leads', label: 'LinkedIn Leads' },
   { key: 'approvals', label: 'Approvals' },
   { key: 'compliance', label: 'Compliance' },
   { key: 'activity-logs', label: 'Activity Logs' },

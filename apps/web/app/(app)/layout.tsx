@@ -9,23 +9,40 @@ import { api } from '@/lib/api';
 // `superOnly` items are hidden from sub-admins entirely. All other items are
 // gated for sub-admins by their accessModules (unless fullAccess). `module` is
 // the access key checked against a sub-admin's granted modules.
-const NAV = [
+// `group` collapses items behind a "More…" toggle: the 'email' group under an
+// "Email Outreach" header, the 'linkedin' group under a LinkedIn "More…" toggle.
+type NavItem = {
+  href: string; label: string; icon: string; module: string;
+  admin?: boolean; superOnly?: boolean; inboxBadge?: boolean; group?: 'email' | 'linkedin';
+};
+const NAV: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: '▦', module: 'dashboard' },
+  { href: '/registered-clients', label: 'Registered Clients', icon: '👥', admin: true, module: 'registered-clients' },
   { href: '/clients', label: 'Clients Workspace', icon: '🏢', admin: true, module: 'clients' },
-  { href: '/cohort-schedule', label: 'Cohort Schedule', icon: '📅', admin: true, module: 'cohort-schedule' },
-  { href: '/validity', label: 'Validity', icon: '⏳', admin: true, module: 'validity' },
-  { href: '/plans', label: 'Membership', icon: '🏷', admin: true, module: 'plans' },
-  { href: '/greetings', label: 'Greetings', icon: '👋', admin: true, module: 'greetings' },
-  { href: '/campaigns', label: 'Campaigns', icon: '✈', module: 'campaigns' },
-  { href: '/contacts', label: 'Contacts', icon: '☰', module: 'contacts' },
-  { href: '/templates', label: 'Templates', icon: '❏', module: 'templates' },
-  { href: '/mailbox', label: 'Inbox & Sent', icon: '📥', inboxBadge: true, module: 'mailbox' },
-  { href: '/mailboxes', label: 'Mailboxes', icon: '✉', module: 'mailboxes' },
-  { href: '/deliverability', label: 'Deliverability', icon: '◎', module: 'deliverability' },
+  // ── Email Outreach (collapsed under "More…") ──
+  { href: '/cohort-schedule', label: 'Cohort Schedule', icon: '📅', admin: true, module: 'cohort-schedule', group: 'email' },
+  { href: '/campaigns', label: 'Campaigns', icon: '✈', module: 'campaigns', group: 'email' },
+  { href: '/contacts', label: 'Contacts', icon: '☰', module: 'contacts', group: 'email' },
+  { href: '/templates', label: 'Templates', icon: '❏', module: 'templates', group: 'email' },
+  { href: '/mailbox', label: 'Inbox & Sent', icon: '📥', inboxBadge: true, module: 'mailbox', group: 'email' },
+  { href: '/mailboxes', label: 'Mailboxes', icon: '✉', module: 'mailboxes', group: 'email' },
+  { href: '/deliverability', label: 'Deliverability', icon: '◎', module: 'deliverability', group: 'email' },
+  // ── LinkedIn Outreach ──
+  { href: '/linkedin', label: 'LinkedIn Outreach', icon: '🔗', admin: true, module: 'linkedin' },
+  { href: '/linkedin-schedule', label: 'LinkedIn Campaigns Schedule', icon: '🗓', admin: true, module: 'linkedin-schedule' },
+  { href: '/linkedin-inbox', label: 'LinkedIn Inbox', icon: '📨', admin: true, module: 'linkedin-inbox', group: 'linkedin' },
+  { href: '/linkedin-leads', label: 'LinkedIn Leads', icon: '🧲', admin: true, module: 'linkedin-leads', group: 'linkedin' },
+  // ── everything else ──
   { href: '/approvals', label: 'Approvals', icon: '✓', admin: true, module: 'approvals' },
   { href: '/compliance', label: 'Compliance', icon: '⚖', admin: true, module: 'compliance' },
+  { href: '/greetings', label: 'Greetings', icon: '👋', admin: true, module: 'greetings' },
   { href: '/sub-admins', label: 'Sub Admins', icon: '⚇', admin: true, superOnly: true, module: 'sub-admins' },
   { href: '/activity-logs', label: 'Activity Logs', icon: '◷', admin: true, module: 'activity-logs' },
+  { href: '/pricing', label: 'Membership', icon: '🪙', module: 'pricing' },
+  { href: '/plans', label: 'Set Membership', icon: '🏷', admin: true, module: 'plans' },
+  { href: '/plan-requests', label: 'Plan Upgrade Request', icon: '🧾', admin: true, module: 'plan-requests' },
+  { href: '/billing', label: 'Payment / Billing', icon: '💳', admin: true, module: 'billing' },
+  { href: '/whatsapp', label: 'WhatsApp', icon: '💬', admin: true, module: 'whatsapp' },
   { href: '/my-profile', label: 'My Account', icon: '👤', module: 'my-profile' },
 ];
 
@@ -43,6 +60,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   >([]);
   const [planColors, setPlanColors] = useState<Record<string, string>>({});
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [emailOpen, setEmailOpen] = useState(false);
+  const [liMoreOpen, setLiMoreOpen] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) router.replace('/login');
@@ -50,6 +69,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   // Close the mobile drawer whenever the route changes.
   useEffect(() => setSidebarOpen(false), [pathname]);
+
+  // Auto-open a collapsed nav group when the current route lives inside it.
+  useEffect(() => {
+    const inGroup = (g: 'email' | 'linkedin') =>
+      NAV.filter((n) => n.group === g).some((n) => pathname.startsWith(n.href));
+    if (inGroup('email')) setEmailOpen(true);
+    if (inGroup('linkedin')) setLiMoreOpen(true);
+  }, [pathname]);
 
   // Client portal is themed by the client's membership colour.
   useEffect(() => {
@@ -268,6 +295,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               label="My Profile"
               color={themeColor}
             />
+            <ClientNavItem
+              href="/pricing"
+              active={pathname === '/pricing'}
+              icon="🪙"
+              label="Membership"
+              color={themeColor}
+            />
           </nav>
 
           <div className="border-t border-white/10 p-4">
@@ -341,34 +375,70 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
 
         <nav className="flex-1 space-y-1 overflow-y-auto px-3 pb-4">
-          {nav.map((item) => {
-            const active = pathname.startsWith(item.href);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all ${
-                  active
-                    ? 'bg-white text-brand-700 shadow-glow'
-                    : 'text-indigo-100 hover:translate-x-0.5 hover:bg-white/10 hover:text-white'
-                }`}
-              >
-                <span
-                  className={`flex h-7 w-7 items-center justify-center rounded-lg text-center text-sm transition ${
-                    active ? 'bg-brand-gradient text-white' : 'bg-white/10 text-indigo-100 group-hover:bg-white/20'
+          {(() => {
+            const renderLink = (item: NavItem) => {
+              const active = pathname.startsWith(item.href);
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all ${
+                    active
+                      ? 'bg-white text-brand-700 shadow-glow'
+                      : 'text-indigo-100 hover:translate-x-0.5 hover:bg-white/10 hover:text-white'
                   }`}
                 >
-                  {item.icon}
-                </span>
-                <span className="flex-1">{item.label}</span>
-                {item.inboxBadge && unread > 0 && (
-                  <span className="rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white shadow">
-                    {unread}
+                  <span
+                    className={`flex h-7 w-7 items-center justify-center rounded-lg text-center text-sm transition ${
+                      active ? 'bg-brand-gradient text-white' : 'bg-white/10 text-indigo-100 group-hover:bg-white/20'
+                    }`}
+                  >
+                    {item.icon}
                   </span>
-                )}
-              </Link>
+                  <span className="flex-1">{item.label}</span>
+                  {item.inboxBadge && unread > 0 && (
+                    <span className="rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white shadow">
+                      {unread}
+                    </span>
+                  )}
+                </Link>
+              );
+            };
+            const groupToggle = (key: string, icon: string, label: string, open: boolean, onClick: () => void) => (
+              <button
+                key={key}
+                type="button"
+                onClick={onClick}
+                className="group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-indigo-100 transition-all hover:bg-white/10 hover:text-white"
+              >
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/10 text-sm text-indigo-100 group-hover:bg-white/20">{icon}</span>
+                <span className="flex-1 text-left">{label}</span>
+                <span className={`text-xs transition-transform ${open ? 'rotate-180' : ''}`}>▾</span>
+              </button>
             );
-          })}
+
+            const els: React.ReactNode[] = [];
+            let emailHeaderDone = false;
+            let liMoreDone = false;
+            for (const item of nav) {
+              if (item.group === 'email') {
+                if (!emailHeaderDone) {
+                  emailHeaderDone = true;
+                  els.push(groupToggle('email-hdr', '📧', 'Email Outreach', emailOpen, () => setEmailOpen((o) => !o)));
+                }
+                if (emailOpen) els.push(renderLink(item));
+              } else if (item.group === 'linkedin') {
+                if (!liMoreDone) {
+                  liMoreDone = true;
+                  els.push(groupToggle('li-more', '⋯', 'More…', liMoreOpen, () => setLiMoreOpen((o) => !o)));
+                }
+                if (liMoreOpen) els.push(renderLink(item));
+              } else {
+                els.push(renderLink(item));
+              }
+            }
+            return els;
+          })()}
         </nav>
 
         <div className="border-t border-white/10 p-4">

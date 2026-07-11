@@ -92,8 +92,8 @@ export class CampaignsController {
   }
 
   @Get(':id/analytics')
-  analytics(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.campaigns.analytics(user, id);
+  analytics(@CurrentUser() user: AuthUser, @Param('id') id: string, @Query('period') period?: string, @Query('from') from?: string, @Query('to') to?: string) {
+    return this.campaigns.analytics(user, id, { period, from, to });
   }
 
   @Get(':id/geo')

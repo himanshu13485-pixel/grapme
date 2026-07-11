@@ -4,8 +4,10 @@ import { useCallback, useEffect, useState, FormEvent } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useCanDelete, useAuth } from '@/lib/auth';
-import { usePlans } from '@/lib/plans';
+import { usePlans, Plan } from '@/lib/plans';
 import { PageHeader, EmptyState, Modal, StatusBadge, Pagination } from '@/components/ui';
+import { LiClientPlanFields, LiClientSendWindowFields, LiPlanForm, emptyLiPlan } from '@/components/LiClientPlanFields';
+import { LiSubscription, LI_DEFAULTS } from '@/lib/linkedin';
 
 interface Client {
   id: string;
@@ -16,6 +18,13 @@ interface Client {
   mobile?: string;
   productCategory?: string;
   serviceType?: string;
+  emailEnabled?: boolean;
+  linkedInEnabled?: boolean;
+  linkedInCreditMetering?: boolean;
+  emailCredits?: number;
+  emailCreditMetering?: boolean;
+  mailboxLimit?: number;
+  emailCampaignLimit?: number;
   plan: string;
   status: string;
   monthlyQuota: number;
@@ -45,6 +54,7 @@ export default function ClientsPage() {
   const [emailQ, setEmailQ] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [planFilter, setPlanFilter] = useState('ALL');
+  const [channelFilter, setChannelFilter] = useState('ALL');
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 12;
   const canDelete = useCanDelete();
@@ -73,7 +83,7 @@ export default function ClientsPage() {
   }, [invoiceQ]);
 
   const hasFilters =
-    !!dq || !!dEmail || !!dInvoice || statusFilter !== 'ALL' || planFilter !== 'ALL';
+    !!dq || !!dEmail || !!dInvoice || statusFilter !== 'ALL' || planFilter !== 'ALL' || channelFilter !== 'ALL';
 
   const load = useCallback(() => {
     const params = new URLSearchParams();
@@ -84,6 +94,7 @@ export default function ClientsPage() {
     if (dInvoice && !isClient) params.set('invoice', dInvoice);
     if (statusFilter !== 'ALL') params.set('status', statusFilter.toLowerCase());
     if (planFilter !== 'ALL') params.set('plan', planFilter);
+    if (channelFilter !== 'ALL') params.set('channel', channelFilter);
     api
       .get<{ items: Client[]; total: number }>(`/clients/paged?${params.toString()}`)
       .then((r) => {
@@ -92,10 +103,10 @@ export default function ClientsPage() {
       })
       .catch(() => {})
       .finally(() => setLoaded(true));
-  }, [page, dq, dEmail, dInvoice, statusFilter, planFilter, isClient]);
+  }, [page, dq, dEmail, dInvoice, statusFilter, planFilter, channelFilter, isClient]);
 
   // Reset to page 1 whenever the filters change, then (re)fetch.
-  useEffect(() => setPage(1), [dq, dEmail, dInvoice, statusFilter, planFilter]);
+  useEffect(() => setPage(1), [dq, dEmail, dInvoice, statusFilter, planFilter, channelFilter]);
   useEffect(() => {
     load();
   }, [load]);
@@ -196,6 +207,18 @@ export default function ClientsPage() {
               ))}
             </select>
           )}
+          {!isClient && (
+            <select
+              className="input w-44"
+              value={channelFilter}
+              onChange={(e) => setChannelFilter(e.target.value)}
+            >
+              <option value="ALL">All channels</option>
+              <option value="EMAIL">📧 Email only</option>
+              <option value="LINKEDIN">🔗 LinkedIn only</option>
+              <option value="BOTH">📧 + 🔗 Both</option>
+            </select>
+          )}
           <span className="ml-auto text-sm text-slate-400">{total} total</span>
         </div>
         {loaded && total === 0 ? (
@@ -225,6 +248,11 @@ export default function ClientsPage() {
               <div className="mt-1 text-xs text-slate-400">
                 {c.plan}
                 {c.invoiceNo && <span> · Invoice {c.invoiceNo}</span>}
+              </div>
+              <div className="mt-2">
+                <span className="inline-flex items-center rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-700">
+                  {channelLabel(c)}
+                </span>
               </div>
               <div className="mt-4 grid grid-cols-3 gap-2 text-center">
                 <Stat label="Mailboxes" value={c._count?.mailboxes ?? 0} />
@@ -322,18 +350,57 @@ function serviceLabel(s?: string): string {
   return '—';
 }
 
+function channelLabel(c: { emailEnabled?: boolean; linkedInEnabled?: boolean }): string {
+  const email = c.emailEnabled !== false;
+  if (c.linkedInEnabled && email) return '📧 Email + 🔗 LinkedIn';
+  if (c.linkedInEnabled) return '🔗 LinkedIn only';
+  return '📧 Email only';
+}
+
+const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+function formatDays(days?: number[] | null): string {
+  if (!days || days.length === 0) return '—';
+  return [...days].sort().map((x) => DAY_LABELS[x] ?? x).join(', ');
+}
+/** A limit where 0 means unlimited. */
+const limitLabel = (n?: number | null) => (n && n > 0 ? String(n) : 'Unlimited');
+
 function ClientDetailView({ client }: { client: Client }) {
-  const rows: { label: string; value: string }[] = [
+  const { user } = useAuth();
+  const { plans } = usePlans();
+  const isClient = user?.role === 'CLIENT';
+  const base = isClient ? '/linkedin/portal' : '/linkedin';
+  const emailOn = client.emailEnabled !== false;
+  const linkedInOn = !!client.linkedInEnabled;
+  const [sub, setSub] = useState<LiSubscription | null>(null);
+  const plan = plans.find((p) => p.name === client.plan);
+
+  useEffect(() => {
+    if (!linkedInOn) return;
+    api.get<LiSubscription>(`${base}/clients/${client.id}/subscription`).then(setSub).catch(() => {});
+  }, [client.id, linkedInOn, base]);
+
+  const d = { ...LI_DEFAULTS, ...(sub?.campaignDefaults ?? {}) };
+  const validity = client.validityDays ?? plan?.validityDays ?? null;
+
+  const clientRows: DetailRow[] = [
     { label: 'Company name', value: client.name },
     { label: 'Invoice no.', value: client.invoiceNo || '—' },
     { label: 'Contact person', value: client.contactPerson || '—' },
     { label: 'Contact email', value: client.email || '—' },
     { label: 'Mobile no.', value: client.mobile || '—' },
+    ...(linkedInOn ? [{ label: 'WhatsApp notifications', value: sub?.whatsappEnabled ? (sub?.whatsappNumber || 'Enabled') : 'Off' }] : []),
     { label: 'Product / Category', value: client.productCategory || '—' },
     { label: 'Service type', value: serviceLabel(client.serviceType) },
+    { label: 'Outreach channels', value: channelLabel(client) },
     { label: 'Plan', value: client.plan },
-    { label: 'Plan validity', value: client.validityDays ? `${client.validityDays} days` : '—' },
+    { label: 'Plan validity', value: validity ? `${validity} days` : '—' },
     { label: 'Status', value: client.status },
+  ];
+  const emailRows: DetailRow[] = emailOn ? [
+    { label: 'Credits', value: `${client.emailCredits ?? 0}${client.emailCreditMetering ? ' · metered (1/email)' : ' · unmetered'}` },
+    { label: 'Mailboxes (allowed)', value: limitLabel(client.mailboxLimit) },
+    { label: 'Campaigns (allowed)', value: limitLabel(client.emailCampaignLimit) },
     { label: 'Contacts / month', value: String(client.monthlyQuota) },
     { label: 'Sends / day', value: String(client.dailyBatchSize) },
     { label: 'Batch window (days)', value: String(client.batchWindowDays) },
@@ -342,19 +409,49 @@ function ClientDetailView({ client }: { client: Client }) {
     { label: 'Send window', value: `${hourLabel(client.sendWindowStart)} – ${hourLabel(client.sendWindowEnd)}` },
     { label: 'Interval jitter (± days)', value: String(client.stageIntervalJitterDays) },
     { label: 'Weekdays only', value: client.weekdaysOnly ? 'Yes' : 'No' },
-  ];
+  ] : [];
+  const linkedinRows: DetailRow[] = linkedInOn ? [
+    { label: 'Credits', value: String(sub?.creditsBalance ?? 0) },
+    { label: 'Seats', value: String(sub?.seats ?? 0) },
+    { label: 'Campaigns (allowed)', value: limitLabel(sub?.campaignLimit) },
+    { label: 'Send window', value: `${hourLabel(d.workStartHour)} – ${hourLabel(d.workEndHour)}` },
+    { label: 'Send days', value: formatDays(d.workDays) },
+    { label: 'Max connection invites / day', value: String(d.dailyConnectionLimit) },
+    { label: 'Max messages / day', value: String(d.dailyMessageLimit) },
+    // Admin-only tuning (kept secret from the client panel).
+    ...(!isClient ? [
+      { label: 'Warm-up ramp', value: d.warmupEnabled ? `${d.warmupStartLimit}/day → full over ${d.warmupDays} days` : 'Off' },
+      { label: 'Auto lead sourcing (drip)', value: d.dripEnabled ? `${d.dripDailyTarget}/day · refill below ${d.dripBuffer}` : 'Off' },
+      { label: 'LinkedIn sourcing credits', value: client.linkedInCreditMetering ? 'Metered — 1 credit per run' : 'Not metered (free)' },
+    ] : []),
+  ] : [];
+
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-200">
-      <table className="w-full text-sm">
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.label} className="border-b border-slate-100 last:border-0">
-              <td className="bg-slate-50 px-4 py-2.5 font-medium text-slate-500">{r.label}</td>
-              <td className="px-4 py-2.5 text-slate-800">{r.value}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="space-y-5">
+      <DetailSection title="Client details" rows={clientRows} />
+      {emailRows.length > 0 && <DetailSection title="📧 Email business requirements" rows={emailRows} />}
+      {linkedinRows.length > 0 && <DetailSection title="🔗 LinkedIn business requirements" rows={linkedinRows} />}
+    </div>
+  );
+}
+
+type DetailRow = { label: string; value: string };
+function DetailSection({ title, rows }: { title: string; rows: DetailRow[] }) {
+  return (
+    <div>
+      <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">{title}</div>
+      <div className="overflow-hidden rounded-lg border border-slate-200">
+        <table className="w-full text-sm">
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.label} className="border-b border-slate-100 last:border-0">
+                <td className="w-1/2 bg-slate-50 px-4 py-2.5 font-medium text-slate-500">{r.label}</td>
+                <td className="px-4 py-2.5 text-slate-800">{r.value}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -368,11 +465,38 @@ function Stat({ label, value }: { label: string; value: number }) {
   );
 }
 
+/** Compact "what this plan grants" hint shown under the Plan picker. */
+function PlanAllowance({ plan }: { plan?: Plan }) {
+  if (!plan) return null;
+  const ch = plan.emailEnabled !== false && plan.linkedInEnabled !== false ? '📧+🔗'
+    : plan.linkedInEnabled !== false ? '🔗' : '📧';
+  return (
+    <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
+      {ch} · validity {plan.validityDays ?? 0}d
+      {plan.emailEnabled !== false && <> · 📧 {plan.emailCredits ?? 0} cr / {plan.mailboxLimit ?? 0} mbx / {plan.emailCampaignLimit ?? 0} camp</>}
+      {plan.linkedInEnabled !== false && <> · 🔗 {plan.linkedInCredits ?? 0} cr / {plan.seatLimit ?? 0} seats / {plan.linkedInCampaignLimit ?? 0} camp</>}
+    </p>
+  );
+}
+
+/** LiPlanForm (+ shared plan / WhatsApp from the common form) → subscription PATCH payload. */
+function liPlanPayload(p: LiPlanForm, planName: string, whatsappEnabled: boolean, whatsappNumber: string) {
+  return {
+    planName: planName || undefined,
+    seats: p.seats,
+    campaignLimit: p.campaignLimit,
+    creditsBalance: p.credits,
+    whatsappEnabled,
+    whatsappNumber: whatsappNumber || undefined,
+    campaignDefaults: p.defaults,
+  };
+}
+
 function NewClientForm({ onDone }: { onDone: () => void }) {
   const { user } = useAuth();
   // Self-registered clients get their company/contact details prefilled.
   const isClient = user?.role === 'CLIENT';
-  const { planNames } = usePlans();
+  const { planNames, plans } = usePlans();
   const [form, setForm] = useState({
     name: isClient ? user?.companyName ?? '' : '',
     invoiceNo: '',
@@ -381,6 +505,13 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
     mobile: isClient ? user?.contactMobile ?? '' : '',
     productCategory: '',
     serviceType: 'EXPORT',
+    whatsappEnabled: false,
+    whatsappNumber: '',
+    validityDays: 0,
+    emailCredits: 0,
+    emailCreditMetering: false,
+    mailboxLimit: 0,
+    emailCampaignLimit: 0,
     plan: 'Growth',
     monthlyQuota: 100,
     dailyBatchSize: 10,
@@ -392,6 +523,10 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
     sendWindowEnd: 17,
     stageIntervalJitterDays: 2,
   });
+  // Which outreach channels this client is subscribed to (admin decides at creation).
+  const [channels, setChannels] = useState<'EMAIL' | 'LINKEDIN' | 'BOTH'>('EMAIL');
+  const [creditMetering, setCreditMetering] = useState(false);
+  const [liPlan, setLiPlan] = useState<LiPlanForm>(emptyLiPlan());
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -408,14 +543,32 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
     setError('');
     setBusy(true);
     try {
+      // WhatsApp fields belong to the LinkedIn subscription, not the client record.
+      const { whatsappEnabled, whatsappNumber, ...clientForm } = form;
       const created = await api.post<{ id: string }>('/clients', {
-        ...form,
+        ...clientForm,
         invoiceNo: form.invoiceNo || undefined,
         contactPerson: form.contactPerson || undefined,
         email: form.email || undefined,
         mobile: form.mobile || undefined,
         productCategory: form.productCategory || undefined,
         serviceType: form.serviceType || undefined,
+        emailEnabled: channels === 'EMAIL' || channels === 'BOTH',
+        linkedInEnabled: channels === 'LINKEDIN' || channels === 'BOTH',
+        linkedInCreditMetering: !isClient && channels !== 'EMAIL' ? creditMetering : false,
+        // Client self-service LinkedIn request carries only the basic send window;
+        // the server routes it through admin approval (see createClient).
+        ...(isClient && channels !== 'EMAIL'
+          ? {
+              linkedin: {
+                workStartHour: liPlan.defaults.workStartHour,
+                workEndHour: liPlan.defaults.workEndHour,
+                workDays: liPlan.defaults.workDays,
+                dailyConnectionLimit: liPlan.defaults.dailyConnectionLimit,
+                dailyMessageLimit: liPlan.defaults.dailyMessageLimit,
+              },
+            }
+          : {}),
         monthlyQuota: Number(form.monthlyQuota),
         dailyBatchSize: Number(form.dailyBatchSize),
         batchWindowDays: Number(form.batchWindowDays),
@@ -425,6 +578,10 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
         sendWindowEnd: Number(form.sendWindowEnd),
         stageIntervalJitterDays: Number(form.stageIntervalJitterDays),
       });
+      // Admin set LinkedIn defaults → persist them onto the client's LinkedIn plan.
+      if (!isClient && created?.id && channels !== 'EMAIL') {
+        await api.patch(`/linkedin/clients/${created.id}/subscription`, liPlanPayload(liPlan, form.plan, whatsappEnabled, whatsappNumber)).catch(() => {});
+      }
       // A client just set up their workspace: full-navigate so the portal
       // sidebar re-fetches and drops them into the new cockpit.
       if (isClient && created?.id) {
@@ -441,6 +598,36 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
 
   return (
     <form onSubmit={submit} className="space-y-4">
+      <div>
+        <label className="label">Outreach channels *</label>
+        <div className="grid grid-cols-3 gap-2">
+          {([
+            ['EMAIL', '📧 Email', 'Email outreach only'],
+            ['LINKEDIN', '🔗 LinkedIn', 'LinkedIn outreach only'],
+            ['BOTH', '📧 + 🔗 Both', 'Email and LinkedIn'],
+          ] as ['EMAIL' | 'LINKEDIN' | 'BOTH', string, string][]).map(([key, label, desc]) => (
+            <button
+              type="button"
+              key={key}
+              onClick={() => setChannels(key)}
+              className={`rounded-xl border p-3 text-left transition ${
+                channels === key
+                  ? 'border-brand-500 bg-brand-50 ring-2 ring-brand-100'
+                  : 'border-slate-200 hover:border-brand-300'
+              }`}
+            >
+              <div className="text-sm font-semibold text-slate-800">{label}</div>
+              <div className="text-xs text-slate-500">{desc}</div>
+            </button>
+          ))}
+        </div>
+        {isClient && channels !== 'EMAIL' && (
+          <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+            ⏳ Your workspace starts on Email right away. LinkedIn activation is reviewed by your account team before it goes live.
+          </p>
+        )}
+      </div>
+      {/* Common client details (shared across channels) */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
           <label className="label">Company name *</label>
@@ -489,6 +676,21 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
           />
         </div>
         <div>
+          <label className="label">WhatsApp notifications</label>
+          <label className="mt-2 flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" checked={form.whatsappEnabled} onChange={(e) => setForm({ ...form, whatsappEnabled: e.target.checked })} /> Enabled
+          </label>
+        </div>
+        <div>
+          <label className="label">WhatsApp number</label>
+          <input
+            className="input"
+            value={form.whatsappNumber}
+            onChange={(e) => setForm({ ...form, whatsappNumber: e.target.value })}
+            placeholder="Same as mobile, or a different WhatsApp number"
+          />
+        </div>
+        <div>
           <label className="label">Product / Category</label>
           <input
             className="input"
@@ -514,7 +716,12 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
           <select
             className="input"
             value={form.plan}
-            onChange={(e) => setForm({ ...form, plan: e.target.value })}
+            onChange={(e) => {
+              const name = e.target.value;
+              const p = plans.find((pl) => pl.name === name);
+              setForm((f) => ({ ...f, plan: name, ...(p ? { validityDays: p.validityDays ?? 0, emailCredits: p.emailCredits ?? 0, mailboxLimit: p.mailboxLimit ?? 0, emailCampaignLimit: p.emailCampaignLimit ?? 0 } : {}) }));
+              if (p) setLiPlan((lp) => ({ ...lp, seats: p.seatLimit || lp.seats, credits: p.linkedInCredits ?? 0, campaignLimit: p.linkedInCampaignLimit ?? 0 }));
+            }}
           >
             {planNames.map((p) => (
               <option key={p} value={p}>
@@ -522,26 +729,66 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
               </option>
             ))}
           </select>
+          <PlanAllowance plan={plans.find((p) => p.name === form.plan)} />
         </div>
-        <NumberField label="Contacts / month" value={form.monthlyQuota} onChange={(v) => setForm({ ...form, monthlyQuota: v })} />
-        <NumberField label="Sends / day" value={form.dailyBatchSize} onChange={(v) => setForm({ ...form, dailyBatchSize: v })} />
-        <NumberField label="Batch window (days)" value={form.batchWindowDays} onChange={(v) => setForm({ ...form, batchWindowDays: v })} />
-        <NumberField label="Gap between stages (days)" value={form.stageIntervalDays} onChange={(v) => setForm({ ...form, stageIntervalDays: v })} />
-        <NumberField label="Follow-ups (after initial)" value={form.followUpCount} onChange={(v) => setForm({ ...form, followUpCount: v })} />
-        <HourField label="Send window start" value={form.sendWindowStart} onChange={(v) => setForm({ ...form, sendWindowStart: v })} />
-        <HourField label="Send window end" value={form.sendWindowEnd} onChange={(v) => setForm({ ...form, sendWindowEnd: v })} />
-        <NumberField label="Interval jitter (± days)" value={form.stageIntervalJitterDays} onChange={(v) => setForm({ ...form, stageIntervalJitterDays: v })} />
-        <div className="flex items-end">
-          <label className="flex items-center gap-2 text-sm text-slate-700">
-            <input
-              type="checkbox"
-              checked={form.weekdaysOnly}
-              onChange={(e) => setForm({ ...form, weekdaysOnly: e.target.checked })}
-            />
-            Weekdays only
-          </label>
-        </div>
+        {!isClient && (
+          <div>
+            <label className="label">Validity (days)</label>
+            <input className="input" type="number" min={0} value={form.validityDays} onChange={(e) => setForm({ ...form, validityDays: Math.max(0, Number(e.target.value) || 0) })} placeholder="0 = no expiry" />
+          </div>
+        )}
       </div>
+
+      {/* Email business requirements — only when the client uses Email. */}
+      {channels !== 'LINKEDIN' && (
+        <div>
+          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">📧 Email business requirements</div>
+          {!isClient && (
+            <div className="mb-3 rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+              <div className="grid grid-cols-3 gap-3">
+                <NumberField label="Credits" value={form.emailCredits} onChange={(v) => setForm({ ...form, emailCredits: v })} />
+                <NumberField label="Mailboxes (0=∞)" value={form.mailboxLimit} onChange={(v) => setForm({ ...form, mailboxLimit: v })} />
+                <NumberField label="Campaigns (0=∞)" value={form.emailCampaignLimit} onChange={(v) => setForm({ ...form, emailCampaignLimit: v })} />
+              </div>
+              <label className="mt-2 flex items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" checked={form.emailCreditMetering} onChange={(e) => setForm({ ...form, emailCreditMetering: e.target.checked })} />
+                Meter email sends — <strong>1 credit per email</strong> (off = unlimited)
+              </label>
+            </div>
+          )}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <NumberField label="Contacts / month" value={form.monthlyQuota} onChange={(v) => setForm({ ...form, monthlyQuota: v })} />
+            <NumberField label="Sends / day" value={form.dailyBatchSize} onChange={(v) => setForm({ ...form, dailyBatchSize: v })} />
+            <NumberField label="Batch window (days)" value={form.batchWindowDays} onChange={(v) => setForm({ ...form, batchWindowDays: v })} />
+            <NumberField label="Gap between stages (days)" value={form.stageIntervalDays} onChange={(v) => setForm({ ...form, stageIntervalDays: v })} />
+            <NumberField label="Follow-ups (after initial)" value={form.followUpCount} onChange={(v) => setForm({ ...form, followUpCount: v })} />
+            <HourField label="Send window start" value={form.sendWindowStart} onChange={(v) => setForm({ ...form, sendWindowStart: v })} />
+            <HourField label="Send window end" value={form.sendWindowEnd} onChange={(v) => setForm({ ...form, sendWindowEnd: v })} />
+            <NumberField label="Interval jitter (± days)" value={form.stageIntervalJitterDays} onChange={(v) => setForm({ ...form, stageIntervalJitterDays: v })} />
+            <div className="flex items-end">
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={form.weekdaysOnly}
+                  onChange={(e) => setForm({ ...form, weekdaysOnly: e.target.checked })}
+                />
+                Weekdays only
+              </label>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* LinkedIn business requirements — admin-only, when the client uses LinkedIn. */}
+      {!isClient && channels !== 'EMAIL' && (
+        <LiClientPlanFields value={liPlan} onChange={setLiPlan} creditMetering={creditMetering} onCreditMetering={setCreditMetering} />
+      )}
+
+      {/* LinkedIn send window — client self-service (basic only; tuning stays admin-side). */}
+      {isClient && channels !== 'EMAIL' && (
+        <LiClientSendWindowFields value={liPlan} onChange={setLiPlan} />
+      )}
+
       {error && <p className="text-sm text-rose-600">{error}</p>}
       <button className="btn-primary w-full" disabled={busy}>
         {busy ? 'Creating…' : 'Create client'}
@@ -559,6 +806,13 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
     mobile: client.mobile ?? '',
     productCategory: client.productCategory ?? '',
     serviceType: client.serviceType ?? 'EXPORT',
+    whatsappEnabled: false,
+    whatsappNumber: '',
+    validityDays: client.validityDays ?? 0,
+    emailCredits: client.emailCredits ?? 0,
+    emailCreditMetering: client.emailCreditMetering ?? false,
+    mailboxLimit: client.mailboxLimit ?? 0,
+    emailCampaignLimit: client.emailCampaignLimit ?? 0,
     plan: client.plan,
     monthlyQuota: client.monthlyQuota,
     dailyBatchSize: client.dailyBatchSize,
@@ -570,6 +824,13 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
     sendWindowEnd: client.sendWindowEnd,
     stageIntervalJitterDays: client.stageIntervalJitterDays,
   });
+  const [channels, setChannels] = useState<'EMAIL' | 'LINKEDIN' | 'BOTH'>(
+    client.linkedInEnabled
+      ? (client.emailEnabled !== false ? 'BOTH' : 'LINKEDIN')
+      : 'EMAIL',
+  );
+  const [creditMetering, setCreditMetering] = useState(!!client.linkedInCreditMetering);
+  const [liPlan, setLiPlan] = useState<LiPlanForm>(emptyLiPlan());
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [loginEmail, setLoginEmail] = useState(client.owner?.email ?? client.email ?? '');
@@ -584,9 +845,19 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
   const [ownerBusy, setOwnerBusy] = useState(false);
   const [status, setStatus] = useState((client.status ?? 'active').toLowerCase());
   const [statusBusy, setStatusBusy] = useState(false);
-  const { planNames } = usePlans();
+  const { planNames, plans } = usePlans();
   // Always include the client's current plan even if it was later removed.
   const planOptions = [...new Set([client.plan, ...planNames].filter(Boolean))];
+
+  // Prefill the LinkedIn plan/defaults + shared WhatsApp from the client's subscription.
+  useEffect(() => {
+    if (!client.linkedInEnabled) return;
+    api.get<LiSubscription>(`/linkedin/clients/${client.id}/subscription`).then((s) => {
+      setLiPlan({ seats: s.seats ?? 1, credits: s.creditsBalance ?? 0, campaignLimit: s.campaignLimit ?? 0, defaults: { ...LI_DEFAULTS, ...(s.campaignDefaults ?? {}) } });
+      setForm((f) => ({ ...f, whatsappEnabled: !!s.whatsappEnabled, whatsappNumber: s.whatsappNumber ?? '' }));
+    }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client.id]);
 
   async function toggleStatus(active: boolean) {
     if (
@@ -674,6 +945,14 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
         mobile: form.mobile || undefined,
         productCategory: form.productCategory || undefined,
         serviceType: form.serviceType || undefined,
+        emailEnabled: channels === 'EMAIL' || channels === 'BOTH',
+        linkedInEnabled: channels === 'LINKEDIN' || channels === 'BOTH',
+        linkedInCreditMetering: channels !== 'EMAIL' ? creditMetering : false,
+        validityDays: Number(form.validityDays),
+        emailCredits: Number(form.emailCredits),
+        emailCreditMetering: form.emailCreditMetering,
+        mailboxLimit: Number(form.mailboxLimit),
+        emailCampaignLimit: Number(form.emailCampaignLimit),
         plan: form.plan,
         monthlyQuota: Number(form.monthlyQuota),
         dailyBatchSize: Number(form.dailyBatchSize),
@@ -685,6 +964,10 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
         sendWindowEnd: Number(form.sendWindowEnd),
         stageIntervalJitterDays: Number(form.stageIntervalJitterDays),
       });
+      // Persist LinkedIn plan/defaults + shared WhatsApp when the client uses LinkedIn.
+      if (channels !== 'EMAIL') {
+        await api.patch(`/linkedin/clients/${client.id}/subscription`, liPlanPayload(liPlan, form.plan, form.whatsappEnabled, form.whatsappNumber)).catch(() => {});
+      }
       onDone();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed');
@@ -753,6 +1036,17 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
               onChange={(e) => setForm({ ...form, mobile: e.target.value })} />
           </div>
           <div>
+            <label className="label">WhatsApp notifications</label>
+            <label className="mt-2 flex items-center gap-2 text-sm text-slate-700">
+              <input type="checkbox" checked={form.whatsappEnabled} onChange={(e) => setForm({ ...form, whatsappEnabled: e.target.checked })} /> Enabled
+            </label>
+          </div>
+          <div>
+            <label className="label">WhatsApp number</label>
+            <input className="input" value={form.whatsappNumber} placeholder="Same as mobile, or a different WhatsApp number"
+              onChange={(e) => setForm({ ...form, whatsappNumber: e.target.value })} />
+          </div>
+          <div>
             <label className="label">Product / Category</label>
             <input className="input" value={form.productCategory}
               onChange={(e) => setForm({ ...form, productCategory: e.target.value })} />
@@ -766,29 +1060,75 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
               <option value="BOTH">Both</option>
             </select>
           </div>
+          <div>
+            <label className="label">Plan</label>
+            <select className="input" value={form.plan}
+              onChange={(e) => {
+                const name = e.target.value;
+                const p = plans.find((pl) => pl.name === name);
+                setForm((f) => ({ ...f, plan: name, ...(p ? { validityDays: p.validityDays ?? 0, emailCredits: p.emailCredits ?? 0, mailboxLimit: p.mailboxLimit ?? 0, emailCampaignLimit: p.emailCampaignLimit ?? 0 } : {}) }));
+                if (p) setLiPlan((lp) => ({ ...lp, seats: p.seatLimit || lp.seats, credits: p.linkedInCredits ?? 0, campaignLimit: p.linkedInCampaignLimit ?? 0 }));
+              }}>
+              {planOptions.map((p) => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+            <PlanAllowance plan={plans.find((p) => p.name === form.plan)} />
+          </div>
+          <div>
+            <label className="label">Validity (days)</label>
+            <input className="input" type="number" min={0} value={form.validityDays} onChange={(e) => setForm({ ...form, validityDays: Math.max(0, Number(e.target.value) || 0) })} placeholder="0 = no expiry" />
+            <p className="mt-0.5 text-[11px] text-slate-400">Changing this restarts the validity window from today.</p>
+          </div>
+          <div className="sm:col-span-2">
+            <label className="label">Outreach channels</label>
+            <div className="grid grid-cols-3 gap-2">
+              {([
+                ['EMAIL', '📧 Email', 'Email only'],
+                ['LINKEDIN', '🔗 LinkedIn', 'LinkedIn only'],
+                ['BOTH', '📧 + 🔗 Both', 'Email and LinkedIn'],
+              ] as ['EMAIL' | 'LINKEDIN' | 'BOTH', string, string][]).map(([key, label, desc]) => (
+                <button
+                  type="button"
+                  key={key}
+                  onClick={() => setChannels(key)}
+                  className={`rounded-xl border p-3 text-left transition ${
+                    channels === key
+                      ? 'border-brand-500 bg-brand-50 ring-2 ring-brand-100'
+                      : 'border-slate-200 hover:border-brand-300'
+                  }`}
+                >
+                  <div className="text-sm font-semibold text-slate-800">{label}</div>
+                  <div className="text-xs text-slate-500">{desc}</div>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
+      {/* Email business requirements — only when the client uses Email. */}
+      {channels !== 'LINKEDIN' && (
       <div>
         <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
-          Outreach settings
+          📧 Email business requirements
         </div>
         <p className="mb-2 text-xs text-amber-600">
           ⚠ Changes apply to future scheduling only — running cohorts keep their
           already-scheduled sends.
         </p>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div>
-            <label className="label">Plan</label>
-            <select className="input" value={form.plan}
-              onChange={(e) => setForm({ ...form, plan: e.target.value })}>
-              {planOptions.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </select>
+        <div className="mb-3 rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+          <div className="grid grid-cols-3 gap-3">
+            <NumberField label="Credits" value={form.emailCredits} onChange={(v) => setForm({ ...form, emailCredits: v })} />
+            <NumberField label="Mailboxes (0=∞)" value={form.mailboxLimit} onChange={(v) => setForm({ ...form, mailboxLimit: v })} />
+            <NumberField label="Campaigns (0=∞)" value={form.emailCampaignLimit} onChange={(v) => setForm({ ...form, emailCampaignLimit: v })} />
           </div>
+          <label className="mt-2 flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" checked={form.emailCreditMetering} onChange={(e) => setForm({ ...form, emailCreditMetering: e.target.checked })} />
+            Meter email sends — <strong>1 credit per email</strong> (off = unlimited)
+          </label>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <NumberField label="Contacts / month" value={form.monthlyQuota} onChange={(v) => setForm({ ...form, monthlyQuota: v })} />
           <NumberField label="Sends / day" value={form.dailyBatchSize} onChange={(v) => setForm({ ...form, dailyBatchSize: v })} />
           <NumberField label="Batch window (days)" value={form.batchWindowDays} onChange={(v) => setForm({ ...form, batchWindowDays: v })} />
@@ -806,6 +1146,12 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
           </div>
         </div>
       </div>
+      )}
+
+      {/* LinkedIn business requirements — when the client uses LinkedIn. */}
+      {channels !== 'EMAIL' && (
+        <LiClientPlanFields value={liPlan} onChange={setLiPlan} creditMetering={creditMetering} onCreditMetering={setCreditMetering} />
+      )}
 
       <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 p-4">
         <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-emerald-700">

@@ -6,6 +6,7 @@ import {
   QUEUE_SEND,
   QUEUE_REPLIES,
   QUEUE_ENROLL,
+  QUEUE_LINKEDIN,
 } from './queue.constants';
 
 @Global()
@@ -32,6 +33,7 @@ import {
       { name: QUEUE_SEND },
       { name: QUEUE_REPLIES },
       { name: QUEUE_ENROLL },
+      { name: QUEUE_LINKEDIN },
     ),
   ],
   exports: [BullModule],

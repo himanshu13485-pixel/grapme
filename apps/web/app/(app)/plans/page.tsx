@@ -2,7 +2,7 @@
 
 import { useState, FormEvent } from 'react';
 import { api } from '@/lib/api';
-import { usePlans, Plan } from '@/lib/plans';
+import { usePlans, Plan, PlanPrice } from '@/lib/plans';
 import { PageHeader } from '@/components/ui';
 
 export default function MembershipPage() {
@@ -40,10 +40,10 @@ export default function MembershipPage() {
   }
 
   return (
-    <div className="max-w-2xl">
+    <div className="max-w-4xl">
       <PageHeader
         title="Membership"
-        subtitle="Membership plans and their theme colour — the client portal is styled by each client's membership"
+        subtitle="Each membership plan's entitlements — validity, credits, mailboxes/seats and campaign limits for Email and LinkedIn"
       />
 
       <form onSubmit={add} className="mb-4 flex flex-wrap items-end gap-2">
@@ -91,6 +91,8 @@ export default function MembershipPage() {
   );
 }
 
+const num = (v: unknown, fallback = 0) => (typeof v === 'number' ? v : fallback);
+
 function PlanRow({
   plan,
   onSaved,
@@ -101,13 +103,61 @@ function PlanRow({
   onDelete: (id: string, name: string) => void;
 }) {
   const [color, setColor] = useState(plan.color);
+  const [emailOn, setEmailOn] = useState(plan.emailEnabled !== false);
+  const [linkedInOn, setLinkedInOn] = useState(plan.linkedInEnabled !== false);
+  const [form, setForm] = useState({
+    sortOrder: num(plan.sortOrder),
+    validityDays: plan.validityDays ?? 0,
+    emailCredits: num(plan.emailCredits),
+    linkedInCredits: num(plan.linkedInCredits),
+    mailboxLimit: num(plan.mailboxLimit),
+    seatLimit: num(plan.seatLimit),
+    emailCampaignLimit: num(plan.emailCampaignLimit),
+    linkedInCampaignLimit: num(plan.linkedInCampaignLimit),
+  });
+  const [pricing, setPricing] = useState<PlanPrice[]>(() => plan.pricing ?? []);
   const [busy, setBusy] = useState(false);
-  const dirty = color.toLowerCase() !== plan.color.toLowerCase();
+  const set = (k: keyof typeof form, v: number) => setForm((f) => ({ ...f, [k]: v }));
+
+  const setPrice = (i: number, k: keyof PlanPrice, v: string | number) =>
+    setPricing((rows) => rows.map((r, j) => (j === i ? { ...r, [k]: k === 'currency' ? String(v).toUpperCase() : Math.max(0, Number(v) || 0) } : r)));
+  const addCurrency = (cur: string) => {
+    if (!cur || pricing.some((p) => p.currency === cur)) return;
+    setPricing((rows) => [...rows, { currency: cur, monthlyPrice: 0, monthlyBest: 0, yearlyPrice: 0, yearlyBest: 0 }]);
+  };
+  const removeCurrency = (i: number) => setPricing((rows) => rows.filter((_, j) => j !== i));
+
+  const dirty =
+    JSON.stringify(pricing) !== JSON.stringify(plan.pricing ?? []) ||
+    color.toLowerCase() !== plan.color.toLowerCase() ||
+    emailOn !== (plan.emailEnabled !== false) ||
+    linkedInOn !== (plan.linkedInEnabled !== false) ||
+    form.sortOrder !== num(plan.sortOrder) ||
+    form.validityDays !== (plan.validityDays ?? 0) ||
+    form.emailCredits !== num(plan.emailCredits) ||
+    form.linkedInCredits !== num(plan.linkedInCredits) ||
+    form.mailboxLimit !== num(plan.mailboxLimit) ||
+    form.seatLimit !== num(plan.seatLimit) ||
+    form.emailCampaignLimit !== num(plan.emailCampaignLimit) ||
+    form.linkedInCampaignLimit !== num(plan.linkedInCampaignLimit);
 
   async function save() {
     setBusy(true);
     try {
-      await api.patch(`/plans/${plan.id}`, { color });
+      await api.patch(`/plans/${plan.id}`, {
+        color,
+        sortOrder: form.sortOrder,
+        emailEnabled: emailOn,
+        linkedInEnabled: linkedInOn,
+        validityDays: form.validityDays > 0 ? form.validityDays : null,
+        emailCredits: form.emailCredits,
+        linkedInCredits: form.linkedInCredits,
+        mailboxLimit: form.mailboxLimit,
+        seatLimit: form.seatLimit,
+        emailCampaignLimit: form.emailCampaignLimit,
+        linkedInCampaignLimit: form.linkedInCampaignLimit,
+        pricing,
+      });
       onSaved();
     } catch {
       setColor(plan.color);
@@ -117,40 +167,131 @@ function PlanRow({
   }
 
   return (
-    <div className="flex items-center justify-between gap-3 px-5 py-3">
-      <div className="flex items-center gap-3">
-        <span
-          className="h-8 w-8 rounded-lg border border-slate-200"
-          style={{ background: `linear-gradient(145deg, ${color}, color-mix(in srgb, ${color} 60%, black))` }}
-        />
-        <span className="font-medium text-slate-800">{plan.name}</span>
-      </div>
-      <div className="flex items-center gap-3">
-        <input
-          type="color"
-          className="h-8 w-12 cursor-pointer rounded border border-slate-200 bg-white p-0.5"
-          value={color}
-          onChange={(e) => setColor(e.target.value)}
-        />
-        <span className="w-16 font-mono text-xs text-slate-400">{color}</span>
-        {dirty && (
-          <button
-            type="button"
-            className="btn-primary px-3 py-1 text-xs"
-            onClick={save}
-            disabled={busy}
-          >
+    <div className="px-5 py-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div>
+            <label className="block text-[10px] font-medium uppercase text-slate-400">Serial</label>
+            <input
+              type="number" min={0}
+              className="input w-16 py-1.5 text-center text-sm"
+              value={form.sortOrder}
+              onChange={(e) => set('sortOrder', Math.max(0, Number(e.target.value) || 0))}
+            />
+          </div>
+          <span
+            className="h-8 w-8 rounded-lg border border-slate-200"
+            style={{ background: `linear-gradient(145deg, ${color}, color-mix(in srgb, ${color} 60%, black))` }}
+          />
+          <span className="text-base font-semibold text-slate-800">{plan.name}</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <input
+            type="color"
+            className="h-8 w-12 cursor-pointer rounded border border-slate-200 bg-white p-0.5"
+            value={color}
+            onChange={(e) => setColor(e.target.value)}
+          />
+          <button type="button" className="btn-primary px-3 py-1 text-xs disabled:opacity-40" onClick={save} disabled={busy || !dirty}>
             {busy ? '…' : 'Save'}
           </button>
-        )}
-        <button
-          type="button"
-          className="text-xs text-slate-400 hover:text-rose-600"
-          onClick={() => onDelete(plan.id, plan.name)}
-        >
-          Delete
-        </button>
+          <button type="button" className="text-xs text-slate-400 hover:text-rose-600" onClick={() => onDelete(plan.id, plan.name)}>
+            Delete
+          </button>
+        </div>
       </div>
+
+      <div className="mb-2">
+        <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">General</div>
+        <NumField label="Validity (days)" value={form.validityDays} onChange={(v) => set('validityDays', v)} hint="0 = no expiry" />
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className={`rounded-lg border p-3 transition ${emailOn ? 'border-brand-100 bg-brand-50/40' : 'border-slate-100 bg-slate-50/60'}`}>
+          <label className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            <input type="checkbox" checked={emailOn} onChange={(e) => setEmailOn(e.target.checked)} />
+            📧 Email {emailOn ? '' : '· off'}
+          </label>
+          <div className={`grid grid-cols-3 gap-2 ${emailOn ? '' : 'pointer-events-none opacity-40'}`}>
+            <NumField label="Credits" value={form.emailCredits} onChange={(v) => set('emailCredits', v)} />
+            <NumField label="Mailboxes" value={form.mailboxLimit} onChange={(v) => set('mailboxLimit', v)} />
+            <NumField label="Campaigns" value={form.emailCampaignLimit} onChange={(v) => set('emailCampaignLimit', v)} />
+          </div>
+        </div>
+        <div className={`rounded-lg border p-3 transition ${linkedInOn ? 'border-brand-100 bg-brand-50/40' : 'border-slate-100 bg-slate-50/60'}`}>
+          <label className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            <input type="checkbox" checked={linkedInOn} onChange={(e) => setLinkedInOn(e.target.checked)} />
+            🔗 LinkedIn {linkedInOn ? '' : '· off'}
+          </label>
+          <div className={`grid grid-cols-3 gap-2 ${linkedInOn ? '' : 'pointer-events-none opacity-40'}`}>
+            <NumField label="Credits" value={form.linkedInCredits} onChange={(v) => set('linkedInCredits', v)} />
+            <NumField label="Seats" value={form.seatLimit} onChange={(v) => set('seatLimit', v)} />
+            <NumField label="Campaigns" value={form.linkedInCampaignLimit} onChange={(v) => set('linkedInCampaignLimit', v)} />
+          </div>
+        </div>
+      </div>
+
+      {/* Multi-currency pricing */}
+      <div className="mt-4">
+        <div className="mb-2 flex items-center gap-3">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">💳 Pricing <span className="font-normal normal-case text-slate-400">· taxes extra</span></div>
+          <select
+            className="input h-8 w-40 py-0 text-xs"
+            value=""
+            onChange={(e) => { addCurrency(e.target.value); e.target.value = ''; }}
+          >
+            <option value="">+ Add currency…</option>
+            {CURRENCIES.filter((c) => !pricing.some((p) => p.currency === c)).map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        </div>
+        {pricing.length === 0 ? (
+          <p className="text-xs text-slate-400">No pricing set — add a currency to enter monthly / yearly price and best price.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[560px] text-sm">
+              <thead className="text-left text-[10px] uppercase text-slate-400">
+                <tr>
+                  <th className="px-2 py-1">Currency</th>
+                  <th className="px-2 py-1" colSpan={2}>Monthly</th>
+                  <th className="px-2 py-1" colSpan={2}>Yearly</th>
+                  <th className="px-2 py-1"></th>
+                </tr>
+                <tr className="text-[10px] text-slate-300">
+                  <th></th>
+                  <th className="px-2 font-normal">Price</th><th className="px-2 font-normal">Best price</th>
+                  <th className="px-2 font-normal">Price</th><th className="px-2 font-normal">Best price</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {pricing.map((p, i) => (
+                  <tr key={i}>
+                    <td className="px-2 py-1"><input className="input w-20 py-1 text-center text-sm font-medium uppercase" value={p.currency} onChange={(e) => setPrice(i, 'currency', e.target.value)} /></td>
+                    <td className="px-2 py-1"><input type="number" min={0} className="input w-24 py-1 text-sm" value={p.monthlyPrice} onChange={(e) => setPrice(i, 'monthlyPrice', e.target.value)} /></td>
+                    <td className="px-2 py-1"><input type="number" min={0} className="input w-24 py-1 text-sm" value={p.monthlyBest} onChange={(e) => setPrice(i, 'monthlyBest', e.target.value)} /></td>
+                    <td className="px-2 py-1"><input type="number" min={0} className="input w-24 py-1 text-sm" value={p.yearlyPrice} onChange={(e) => setPrice(i, 'yearlyPrice', e.target.value)} /></td>
+                    <td className="px-2 py-1"><input type="number" min={0} className="input w-24 py-1 text-sm" value={p.yearlyBest} onChange={(e) => setPrice(i, 'yearlyBest', e.target.value)} /></td>
+                    <td className="px-2 py-1"><button type="button" className="text-xs text-slate-400 hover:text-rose-600" onClick={() => removeCurrency(i)}>✕</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const CURRENCIES = ['USD', 'INR', 'EUR', 'GBP', 'AUD', 'CAD', 'AED', 'SGD', 'JPY', 'ZAR'];
+
+function NumField({ label, value, onChange, hint }: { label: string; value: number; onChange: (v: number) => void; hint?: string }) {
+  return (
+    <div>
+      <label className="mb-0.5 block text-xs font-medium text-slate-500">{label}</label>
+      <input type="number" min={0} className="input py-1.5 text-sm" value={value} onChange={(e) => onChange(Math.max(0, Number(e.target.value) || 0))} />
+      {hint && <div className="mt-0.5 text-[10px] text-slate-400">{hint}</div>}
     </div>
   );
 }

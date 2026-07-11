@@ -111,6 +111,8 @@ enum ApprovalEntity {
   MESSAGE_DELETE
   CLIENT_DELETE
   CLIENT_ACTIVATION
+  LI_CAMPAIGN
+  LI_CHANNEL_REQUEST
 }
 
 enum ApprovalStatus {
@@ -150,6 +152,7 @@ model Tenant {
   settings        Json     @default("{}")
   greetingsEnabled Boolean @default(true) // show a daily login greeting to clients
   reportMailboxId String?  // explicit mailbox client reports are sent from (else auto-resolved)
+  paymentMode     String   @default("MANUAL") // AUTO (Cashfree self-serve) | MANUAL (offline via request)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -201,13 +204,48 @@ model Greeting {
   @@index([tenantId])
 }
 
+// A client's request to move onto a plan. AUTO requests are paid via Cashfree
+// then auto-activated; MANUAL requests are activated by an admin after offline payment.
+model PlanUpgradeRequest {
+  id            String   @id @default(uuid())
+  tenantId      String
+  clientId      String
+  requestedPlan String
+  currency      String?
+  period        String   @default("monthly") // monthly | yearly
+  amount        Int      @default(0)          // in the currency's minor-less unit (whole)
+  mode          String   @default("MANUAL")   // AUTO | MANUAL
+  status        String   @default("PENDING")  // PENDING | PAID | ACTIVATED | REJECTED
+  paymentRef    String?                       // Cashfree order/payment id
+  note          String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([tenantId, status])
+  @@index([clientId])
+}
+
 // Tenant-defined plan names shown in every plan picker/filter.
 model Plan {
   id        String   @id @default(uuid())
   tenantId  String
   name      String
   color     String   @default("#0f766e") // theme color for the client portal
-  sortOrder Int      @default(0)
+  sortOrder Int      @default(0) // serial / display order
+  // Which channels this plan provides.
+  emailEnabled          Boolean @default(true)
+  linkedInEnabled       Boolean @default(true)
+  // Membership entitlements (reference values shown/applied per plan).
+  validityDays          Int? // plan validity window in days
+  emailCredits          Int  @default(0) // credits for the Email channel
+  linkedInCredits       Int  @default(0) // credits for the LinkedIn channel
+  mailboxLimit          Int  @default(0) // No. of mailboxes (Email)
+  seatLimit             Int  @default(0) // No. of seats (LinkedIn)
+  emailCampaignLimit    Int  @default(0) // No. of campaigns (Email)
+  linkedInCampaignLimit Int  @default(0) // No. of campaigns (LinkedIn)
+  // Multi-currency pricing. Shape:
+  // [{ currency, monthlyPrice, monthlyBest, yearlyPrice, yearlyBest }]
+  pricing               Json?
   createdAt DateTime @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -712,6 +750,14 @@ model Client {
   mobile            String?  // client mobile incl. country code
   productCategory   String?  // product / category being exported/imported
   serviceType       String?  // EXPORT | IMPORT | BOTH
+  emailEnabled      Boolean  @default(true)  // subscribed to the Email outreach channel
+  linkedInEnabled   Boolean  @default(false) // subscribed to the LinkedIn outreach channel
+  linkedInCreditMetering Boolean @default(false) // when true, each LinkedIn lead-sourcing run costs 1 credit
+  // Per-client entitlements (defaulted from the plan, overridable; 0 = unlimited/unset).
+  emailCredits        Int    @default(0)
+  emailCreditMetering Boolean @default(false) // when true, each email send debits 1 credit
+  mailboxLimit        Int    @default(0)
+  emailCampaignLimit  Int    @default(0)
   status            String   @default("active")
   plan              String   @default("Growth")
   reportDaily       Boolean  @default(false) // email a daily performance report
@@ -815,4 +861,379 @@ model Enrollment {
   @@unique([cohortId, contactId])
   @@index([tenantId])
   @@index([status, nextTouchAt])
+}
+
+// ═══════════════════════ LinkedIn Outreach channel (additive) ═══════════════════════
+// Self-contained module for the LinkedIn channel. It references the shared Tenant /
+// Client / User by SCALAR id only (no Prisma relations into them), so no existing model
+// or table is modified — this migration is purely additive (CREATE TABLE only).
+// All names/enums are Li*-prefixed to avoid colliding with the email models above.
+
+enum LinkedInAccountStatus {
+  PENDING       // awaiting Unipile hosted-auth completion
+  CONNECTED
+  CREDENTIALS   // needs re-auth (cookie expired / checkpoint)
+  DISCONNECTED
+  ERROR
+}
+
+enum LiKnowledgeKind {
+  BUSINESS
+  STRATEGY
+}
+
+enum LiCampaignType {
+  AUTOMATIC
+  MANUAL
+}
+
+enum LiCampaignMode {
+  REGULAR
+  AI
+}
+
+enum LiOutreachType {
+  WITH_CONNECTION
+  DIRECT_MESSAGES
+}
+
+enum LiCampaignStatus {
+  DRAFT
+  RUNNING
+  PAUSED
+  COMPLETED
+  ARCHIVED
+  DELETED
+}
+
+enum LiStepType {
+  CONNECTION_REQUEST
+  MESSAGE
+}
+
+enum LiLeadStatus {
+  PENDING
+  CONNECTION_PENDING
+  CONNECTED
+  MESSAGED
+  REPLIED
+  BOUNCED
+  EXCLUDED
+}
+
+enum LiSentiment {
+  POSITIVE
+  NEUTRAL
+  NEGATIVE
+}
+
+enum LiMessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum LiMessageSource {
+  AUTO
+  MANUAL
+  AI
+}
+
+enum LiScheduledActionType {
+  SEND_CONNECTION
+  CHECK_ACCEPTANCE
+  SEND_MESSAGE
+}
+
+enum LiScheduledActionStatus {
+  PENDING
+  QUEUED
+  RUNNING
+  DONE
+  FAILED
+  CANCELLED
+}
+
+enum LiCreditReason {
+  AI_FETCH
+  LEAD_SOURCING
+  TOPUP
+  ADJUSTMENT
+  REFUND
+}
+
+// Separate LinkedIn subscription block for a shared Client — seats / validity / credits
+// filled INDEPENDENTLY of the email plan. 1:1 with Client via a unique scalar clientId.
+model LinkedInSubscription {
+  id              String   @id @default(uuid())
+  tenantId        String
+  clientId        String   @unique
+  planName        String?
+  seats           Int      @default(1)
+  campaignLimit   Int      @default(0) // max LinkedIn campaigns (0 = unlimited)
+  creditsBalance  Int      @default(0)
+  validityDays    Int?
+  validityStartAt DateTime?
+  whatsappEnabled Boolean  @default(false)
+  whatsappNumber  String?
+  timezone        String   @default("Asia/Kolkata")
+  // Client-level LinkedIn sending defaults (working hours, caps, warm-up, drip),
+  // set at client registration and inherited by every new campaign. Shape:
+  // { run247, workStartHour, workEndHour, workDays[], dailyConnectionLimit,
+  //   dailyMessageLimit, warmupEnabled, warmupStartLimit, warmupDays,
+  //   dripEnabled, dripDailyTarget, dripBuffer }
+  campaignDefaults Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  creditTxns LiCreditTransaction[]
+
+  @@index([tenantId])
+}
+
+model LiCreditTransaction {
+  id             String               @id @default(uuid())
+  subscriptionId String
+  subscription   LinkedInSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  amount         Int
+  reason         LiCreditReason
+  balanceAfter   Int
+  refType        String?
+  refId          String?
+  note           String?
+  createdAt      DateTime             @default(now())
+
+  @@index([subscriptionId])
+}
+
+// A LinkedIn "seat" — one connected account (references shared Client by scalar id).
+model LinkedInAccount {
+  id                String                @id @default(uuid())
+  tenantId          String
+  clientId          String
+  unipileAccountId  String?               @unique
+  status            LinkedInAccountStatus @default(PENDING)
+  fullName          String?
+  headline          String?
+  profileUrl        String?
+  avatarUrl         String?
+  connectionsCount  Int?
+  dailyInviteLimit  Int                   @default(20)
+  dailyMessageLimit Int                   @default(40)
+  lastSyncedAt      DateTime?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  campaigns LiCampaign[]
+
+  @@index([tenantId])
+  @@index([clientId])
+  @@index([status])
+}
+
+model LiKnowledgeProfile {
+  id           String          @id @default(uuid())
+  tenantId     String
+  clientId     String
+  kind         LiKnowledgeKind
+  parentId     String?
+  parent       LiKnowledgeProfile?  @relation("LiKnowledgeHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children     LiKnowledgeProfile[] @relation("LiKnowledgeHierarchy")
+  name         String
+  slug         String?
+  content      Json            @default("{}")
+  completeness Int             @default(0)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  messages             LiKnowledgeChatMessage[]
+  businessForCampaigns LiCampaign[] @relation("LiCampaignBusiness")
+  strategyForCampaigns LiCampaign[] @relation("LiCampaignStrategy")
+
+  @@index([clientId, kind])
+  @@index([parentId])
+}
+
+model LiKnowledgeChatMessage {
+  id        String             @id @default(uuid())
+  profileId String
+  profile   LiKnowledgeProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  role      String
+  content   String
+  fieldKey  String?
+  createdAt DateTime           @default(now())
+
+  @@index([profileId])
+}
+
+model LiCampaign {
+  id                   String           @id @default(uuid())
+  tenantId             String
+  clientId             String
+  linkedInAccountId    String
+  linkedInAccount      LinkedInAccount  @relation(fields: [linkedInAccountId], references: [id])
+  name                 String
+  type                 LiCampaignType   @default(AUTOMATIC)
+  mode                 LiCampaignMode   @default(REGULAR)
+  outreachType         LiOutreachType   @default(WITH_CONNECTION)
+  status               LiCampaignStatus @default(DRAFT)
+  timezone             String           @default("Asia/Kolkata")
+  run247               Boolean          @default(false)
+  workStartHour        Int              @default(9)
+  workEndHour          Int              @default(18)
+  workDays             Int[]            @default([1, 2, 3, 4, 5])
+  dailyConnectionLimit Int              @default(20)
+  dailyMessageLimit    Int              @default(20)
+  // Warm-up ramp: start low and grow the daily connection cap to the target over
+  // warmupDays, to protect the account from LinkedIn's invite limits / bans.
+  warmupEnabled        Boolean          @default(true)
+  warmupStartLimit     Int              @default(5)   // connections/day on day 0
+  warmupDays           Int              @default(14)  // days to reach dailyConnectionLimit
+  warmupStartedAt      DateTime?                       // set when the campaign first goes RUNNING
+  // Background drip-sourcer: auto-refill the Target Audience from LinkedIn search.
+  dripEnabled          Boolean          @default(false)
+  dripDailyTarget      Int              @default(25)  // max leads to source per day
+  dripBuffer           Int              @default(50)  // only refill when PENDING is below this
+  lastDripAt           DateTime?                       // last successful auto-source
+  businessProfileId    String?
+  businessProfile      LiKnowledgeProfile? @relation("LiCampaignBusiness", fields: [businessProfileId], references: [id])
+  strategyId           String?
+  strategy             LiKnowledgeProfile? @relation("LiCampaignStrategy", fields: [strategyId], references: [id])
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  audienceSpec LiTargetAudienceSpec?
+  steps        LiSequenceStep[]
+  leads        LiLead[]
+
+  @@index([tenantId])
+  @@index([clientId, status])
+  @@index([linkedInAccountId])
+}
+
+model LiTargetAudienceSpec {
+  id                     String     @id @default(uuid())
+  campaignId             String     @unique
+  campaign               LiCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  countries              String[]   @default([])
+  cities                 String[]   @default([])
+  industries             String[]   @default([])
+  companySizes           String[]   @default([])
+  departments            String[]   @default([])
+  jobTitles              String[]   @default([])
+  seniorities            String[]   @default([])
+  companyKeywordsInclude String[]   @default([])
+  companyKeywordsExclude String[]   @default([])
+  personKeywordsInclude  String[]   @default([])
+  personKeywordsExclude  String[]   @default([])
+  createdAt              DateTime   @default(now())
+  updatedAt              DateTime   @updatedAt
+}
+
+model LiSequenceStep {
+  id         String     @id @default(uuid())
+  campaignId String
+  campaign   LiCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  order      Int
+  type       LiStepType
+  waitHours  Int        @default(0)
+  body       String?
+  note       String?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  @@unique([campaignId, order])
+  @@index([campaignId])
+}
+
+model LiLead {
+  id              String       @id @default(uuid())
+  campaignId      String
+  campaign        LiCampaign   @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  fullName        String
+  firstName       String?
+  lastName        String?
+  title           String?
+  company         String?
+  location        String?
+  profileUrl      String?
+  avatarUrl       String?
+  unipileMemberId String?
+  status          LiLeadStatus @default(PENDING)
+  currentStep     Int          @default(0)
+  sentiment       LiSentiment?
+  intent          String?
+  connectedAt     DateTime?
+  lastActionAt    DateTime?
+  lastReplyAt     DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  conversation LiConversation?
+  aiFetches    LiAiFetch[]
+  scheduled    LiScheduledAction[]
+
+  @@index([campaignId, status])
+  @@index([status])
+}
+
+model LiConversation {
+  id            String      @id @default(uuid())
+  leadId        String      @unique
+  lead          LiLead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  unipileChatId String?     @unique
+  unreadCount   Int         @default(0)
+  needsReply    Boolean     @default(false)
+  lastReplyAt   DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  messages LiMessage[]
+
+  @@index([needsReply])
+}
+
+model LiMessage {
+  id               String             @id @default(uuid())
+  conversationId   String
+  conversation     LiConversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  direction        LiMessageDirection
+  source           LiMessageSource    @default(AUTO)
+  body             String
+  unipileMessageId String?            @unique
+  sentAt           DateTime           @default(now())
+  createdAt        DateTime           @default(now())
+
+  @@index([conversationId])
+}
+
+model LiAiFetch {
+  id         String       @id @default(uuid())
+  leadId     String
+  lead       LiLead       @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  intent     String?
+  sentiment  LiSentiment?
+  enrichment Json?
+  draftReply String?
+  creditCost Int          @default(1)
+  createdAt  DateTime     @default(now())
+
+  @@index([leadId])
+}
+
+model LiScheduledAction {
+  id        String                  @id @default(uuid())
+  leadId    String
+  lead      LiLead                  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  type      LiScheduledActionType
+  status    LiScheduledActionStatus @default(PENDING)
+  stepOrder Int?
+  runAt     DateTime
+  jobId     String?
+  attempts  Int                     @default(0)
+  lastError String?
+  createdAt DateTime                @default(now())
+  updatedAt DateTime                @updatedAt
+
+  @@index([status, runAt])
+  @@index([leadId])
 }
