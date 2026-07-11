@@ -143,7 +143,7 @@ function AccountsTab({ clientId }: { clientId: string }) {
   async function connect() {
     setBusy(true);
     try {
-      const res = await api.post<{ accountId: string; url: string }>(`/linkedin/clients/${clientId}/linkedin-accounts/connect`, {});
+      const res = await api.post<{ accountId: string; url: string }>(`/linkedin/clients/${clientId}/linkedin-accounts/connect`, { successRedirect: typeof window !== 'undefined' ? window.location.href : undefined });
       setConnectUrl(res.url); // show a shareable link; the account row is already created (PENDING)
       load();
     } catch (e: any) { alert(e.message ?? 'Failed to start connect'); }
