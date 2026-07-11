@@ -12,6 +12,7 @@ class NameDto { @IsString() @MinLength(2) name!: string; }
 class AnswerDto { @IsString() @MinLength(1) text!: string; }
 class ReplyDto { @IsString() @MinLength(1) text!: string; @IsOptional() @IsIn(['MANUAL', 'AI']) source?: 'MANUAL' | 'AI'; }
 class GenMsgDto { @IsOptional() @IsEnum(LiOutreachType) outreachType?: LiOutreachType; @IsOptional() @IsInt() @Min(1) @Max(5) followUps?: number; }
+class ConnectDto { @IsOptional() @IsString() successRedirect?: string; }
 
 /** Client-portal LinkedIn API (CLIENT role; ownership enforced in the service). */
 @Controller('linkedin/portal')
@@ -24,6 +25,9 @@ export class LiPortalController {
 
   @Get('clients/:clientId/linkedin-accounts')
   accounts(@CurrentUser() u: AuthUser, @Param('clientId') clientId: string) { return this.portal.accountsList(u.userId, clientId); }
+
+  @Post('clients/:clientId/linkedin-accounts/connect')
+  connect(@CurrentUser() u: AuthUser, @Param('clientId') clientId: string, @Body() d: ConnectDto) { return this.portal.connectAccount(u.userId, u.tenantId, clientId, d.successRedirect); }
 
   @Get('clients/:clientId/knowledge-stats')
   stats(@CurrentUser() u: AuthUser, @Param('clientId') clientId: string) { return this.portal.knowledgeStats(u.userId, clientId); }

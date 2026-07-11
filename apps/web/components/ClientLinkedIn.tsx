@@ -19,11 +19,14 @@ export function ClientLinkedIn({ clientId }: { clientId: string }) {
   const [accounts, setAccounts] = useState<LinkedInAccount[]>([]);
   const [view, setView] = useState('campaigns');
 
+  const loadAccounts = useCallback(() => {
+    api.get<LinkedInAccount[]>(`${BASE}/clients/${clientId}/linkedin-accounts`).then(setAccounts).catch(() => {});
+  }, [clientId]);
   useEffect(() => {
     api.get<LiSubscription>(`${BASE}/clients/${clientId}/subscription`).then(setSub).catch(() => {});
     api.get<LiKnowledgeStats>(`${BASE}/clients/${clientId}/knowledge-stats`).then(setStats).catch(() => {});
-    api.get<LinkedInAccount[]>(`${BASE}/clients/${clientId}/linkedin-accounts`).then(setAccounts).catch(() => {});
-  }, [clientId]);
+    loadAccounts();
+  }, [clientId, loadAccounts]);
 
   const connected = accounts.filter((a) => a.status === 'CONNECTED').length;
   const attention = accounts.filter((a) => accountHealth(a.status).attention).length;
@@ -65,18 +68,42 @@ export function ClientLinkedIn({ clientId }: { clientId: string }) {
       />
       {view === 'campaigns' && <ClientCampaigns clientId={clientId} />}
       {view === 'inbox' && <LiInbox clientId={clientId} base={BASE} />}
-      {view === 'accounts' && <ClientAccounts accounts={accounts} />}
+      {view === 'accounts' && <ClientAccounts clientId={clientId} accounts={accounts} seats={sub?.seats} reload={loadAccounts} />}
     </div>
   );
 }
 
-/** Read-only list of the client's connected LinkedIn accounts (seats). */
-function ClientAccounts({ accounts }: { accounts: LinkedInAccount[] }) {
-  if (accounts.length === 0) {
-    return <EmptyState message="No LinkedIn accounts connected yet. Your account team connects your seats for you." />;
+/** The client's LinkedIn accounts (seats) — connect new ones up to the plan's seat limit. */
+function ClientAccounts({ clientId, accounts, seats, reload }: { clientId: string; accounts: LinkedInAccount[]; seats?: number; reload: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const atLimit = seats != null && accounts.length >= seats;
+
+  async function connect() {
+    setBusy(true);
+    try {
+      const res = await api.post<{ accountId: string; url: string }>(
+        `${BASE}/clients/${clientId}/linkedin-accounts/connect`,
+        { successRedirect: typeof window !== 'undefined' ? window.location.href : undefined },
+      );
+      reload();
+      if (res.url) window.location.href = res.url; // send them to Unipile; it returns here after auth
+    } catch (e: any) { alert(e.message ?? 'Could not start the connection'); setBusy(false); }
   }
+
   return (
-    <div className="card divide-y divide-slate-100">
+    <div>
+      <div className="mb-3 flex items-center justify-between">
+        <div className="text-sm text-slate-500">
+          {accounts.length}{seats != null ? ` of ${seats}` : ''} seat{accounts.length === 1 ? '' : 's'} used
+        </div>
+        <button className="btn-primary" disabled={busy || atLimit} onClick={connect} title={atLimit ? 'Seat limit reached — contact your account team to add seats' : undefined}>
+          {busy ? 'Starting…' : '+ Connect Account'}
+        </button>
+      </div>
+      {accounts.length === 0 ? (
+        <EmptyState message="No LinkedIn accounts connected yet. Click “Connect Account” to link a LinkedIn profile." />
+      ) : (
+      <div className="card divide-y divide-slate-100">
       {accounts.map((a) => {
         const h = accountHealth(a.status, a.deactivated);
         return (
@@ -98,6 +125,8 @@ function ClientAccounts({ accounts }: { accounts: LinkedInAccount[] }) {
           </div>
         );
       })}
+      </div>
+      )}
     </div>
   );
 }

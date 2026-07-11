@@ -70,6 +70,11 @@ export class LiPortalService {
     };
   }
   async accountsList(userId: string, clientId: string) { await this.assertOwnsClient(userId, clientId); return this.accounts.list(clientId); }
+  /** Client connects one of their own LinkedIn seats (bounded by the plan's seat limit). */
+  async connectAccount(userId: string, tenantId: string, clientId: string, successRedirect?: string) {
+    await this.assertOwnsClient(userId, clientId);
+    return this.accounts.createConnectLink(tenantId, clientId, successRedirect);
+  }
   async knowledgeStats(userId: string, clientId: string) { await this.assertOwnsClient(userId, clientId); return this.knowledge.clientStats(clientId); }
 
   // ── knowledge (business/strategy interviews) ─────────────────────────
