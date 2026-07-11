@@ -55,6 +55,13 @@ services:
       # Public "create workspace" signup stays OFF (login shows only sign-in +
       # client portal). Flip to "true" temporarily if you ever need it.
       ALLOW_ADMIN_SIGNUP: ${ALLOW_ADMIN_SIGNUP:-false}
+      # ── LinkedIn channel (Unipile) + AI ── set these in .env for live
+      # connect/send + AI personalization. Blank = features report "not configured".
+      UNIPILE_DSN: ${UNIPILE_DSN:-}
+      UNIPILE_API_KEY: ${UNIPILE_API_KEY:-}
+      UNIPILE_WEBHOOK_SECRET: ${UNIPILE_WEBHOOK_SECRET:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      AI_MODEL: ${AI_MODEL:-}
     # Apply DB migrations on boot, then start the API.
     command: >
       sh -c "npx prisma migrate deploy --schema=/app/apps/api/prisma/schema.prisma &&
