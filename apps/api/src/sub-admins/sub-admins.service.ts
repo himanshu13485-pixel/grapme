@@ -16,6 +16,7 @@ interface CreateSubAdminDto {
   fullAccess?: boolean;
   accessModules?: string[];
   canDelete?: boolean;
+  canEdit?: boolean;
 }
 interface UpdateSubAdminDto {
   name?: string;
@@ -24,6 +25,7 @@ interface UpdateSubAdminDto {
   fullAccess?: boolean;
   accessModules?: string[];
   canDelete?: boolean;
+  canEdit?: boolean;
 }
 
 @Injectable()
@@ -44,6 +46,7 @@ export class SubAdminsService {
         fullAccess: true,
         accessModules: true,
         canDelete: true,
+        canEdit: true,
         lastLoginAt: true,
         _count: { select: { assignmentsAsSubAdmin: true } },
       },
@@ -77,6 +80,7 @@ export class SubAdminsService {
         fullAccess: dto.fullAccess ?? false,
         accessModules: dto.fullAccess ? [] : dto.accessModules ?? [],
         canDelete: dto.canDelete ?? false,
+        canEdit: dto.canEdit ?? true,
       },
       select: { id: true, name: true, email: true },
     });
@@ -102,6 +106,7 @@ export class SubAdminsService {
     if (dto.accessModules !== undefined)
       data.accessModules = dto.fullAccess ? [] : dto.accessModules;
     if (dto.canDelete !== undefined) data.canDelete = dto.canDelete;
+    if (dto.canEdit !== undefined) data.canEdit = dto.canEdit;
     if (dto.password)
       data.passwordHash = await argon2.hash(dto.password, { type: argon2.argon2id });
     const user = await this.prisma.user.update({

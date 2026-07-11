@@ -265,6 +265,7 @@ model User {
   fullAccess     Boolean    @default(false) // sub-admin: access to everything
   accessModules  Json       @default("[]")  // sub-admin: allowed module keys
   canDelete      Boolean    @default(false) // sub-admin: allowed to use delete actions
+  canEdit        Boolean    @default(true)  // sub-admin: allowed to use edit actions
   profileLimit   Int        @default(1)     // client-portal: how many profiles they may self-create (billable)
   companyName     String?   // client self-registration: their company (prefills New Client form)
   contactMobile   String?   // client self-registration: contact phone (prefills New Client form)

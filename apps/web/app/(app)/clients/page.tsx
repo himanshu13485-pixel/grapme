@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState, FormEvent } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
-import { useCanDelete, useAuth } from '@/lib/auth';
+import { useCanDelete, useCanEdit, useAuth } from '@/lib/auth';
 import { usePlans, Plan } from '@/lib/plans';
 import { PageHeader, EmptyState, Modal, StatusBadge, Pagination } from '@/components/ui';
 import { LiClientPlanFields, LiClientSendWindowFields, LiPlanForm, emptyLiPlan } from '@/components/LiClientPlanFields';
@@ -60,6 +60,7 @@ export default function ClientsPage() {
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 12;
   const canDelete = useCanDelete();
+  const canEdit = useCanEdit();
   const { user } = useAuth();
   const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'SUB_ADMIN';
   const isClient = user?.role === 'CLIENT';
@@ -274,7 +275,7 @@ export default function ClientsPage() {
                   >
                     View
                   </button>
-                  {isAdmin && (
+                  {isAdmin && canEdit && (
                     <button
                       type="button"
                       className="text-brand-600 hover:underline"

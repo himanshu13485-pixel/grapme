@@ -165,6 +165,7 @@ export class AuthService {
     fullAccess?: boolean;
     accessModules?: unknown;
     canDelete?: boolean;
+    canEdit?: boolean;
   }) {
     const payload: JwtPayload = {
       sub: user.id,
@@ -184,6 +185,7 @@ export class AuthService {
         fullAccess: user.fullAccess ?? false,
         accessModules: user.accessModules ?? [],
         canDelete: user.canDelete ?? false,
+        canEdit: user.canEdit ?? true,
       },
       ...tokens,
     };
@@ -560,6 +562,7 @@ export class AuthService {
         fullAccess: true,
         accessModules: true,
         canDelete: true,
+        canEdit: true,
         profileLimit: true,
         companyName: true,
         contactMobile: true,

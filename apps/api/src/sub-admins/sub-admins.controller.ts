@@ -36,6 +36,7 @@ class CreateSubAdminDto {
   @IsOptional() @IsBoolean() fullAccess?: boolean;
   @IsOptional() @IsArray() @IsString({ each: true }) accessModules?: string[];
   @IsOptional() @IsBoolean() canDelete?: boolean;
+  @IsOptional() @IsBoolean() canEdit?: boolean;
 }
 
 class UpdateSubAdminDto {
@@ -45,6 +46,7 @@ class UpdateSubAdminDto {
   @IsOptional() @IsBoolean() fullAccess?: boolean;
   @IsOptional() @IsArray() @IsString({ each: true }) accessModules?: string[];
   @IsOptional() @IsBoolean() canDelete?: boolean;
+  @IsOptional() @IsBoolean() canEdit?: boolean;
 }
 
 @Roles(Role.SUPER_ADMIN)

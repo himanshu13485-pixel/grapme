@@ -18,6 +18,7 @@ export interface AuthUser {
   fullAccess?: boolean;
   accessModules?: string[];
   canDelete?: boolean;
+  canEdit?: boolean;
   profileLimit?: number;
   companyName?: string | null;
   contactMobile?: string | null;
@@ -130,5 +131,16 @@ export function useCanDelete(): boolean {
   if (user.role === 'SUPER_ADMIN') return true;
   if (user.role === 'SUB_ADMIN') return !!(user.fullAccess || user.canDelete);
   if (user.role === 'CLIENT') return false; // deletes go through admin
+  return true;
+}
+
+/** Whether the signed-in user may use edit actions. Super admins always can;
+ *  sub-admins only if granted (full access or the canEdit flag). */
+export function useCanEdit(): boolean {
+  const { user } = useAuth();
+  if (!user) return false;
+  if (user.role === 'SUPER_ADMIN') return true;
+  if (user.role === 'SUB_ADMIN') return !!(user.fullAccess || user.canEdit);
+  if (user.role === 'CLIENT') return true; // clients edit their own resources
   return true;
 }

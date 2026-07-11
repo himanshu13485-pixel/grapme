@@ -12,6 +12,7 @@ interface SubAdmin {
   fullAccess?: boolean;
   accessModules?: string[];
   canDelete?: boolean;
+  canEdit?: boolean;
   lastLoginAt?: string | null;
 }
 
@@ -168,6 +169,7 @@ function SubAdminForm({ existing, onDone }: { existing?: SubAdmin; onDone: () =>
   const [fullAccess, setFullAccess] = useState(existing?.fullAccess ?? false);
   const [modules, setModules] = useState<string[]>(existing?.accessModules ?? []);
   const [canDelete, setCanDelete] = useState(existing?.canDelete ?? false);
+  const [canEdit, setCanEdit] = useState(existing?.canEdit ?? true);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -187,6 +189,7 @@ function SubAdminForm({ existing, onDone }: { existing?: SubAdmin; onDone: () =>
           fullAccess,
           accessModules: modules,
           canDelete,
+          canEdit,
           password: password || undefined,
         });
       } else {
@@ -197,6 +200,7 @@ function SubAdminForm({ existing, onDone }: { existing?: SubAdmin; onDone: () =>
           fullAccess,
           accessModules: modules,
           canDelete,
+          canEdit,
         });
       }
       onDone();
@@ -271,6 +275,10 @@ function SubAdminForm({ existing, onDone }: { existing?: SubAdmin; onDone: () =>
         )}
       </div>
 
+      <label className="flex items-center gap-2 rounded-lg border border-slate-200 p-3 text-sm text-slate-700">
+        <input type="checkbox" checked={canEdit} onChange={(e) => setCanEdit(e.target.checked)} />
+        Allow edit actions (show Edit buttons for this sub-admin)
+      </label>
       <label className="flex items-center gap-2 rounded-lg border border-slate-200 p-3 text-sm text-slate-700">
         <input type="checkbox" checked={canDelete} onChange={(e) => setCanDelete(e.target.checked)} />
         Allow delete actions (show Delete buttons for this sub-admin)
