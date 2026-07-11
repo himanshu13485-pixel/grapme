@@ -138,7 +138,9 @@ function ClientAccounts({ clientId, accounts, seats, reload }: { clientId: strin
               <span className={`inline-flex items-center gap-1.5 rounded-full bg-slate-50 px-2.5 py-1 text-xs font-medium ${h.text}`}>
                 <span className={`h-2 w-2 rounded-full ${h.dot}`} />{h.label}
               </span>
-              <button className="text-sm text-rose-500 hover:text-rose-700" onClick={() => remove(a.id)}>Remove</button>
+              {a.status !== 'CONNECTED' && (
+                <button className="text-sm text-rose-500 hover:text-rose-700" onClick={() => remove(a.id)}>Remove</button>
+              )}
             </div>
           </div>
         );

@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
-import { ApprovalEntity, ApprovalStatus, LiCampaignStatus, LiMessageSource, LiOutreachType } from '@prisma/client';
+import { ApprovalEntity, ApprovalStatus, LiCampaignStatus, LinkedInAccountStatus, LiMessageSource, LiOutreachType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LinkedInSubscriptionService } from '../subscription/linkedin-subscription.service';
 import { LinkedInAccountsService } from '../accounts/linkedin-accounts.service';
@@ -77,9 +77,13 @@ export class LiPortalService {
   }
   /** Client removes one of their own seats (e.g. a stuck pending connection). */
   async removeAccount(userId: string, id: string) {
-    const a = await this.prisma.linkedInAccount.findUnique({ where: { id }, select: { clientId: true } });
+    const a = await this.prisma.linkedInAccount.findUnique({ where: { id }, select: { clientId: true, status: true } });
     if (!a) throw new BadRequestException('Account not found');
     await this.assertOwnsClient(userId, a.clientId);
+    // Clients may clear a stuck pending seat, but connected seats are admin-managed.
+    if (a.status === LinkedInAccountStatus.CONNECTED) {
+      throw new BadRequestException('Connected seats are managed by your account team');
+    }
     return this.accounts.remove(id);
   }
   async knowledgeStats(userId: string, clientId: string) { await this.assertOwnsClient(userId, clientId); return this.knowledge.clientStats(clientId); }
