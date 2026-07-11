@@ -8,6 +8,8 @@ export interface LiCampaignDefaults {
   workDays?: number[];
   dailyConnectionLimit?: number;
   dailyMessageLimit?: number;
+  jitterMinSeconds?: number;
+  jitterMaxSeconds?: number;
   warmupEnabled?: boolean;
   warmupStartLimit?: number;
   warmupDays?: number;
@@ -19,6 +21,7 @@ export interface LiCampaignDefaults {
 export const LI_DEFAULTS: Required<LiCampaignDefaults> = {
   run247: false, workStartHour: 9, workEndHour: 18, workDays: [1, 2, 3, 4, 5],
   dailyConnectionLimit: 20, dailyMessageLimit: 20,
+  jitterMinSeconds: 20, jitterMaxSeconds: 90,
   warmupEnabled: true, warmupStartLimit: 5, warmupDays: 14,
   dripEnabled: false, dripDailyTarget: 25, dripBuffer: 50,
 };

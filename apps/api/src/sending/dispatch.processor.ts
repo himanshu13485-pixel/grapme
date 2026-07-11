@@ -34,7 +34,7 @@ export class DispatchProcessor extends WorkerHost {
         campaign: { status: CampaignStatus.SCHEDULED },
       },
       include: {
-        campaign: { include: { steps: { orderBy: { stepOrder: 'asc' } } } },
+        campaign: { include: { steps: { orderBy: { stepOrder: 'asc' } }, client: true } },
       },
     });
 
@@ -79,8 +79,10 @@ export class DispatchProcessor extends WorkerHost {
     });
 
     const spacing = campaign.sendSpeedSeconds * 1000;
+    // Per-client random stagger so a batch doesn't fire at identical instants.
+    const jitterMax = Math.max(0, (campaign.client?.emailJitterSeconds ?? 20)) * 1000;
     contacts.forEach((contact, i) => {
-      const jitter = Math.floor(Math.random() * 20_000);
+      const jitter = jitterMax > 0 ? Math.floor(Math.random() * jitterMax) : 0;
       const base = i * spacing + jitter;
 
       // Initial email.

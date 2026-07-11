@@ -58,6 +58,8 @@ export class LiCampaignsService {
         workDays: days,
         dailyConnectionLimit: num('dailyConnectionLimit'),
         dailyMessageLimit: num('dailyMessageLimit'),
+        jitterMinSeconds: num('jitterMinSeconds'),
+        jitterMaxSeconds: num('jitterMaxSeconds'),
         warmupEnabled: bool('warmupEnabled'),
         warmupStartLimit: num('warmupStartLimit'),
         warmupDays: num('warmupDays'),

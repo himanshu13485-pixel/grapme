@@ -6,7 +6,7 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { QUEUE_LINKEDIN } from '../../queue/queue.constants';
-import { LiJob, LiJobData, jitterMs, DRIP_SCAN_MS } from './li-queue.constants';
+import { LiJob, LiJobData, DRIP_SCAN_MS } from './li-queue.constants';
 
 const TYPE_TO_JOB: Record<LiScheduledActionType, LiJob> = {
   SEND_CONNECTION: LiJob.SendConnection,
@@ -69,10 +69,14 @@ export class LiSchedulerService implements OnModuleInit {
       select: { id: true },
     });
     const limit = Math.max(1, direct ? campaign.dailyMessageLimit : this.effectiveConnectionCap(campaign));
+    // Random gap between actions within a day (human-like), tuned per campaign.
+    const jMin = Math.max(0, campaign.jitterMinSeconds ?? 20) * 1000;
+    const jMax = Math.max(jMin + 1000, (campaign.jitterMaxSeconds ?? 90) * 1000);
+    const gap = () => jMin + Math.floor(Math.random() * (jMax - jMin));
     let index = 0;
     for (const lead of freshLeads) {
       const day = Math.floor(index / limit);
-      const runAt = new Date(Date.now() + day * 864e5 + (index % limit) * jitterMs());
+      const runAt = new Date(Date.now() + day * 864e5 + (index % limit) * gap());
       if (direct) await this.schedule(lead.id, LiScheduledActionType.SEND_MESSAGE, 1, runAt);
       else await this.schedule(lead.id, LiScheduledActionType.SEND_CONNECTION, undefined, runAt);
       index++;

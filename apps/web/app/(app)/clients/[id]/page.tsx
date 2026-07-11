@@ -54,6 +54,7 @@ interface Client {
   followUpCount: number;
   weekdaysOnly: boolean;
   workDays: number[];
+  emailJitterSeconds: number;
   sendWindowStart: number;
   sendWindowEnd: number;
   stageIntervalJitterDays: number;
@@ -1855,6 +1856,7 @@ function ClientDetails({ client }: { client: Client }) {
     { label: 'Send window', value: `${hourLabel(client.sendWindowStart)} – ${hourLabel(client.sendWindowEnd)}` },
     { label: 'Interval jitter (± days)', value: String(client.stageIntervalJitterDays) },
     { label: 'Send days', value: detailDays(client.workDays) },
+    { label: 'Send stagger (± sec)', value: String(client.emailJitterSeconds ?? 20) },
   ] : [];
   const linkedinRows: DetailRow[] = linkedInOn ? [
     { label: 'Credits', value: String(sub?.creditsBalance ?? 0) },
@@ -1862,6 +1864,7 @@ function ClientDetails({ client }: { client: Client }) {
     { label: 'Campaigns (allowed)', value: detailLimit(sub?.campaignLimit) },
     { label: 'Send window', value: `${hourLabel(d.workStartHour)} – ${hourLabel(d.workEndHour)}` },
     { label: 'Send days', value: detailDays(d.workDays) },
+    { label: 'Action spacing (sec)', value: `${d.jitterMinSeconds ?? 20}–${d.jitterMaxSeconds ?? 90}` },
     { label: 'Max connection invites / day', value: String(d.dailyConnectionLimit) },
     { label: 'Max messages / day', value: String(d.dailyMessageLimit) },
     ...(!isClient ? [

@@ -15,6 +15,8 @@ class CampaignDefaultsDto {
   @IsOptional() @IsArray() @IsInt({ each: true }) @Min(0, { each: true }) @Max(6, { each: true }) workDays?: number[];
   @IsOptional() @IsInt() @Min(1) @Max(200) dailyConnectionLimit?: number;
   @IsOptional() @IsInt() @Min(1) @Max(200) dailyMessageLimit?: number;
+  @IsOptional() @IsInt() @Min(0) @Max(3600) jitterMinSeconds?: number;
+  @IsOptional() @IsInt() @Min(1) @Max(3600) jitterMaxSeconds?: number;
   @IsOptional() @IsBoolean() warmupEnabled?: boolean;
   @IsOptional() @IsInt() @Min(1) warmupStartLimit?: number;
   @IsOptional() @IsInt() @Min(1) @Max(60) warmupDays?: number;

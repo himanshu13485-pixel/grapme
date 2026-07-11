@@ -34,6 +34,7 @@ interface Client {
   followUpCount: number;
   weekdaysOnly: boolean;
   workDays: number[];
+  emailJitterSeconds: number;
   sendWindowStart: number;
   sendWindowEnd: number;
   stageIntervalJitterDays: number;
@@ -428,6 +429,7 @@ function ClientDetailView({ client }: { client: Client }) {
     { label: 'Send window', value: `${hourLabel(client.sendWindowStart)} – ${hourLabel(client.sendWindowEnd)}` },
     { label: 'Interval jitter (± days)', value: String(client.stageIntervalJitterDays) },
     { label: 'Send days', value: formatDays(client.workDays) },
+    { label: 'Send stagger (± sec)', value: String(client.emailJitterSeconds ?? 20) },
   ] : [];
   const linkedinRows: DetailRow[] = linkedInOn ? [
     { label: 'Credits', value: String(sub?.creditsBalance ?? 0) },
@@ -435,6 +437,7 @@ function ClientDetailView({ client }: { client: Client }) {
     { label: 'Campaigns (allowed)', value: limitLabel(sub?.campaignLimit) },
     { label: 'Send window', value: `${hourLabel(d.workStartHour)} – ${hourLabel(d.workEndHour)}` },
     { label: 'Send days', value: formatDays(d.workDays) },
+    { label: 'Action spacing (sec)', value: `${d.jitterMinSeconds ?? 20}–${d.jitterMaxSeconds ?? 90}` },
     { label: 'Max connection invites / day', value: String(d.dailyConnectionLimit) },
     { label: 'Max messages / day', value: String(d.dailyMessageLimit) },
     // Admin-only tuning (kept secret from the client panel).
@@ -539,6 +542,7 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
     followUpCount: 4,
     weekdaysOnly: true,
     workDays: [1, 2, 3, 4, 5] as number[],
+    emailJitterSeconds: 20,
     sendWindowStart: 9,
     sendWindowEnd: 17,
     stageIntervalJitterDays: 2,
@@ -598,6 +602,7 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
         sendWindowEnd: Number(form.sendWindowEnd),
         stageIntervalJitterDays: Number(form.stageIntervalJitterDays),
         workDays: form.workDays,
+        emailJitterSeconds: Number(form.emailJitterSeconds),
       });
       // Admin set LinkedIn defaults → persist them onto the client's LinkedIn plan.
       if (!isClient && created?.id && channels !== 'EMAIL') {
@@ -786,6 +791,7 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
             <HourField label="Send window start" value={form.sendWindowStart} onChange={(v) => setForm({ ...form, sendWindowStart: v })} />
             <HourField label="Send window end" value={form.sendWindowEnd} onChange={(v) => setForm({ ...form, sendWindowEnd: v })} />
             <NumberField label="Interval jitter (± days)" value={form.stageIntervalJitterDays} onChange={(v) => setForm({ ...form, stageIntervalJitterDays: v })} />
+            <NumberField label="Send stagger (± sec)" value={form.emailJitterSeconds} onChange={(v) => setForm({ ...form, emailJitterSeconds: v })} />
             <DaysField label="Send days" value={form.workDays} onChange={(v) => setForm({ ...form, workDays: v })} />
           </div>
         </div>
@@ -833,6 +839,7 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
     followUpCount: client.followUpCount,
     weekdaysOnly: client.weekdaysOnly,
     workDays: client.workDays ?? [1, 2, 3, 4, 5],
+    emailJitterSeconds: client.emailJitterSeconds ?? 20,
     sendWindowStart: client.sendWindowStart,
     sendWindowEnd: client.sendWindowEnd,
     stageIntervalJitterDays: client.stageIntervalJitterDays,
@@ -973,6 +980,7 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
         stageIntervalDays: Number(form.stageIntervalDays),
         followUpCount: Number(form.followUpCount),
         workDays: form.workDays,
+        emailJitterSeconds: Number(form.emailJitterSeconds),
         sendWindowStart: Number(form.sendWindowStart),
         sendWindowEnd: Number(form.sendWindowEnd),
         stageIntervalJitterDays: Number(form.stageIntervalJitterDays),
@@ -1150,6 +1158,7 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
           <HourField label="Send window start" value={form.sendWindowStart} onChange={(v) => setForm({ ...form, sendWindowStart: v })} />
           <HourField label="Send window end" value={form.sendWindowEnd} onChange={(v) => setForm({ ...form, sendWindowEnd: v })} />
           <NumberField label="Interval jitter (± days)" value={form.stageIntervalJitterDays} onChange={(v) => setForm({ ...form, stageIntervalJitterDays: v })} />
+          <NumberField label="Send stagger (± sec)" value={form.emailJitterSeconds} onChange={(v) => setForm({ ...form, emailJitterSeconds: v })} />
           <DaysField label="Send days" value={form.workDays} onChange={(v) => setForm({ ...form, workDays: v })} />
         </div>
       </div>

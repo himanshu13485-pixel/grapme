@@ -775,6 +775,7 @@ model Client {
   followUpCount     Int      @default(4)   // follow-ups after the initial (capped)
   weekdaysOnly      Boolean  @default(true)  // legacy; superseded by workDays (kept for back-compat)
   workDays          Int[]    @default([1, 2, 3, 4, 5]) // email send days (0=Sun … 6=Sat)
+  emailJitterSeconds Int     @default(20)   // random 0…N sec stagger added to each email send
   sendWindowStart   Int      @default(9)    // send only between these hours (human-like)
   sendWindowEnd     Int      @default(17)
   stageIntervalJitterDays Int @default(2)   // ± random days on each follow-up gap
@@ -1084,6 +1085,8 @@ model LiCampaign {
   workDays             Int[]            @default([1, 2, 3, 4, 5])
   dailyConnectionLimit Int              @default(20)
   dailyMessageLimit    Int              @default(20)
+  jitterMinSeconds     Int              @default(20)  // min random gap between actions
+  jitterMaxSeconds     Int              @default(90)  // max random gap between actions
   // Warm-up ramp: start low and grow the daily connection cap to the target over
   // warmupDays, to protect the account from LinkedIn's invite limits / bans.
   warmupEnabled        Boolean          @default(true)
