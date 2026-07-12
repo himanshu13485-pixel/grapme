@@ -404,12 +404,36 @@ export class LiCampaignsService {
     const actions = campaigns.length
       ? await this.prisma.liScheduledAction.findMany({
           where: { status: { in: ['PENDING', 'QUEUED'] }, lead: { campaignId: { in: campaigns.map((c) => c.id) } } },
-          select: { runAt: true, lead: { select: { campaignId: true } } },
+          select: { runAt: true, type: true, leadId: true, lead: { select: { campaignId: true } } },
           orderBy: { runAt: 'asc' },
         })
       : [];
     const nextByCampaign = new Map<string, Date>();
     for (const a of actions) { const cid = a.lead.campaignId; if (!nextByCampaign.has(cid)) nextByCampaign.set(cid, a.runAt); }
+
+    // Day-by-day forecast per campaign (exact, from the scheduled actions): how many
+    // connection invites / messages go out on each date, and to how many distinct leads.
+    const tzByCampaign = new Map(campaigns.map((c) => [c.id, c.timezone || 'Asia/Kolkata']));
+    const dayStr = (d: Date, tz: string) =>
+      new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+    const forecast = new Map<string, Map<string, { connections: number; messages: number; leads: Set<string> }>>();
+    for (const a of actions) {
+      if (a.type !== 'SEND_CONNECTION' && a.type !== 'SEND_MESSAGE') continue;
+      const cid = a.lead.campaignId;
+      const day = dayStr(a.runAt, tzByCampaign.get(cid) ?? 'Asia/Kolkata');
+      if (!forecast.has(cid)) forecast.set(cid, new Map());
+      const byDay = forecast.get(cid)!;
+      const slot = byDay.get(day) ?? { connections: 0, messages: 0, leads: new Set<string>() };
+      if (a.type === 'SEND_CONNECTION') slot.connections++;
+      else slot.messages++;
+      slot.leads.add(a.leadId);
+      byDay.set(day, slot);
+    }
+    const forecastFor = (cid: string) =>
+      [...(forecast.get(cid)?.entries() ?? [])]
+        .sort(([a], [b]) => (a < b ? -1 : 1))
+        .slice(0, 14)
+        .map(([date, v]) => ({ date, connections: v.connections, messages: v.messages, leads: v.leads.size }));
 
     // Date-window filter on the next send.
     const range = opts.range ?? 'all';
@@ -446,6 +470,7 @@ export class LiCampaignsService {
       warmupEnabled: c.warmupEnabled, dripEnabled: c.dripEnabled,
       seat: c.linkedInAccount?.fullName ?? null, leads: c._count.leads,
       nextSendAt: nextSendAt ?? null,
+      forecast: forecastFor(c.id),
       client: cmap.get(c.clientId) ?? null,
     }));
     return { items, total, page, pageSize };

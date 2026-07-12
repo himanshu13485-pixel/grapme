@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { PageHeader, EmptyState, Pagination, StatusBadge } from '@/components/ui';
@@ -22,6 +22,7 @@ interface ScheduleRow {
   seat?: string | null;
   leads: number;
   nextSendAt?: string | null;
+  forecast?: { date: string; connections: number; messages: number; leads: number }[];
   client?: { id: string; name: string; company?: string | null; invoice?: string | null } | null;
 }
 
@@ -42,6 +43,8 @@ export default function LinkedInSchedulePage() {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [emBusy, setEmBusy] = useState('');
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  const toggle = (id: string) => setOpen((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   useEffect(() => {
     const t = setTimeout(() => setDq(q.trim()), 300);
@@ -149,9 +152,15 @@ export default function LinkedInSchedulePage() {
               </thead>
               <tbody>
                 {items.map((c) => (
-                  <tr key={c.id} className="border-t border-slate-100 hover:bg-slate-50">
+                  <Fragment key={c.id}>
+                  <tr className="border-t border-slate-100 hover:bg-slate-50">
                     <td className="px-4 py-3">
-                      <Link href={`/linkedin/${c.clientId}/campaigns/${c.id}`} className="font-medium text-brand-700 hover:underline">{c.name}</Link>
+                      <div className="flex items-center gap-2">
+                        {!!c.forecast?.length && (
+                          <button onClick={() => toggle(c.id)} className="text-slate-400 hover:text-slate-700" title="Show send forecast">{open.has(c.id) ? '▾' : '▸'}</button>
+                        )}
+                        <Link href={`/linkedin/${c.clientId}/campaigns/${c.id}`} className="font-medium text-brand-700 hover:underline">{c.name}</Link>
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       {c.client
@@ -181,6 +190,24 @@ export default function LinkedInSchedulePage() {
                     <td className="px-4 py-3 font-semibold text-slate-700">{c.leads}</td>
                     <td className="px-4 py-3"><StatusBadge status={c.status} /></td>
                   </tr>
+                  {open.has(c.id) && !!c.forecast?.length && (
+                    <tr className="bg-slate-50/60">
+                      <td colSpan={11} className="px-4 py-3">
+                        <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                          Send forecast · next {c.forecast!.length} active day{c.forecast!.length === 1 ? '' : 's'} · 🔗 invites · ✉ messages · 👤 leads
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {c.forecast!.map((f) => (
+                            <div key={f.date} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs">
+                              <div className="font-medium text-slate-700">{new Date(`${f.date}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</div>
+                              <div className="mt-0.5 text-slate-500">🔗 {f.connections} · ✉ {f.messages} · 👤 {f.leads}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>
