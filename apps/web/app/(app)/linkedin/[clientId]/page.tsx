@@ -266,6 +266,12 @@ function CampaignsTab({ clientId }: { clientId: string }) {
     if (!confirm(`Delete LinkedIn campaign "${name}"?\n\nIt's removed from the list and stops sending. History/analytics are kept.`)) return;
     try { await act(id, 'delete'); } catch (e: any) { alert(e?.message ?? 'Failed to delete'); }
   }
+  async function sendNext(id: string) {
+    try {
+      const r = await api.post<{ ok: boolean; message?: string }>(`/linkedin/campaigns/${id}/send-next`, {});
+      alert(r.ok ? 'Next scheduled action queued to send now (subject to the daily cap).' : (r.message ?? 'Nothing pending to send.'));
+    } catch (e: any) { alert(e?.message ?? 'Failed'); }
+  }
 
   return (
     <div>
@@ -292,6 +298,9 @@ function CampaignsTab({ clientId }: { clientId: string }) {
                 <Link href={`/linkedin/${clientId}/campaigns/${c.id}`} className="btn-ghost px-2 py-1 text-sm">View</Link>
                 {(c.status === 'DRAFT' || c.status === 'PAUSED') && (
                   <Link href={`/linkedin/${clientId}/campaigns/${c.id}/edit`} className="btn-ghost px-2 py-1 text-sm">Edit</Link>
+                )}
+                {c.status === 'RUNNING' && (
+                  <button className="btn-ghost px-2 py-1 text-sm" onClick={() => sendNext(c.id)} title="Send the next scheduled action immediately (test)">⚡ Send next</button>
                 )}
                 {c.status === 'RUNNING' ? (
                   <button className="btn-ghost px-2 py-1" onClick={() => act(c.id, 'pause')}>⏸ Pause</button>

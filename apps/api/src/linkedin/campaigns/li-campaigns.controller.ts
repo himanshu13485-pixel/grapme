@@ -111,4 +111,10 @@ export class LiCampaignsController {
   softDelete(@Param('id') id: string) {
     return this.campaigns.setStatus(id, LiCampaignStatus.DELETED);
   }
+
+  /** Admin test: fire the campaign's next scheduled action immediately. */
+  @Post(':id/send-next')
+  sendNext(@Param('id') id: string) {
+    return this.campaigns.sendNextNow(id);
+  }
 }

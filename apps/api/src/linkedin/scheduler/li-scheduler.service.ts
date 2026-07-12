@@ -130,6 +130,29 @@ export class LiSchedulerService implements OnModuleInit {
     await this.attachJob(action.id, action.type, action.leadId, action.stepOrder ?? undefined, finalRunAt);
   }
 
+  /**
+   * Admin test helper: fire the campaign's SINGLE next pending action immediately,
+   * bypassing the send-window gate. The processor still enforces the daily cap, so
+   * this can't be abused to blow past safe volume.
+   */
+  async runNext(campaignId: string): Promise<{ ok: boolean; message?: string }> {
+    if (!this.queue) return { ok: false, message: 'Sending engine is off (no Redis).' };
+    const action = await this.prisma.liScheduledAction.findFirst({
+      where: { status: { in: [LiScheduledActionStatus.PENDING, LiScheduledActionStatus.QUEUED] }, lead: { campaignId } },
+      orderBy: { runAt: 'asc' },
+      select: { id: true, type: true, leadId: true, stepOrder: true, jobId: true },
+    });
+    if (!action) return { ok: false, message: 'No pending action to send.' };
+    if (action.jobId) await this.queue.remove(action.jobId).catch(() => undefined);
+    const now = new Date();
+    await this.prisma.liScheduledAction.update({
+      where: { id: action.id },
+      data: { status: LiScheduledActionStatus.PENDING, runAt: now, jobId: null },
+    });
+    await this.attachJob(action.id, action.type, action.leadId, action.stepOrder ?? undefined, now);
+    return { ok: true };
+  }
+
   private async attachJob(scheduledActionId: string, type: LiScheduledActionType, leadId: string, stepOrder: number | undefined, runAt: Date) {
     if (!this.queue) return;
     const delay = Math.max(0, runAt.getTime() - Date.now());

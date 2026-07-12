@@ -315,6 +315,14 @@ export class LiCampaignsService {
     return campaign;
   }
 
+  /** Admin test: fire this campaign's next scheduled action immediately (cap still enforced). */
+  async sendNextNow(id: string) {
+    const c = await this.prisma.liCampaign.findUnique({ where: { id }, select: { status: true } });
+    if (!c) throw new BadRequestException('Campaign not found');
+    if (c.status !== LiCampaignStatus.RUNNING) throw new BadRequestException('Start the campaign first, then send the next action.');
+    return this.scheduler.runNext(id);
+  }
+
   /**
    * Suspend a client's LinkedIn outreach — pause every RUNNING campaign (cancels its
    * scheduled actions via the scheduler). Called when a client's plan validity expires
