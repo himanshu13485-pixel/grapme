@@ -13,6 +13,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { MailerService } from '../sending/mailer.service';
 import { decryptCredential } from '../common/crypto/credential-crypto';
+import { BounceService } from '../bounce/bounce.service';
 
 /**
  * Pulls inbound mail (replies) from each IMAP-capable mailbox and records it.
@@ -27,6 +28,7 @@ export class InboundMailService {
     private prisma: PrismaService,
     private mailer: MailerService,
     private config: ConfigService,
+    private bounce: BounceService,
   ) {}
 
   /** Poll every active IMAP mailbox across all tenants (background worker). */
@@ -135,7 +137,7 @@ export class InboundMailService {
               // recipient instead of recording a REPLY against the sender.
               if (this.isBounce(from, subject)) {
                 const rcpt = this.extractBounceRecipient(raw);
-                if (rcpt) await this.handleBounce(mailbox.tenantId, rcpt);
+                if (rcpt) await this.handleBounce(mailbox.tenantId, rcpt, raw);
               } else {
                 await this.recordReply(mailbox.tenantId, from);
                 // Alert the client (CC admin) that a reply landed. Never let a
@@ -470,53 +472,26 @@ export class InboundMailService {
   }
 
   /**
-   * A bounced address: add it to the suppression list (reason BOUNCE), mark the
-   * contact BOUNCED, stop its enrollments, and flag its last outbound message +
-   * a BOUNCE event so the reports reflect it. Auto-populates Compliance.
+   * DSN handling. Soft/transient failures (4.x.x, greylisting, delayed, quota) are
+   * IGNORED so a temporary blip doesn't permanently kill a valid contact. Hard
+   * failures (5.x.x / recipient rejected) are suppressed via the shared bounce
+   * handler (suppression + contact BOUNCED + stop enrollments + BOUNCE event).
    */
-  private async handleBounce(tenantId: string, email: string) {
-    await this.prisma.suppression.upsert({
-      where: { tenantId_email: { tenantId, email } },
-      update: { reason: SuppressionReason.BOUNCE },
-      create: { tenantId, email, reason: SuppressionReason.BOUNCE },
-    });
-    const contact = await this.prisma.contact.findFirst({
-      where: { tenantId, email: { equals: email, mode: 'insensitive' } },
-    });
-    if (!contact) {
-      this.logger.log(`Bounce suppressed (no contact): ${email}`);
+  private async handleBounce(tenantId: string, email: string, raw: string) {
+    if (this.isSoftBounce(raw)) {
+      this.logger.log(`Soft/transient bounce ignored (not suppressing): ${email}`);
       return;
     }
-    await this.prisma.contact.update({
-      where: { id: contact.id },
-      data: { status: 'BOUNCED' },
-    });
-    await this.prisma.enrollment.updateMany({
-      where: { contactId: contact.id, status: EnrollmentStatus.ACTIVE },
-      data: { status: EnrollmentStatus.STOPPED },
-    });
-    const lastOutbound = await this.prisma.emailMessage.findFirst({
-      where: { tenantId, contactId: contact.id, direction: MessageDirection.OUTBOUND },
-      orderBy: { createdAt: 'desc' },
-    });
-    if (lastOutbound) {
-      await this.prisma.emailMessage.update({
-        where: { id: lastOutbound.id },
-        data: { status: MessageStatus.BOUNCED },
-      });
-      const exists = await this.prisma.emailEvent.findFirst({
-        where: { messageId: lastOutbound.id, eventType: EventType.BOUNCE },
-      });
-      if (!exists) {
-        await this.prisma.emailEvent.create({
-          data: {
-            messageId: lastOutbound.id,
-            campaignId: lastOutbound.campaignId,
-            eventType: EventType.BOUNCE,
-          },
-        });
-      }
-    }
-    this.logger.log(`Bounce recorded + suppressed: ${email}`);
+    await this.bounce.recordHardBounce(tenantId, email);
+  }
+
+  /** DSN severity: true = transient (4.x.x / delayed / greylist / quota / throttle). */
+  private isSoftBounce(raw: string): boolean {
+    const status = /Status:\s*([45])\.\d+\.\d+/i.exec(raw);
+    if (status) return status[1] === '4'; // machine-readable status: 4=soft, 5=hard
+    if (/Action:\s*delayed/i.test(raw)) return true;
+    return /(temporar(y|ily)|try again later|greylist|deferred|mailbox is full|mailbox full|over ?quota|quota exceeded|rate limited|resources? temporarily|throttl)/i.test(
+      raw,
+    );
   }
 }

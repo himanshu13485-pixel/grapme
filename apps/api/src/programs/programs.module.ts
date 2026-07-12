@@ -4,6 +4,7 @@ import { ProgramsController } from './programs.controller';
 import { MailerModule } from '../sending/mailer.module';
 import { ApprovalsModule } from '../approvals/approvals.module';
 import { LinkedinModule } from '../linkedin/linkedin.module';
+import { BounceModule } from '../bounce/bounce.module';
 
 /**
  * GRAPOUT cohort engine: clients, mailbox groups, sequences, and monthly
@@ -11,7 +12,7 @@ import { LinkedinModule } from '../linkedin/linkedin.module';
  * drip tick lives in SendingModule and is only active when the engine is on.
  */
 @Module({
-  imports: [MailerModule, ApprovalsModule, LinkedinModule],
+  imports: [MailerModule, ApprovalsModule, LinkedinModule, BounceModule],
   providers: [ProgramsService],
   controllers: [ProgramsController],
   exports: [ProgramsService],

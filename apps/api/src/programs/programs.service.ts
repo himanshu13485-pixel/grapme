@@ -30,6 +30,7 @@ import { ApprovalsService } from '../approvals/approvals.service';
 import { GeoService } from '../common/services/geo.service';
 import { LiCampaignsService } from '../linkedin/campaigns/li-campaigns.service';
 import { LinkedInSubscriptionService } from '../linkedin/subscription/linkedin-subscription.service';
+import { BounceService } from '../bounce/bounce.service';
 import {
   AssignMailboxDto,
   CreateClientDto,
@@ -78,6 +79,7 @@ export class ProgramsService {
     private approvals: ApprovalsService,
     private liCampaigns: LiCampaignsService,
     private liSubs: LinkedInSubscriptionService,
+    private bounce: BounceService,
   ) {}
 
   /**
@@ -1579,6 +1581,16 @@ export class ProgramsService {
       });
       return true;
     } catch (err) {
+      // Permanent (hard) rejection → suppress now instead of re-emailing a dead address.
+      if (this.bounce.isHardSmtpError(err)) {
+        await this.prisma.emailMessage.update({
+          where: { id: message.id },
+          data: { status: MessageStatus.BOUNCED, error: String(err) },
+        });
+        await this.bounce.recordHardBounce(enr.tenantId, contact.email, { messageId: message.id, campaignId: null });
+        this.logger.warn(`Cohort send hard-bounced ${contact.email}: ${err}`);
+        return false;
+      }
       await this.prisma.emailMessage.update({
         where: { id: message.id },
         data: { status: MessageStatus.FAILED, error: String(err) },

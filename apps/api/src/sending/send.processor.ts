@@ -15,6 +15,7 @@ import { renderTemplate } from '../templates/templates.service';
 import { instrumentHtml } from './tracking.util';
 import { QUEUE_SEND } from '../queue/queue.constants';
 import { SendEmailJob } from './sending.service';
+import { BounceService } from '../bounce/bounce.service';
 
 @Processor(QUEUE_SEND, { concurrency: 5 })
 export class SendProcessor extends WorkerHost {
@@ -24,6 +25,7 @@ export class SendProcessor extends WorkerHost {
     private prisma: PrismaService,
     private mailer: MailerService,
     private config: ConfigService,
+    private bounce: BounceService,
     @InjectQueue(QUEUE_SEND) private sendQueue: Queue,
   ) {
     super();
@@ -185,11 +187,21 @@ export class SendProcessor extends WorkerHost {
 
       await this.maybeComplete(campaignId, job.id);
     } catch (err) {
+      // Permanent (hard) SMTP rejection → suppress the recipient now instead of
+      // blindly retrying a dead address (which tanks sender reputation).
+      if (this.bounce.isHardSmtpError(err)) {
+        await this.prisma.emailMessage.update({
+          where: { id: message.id },
+          data: { status: MessageStatus.BOUNCED, error: String(err) },
+        });
+        await this.bounce.recordHardBounce(campaign.tenantId, contact.email, { messageId: message.id, campaignId });
+        return; // don't retry a permanent failure
+      }
       await this.prisma.emailMessage.update({
         where: { id: message.id },
         data: { status: MessageStatus.FAILED, error: String(err) },
       });
-      throw err; // let BullMQ retry with backoff
+      throw err; // transient → let BullMQ retry with backoff
     }
   }
 

@@ -8,13 +8,14 @@ import { EnrollProcessor } from './enroll.processor';
 import { ProgramsModule } from '../programs/programs.module';
 import { MessagesModule } from '../messages/messages.module';
 import { ReportsModule } from '../reports/reports.module';
+import { BounceModule } from '../bounce/bounce.module';
 
 /**
  * The queue-backed sending engine. Only imported when QUEUE_ENABLED !== 'false'
  * (see AppModule), so the rest of the app runs without Redis.
  */
 @Module({
-  imports: [MailerModule, ProgramsModule, MessagesModule, ReportsModule],
+  imports: [MailerModule, ProgramsModule, MessagesModule, ReportsModule, BounceModule],
   providers: [
     SendingService,
     DispatchProcessor,

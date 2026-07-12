@@ -3,6 +3,7 @@ import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Job } from 'bullmq';
 import { ProgramsService } from '../programs/programs.service';
 import { ClientReportService } from '../reports/client-report.service';
+import { BounceService } from '../bounce/bounce.service';
 import {
   QUEUE_ENROLL,
   JOB_RUN_AUTO_COHORT,
@@ -22,6 +23,7 @@ export class EnrollProcessor extends WorkerHost {
   constructor(
     private programs: ProgramsService,
     private clientReports: ClientReportService,
+    private bounce: BounceService,
   ) {
     super();
   }
@@ -31,6 +33,8 @@ export class EnrollProcessor extends WorkerHost {
       await this.programs.runAutoCohorts();
     } else if (job.name === JOB_SEND_REPORTS) {
       await this.clientReports.runDueReports();
+      // Piggyback the hourly sweep: auto-disable mailboxes bouncing too hard.
+      await this.bounce.checkBounceRates();
     } else {
       await this.programs.runDueNow();
     }
