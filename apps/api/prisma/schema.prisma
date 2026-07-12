@@ -390,6 +390,7 @@ model EmailAccount {
   imapCredentialsEncrypted String?   // AES-256-GCM blob (IMAP password); falls back to SMTP creds when null
   imapAllowSelfSigned  Boolean       @default(false) // accept self-signed / private-CA IMAP TLS certs
   status               MailboxStatus @default(PENDING)
+  statusReason         String?       // why it's in this state (e.g. bounce circuit breaker)
   dailyLimit           Int           @default(200)
   warmupEnabled        Boolean       @default(true)
   sendSpeedSeconds     Int           @default(90)

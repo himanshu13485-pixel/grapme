@@ -122,11 +122,13 @@ export class BounceService {
       const bounced = recent.filter((m) => m.status === MessageStatus.BOUNCED).length;
       const rate = bounced / recent.length;
       if (rate > BounceService.MAX_RATE) {
-        await this.prisma.emailAccount.update({ where: { id: mb.id }, data: { status: MailboxStatus.DISABLED } });
+        const reason = `Auto-disabled: bounce rate ${(rate * 100).toFixed(1)}% over last ${recent.length} sends`;
+        await this.prisma.emailAccount.update({
+          where: { id: mb.id },
+          data: { status: MailboxStatus.DISABLED, statusReason: reason },
+        });
         disabled++;
-        this.logger.warn(
-          `Mailbox "${mb.label}" auto-disabled — bounce rate ${(rate * 100).toFixed(1)}% over last ${recent.length} sends`,
-        );
+        this.logger.warn(`Mailbox "${mb.label}" — ${reason}`);
       }
     }
     if (disabled) this.logger.warn(`Bounce circuit breaker disabled ${disabled} mailbox(es)`);

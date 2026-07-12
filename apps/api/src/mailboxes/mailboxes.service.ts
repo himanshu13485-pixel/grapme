@@ -31,6 +31,7 @@ const SAFE = {
   imapUsername: true,
   imapAllowSelfSigned: true,
   status: true,
+  statusReason: true,
   dailyLimit: true,
   warmupEnabled: true,
   sendSpeedSeconds: true,
@@ -131,6 +132,12 @@ export class MailboxesService {
     }
     if (dto.imapPassword) {
       data.imapCredentialsEncrypted = encryptCredential(dto.imapPassword);
+    }
+    // Editing a mailbox the bounce circuit breaker auto-disabled re-enables it
+    // (the admin is fixing the list/settings), and clears the disable reason.
+    if (before.status === MailboxStatus.DISABLED && before.statusReason?.startsWith('Auto-disabled')) {
+      data.status = MailboxStatus.ACTIVE;
+      data.statusReason = null;
     }
 
     const account = await this.prisma.emailAccount.update({

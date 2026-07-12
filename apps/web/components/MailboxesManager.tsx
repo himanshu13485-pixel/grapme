@@ -22,6 +22,7 @@ interface Mailbox {
   emailAddress: string;
   protocol: string;
   status: string;
+  statusReason?: string | null;
   dailyLimit: number;
   smtpUsername?: string;
   smtpHost?: string;
@@ -413,6 +414,11 @@ export function MailboxesManager({ clientId }: { clientId?: string }) {
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <StatusBadge status={m.status} />
+                {m.status === 'DISABLED' && m.statusReason && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-medium text-rose-700" title={m.statusReason}>
+                    ⚠ {m.statusReason}
+                  </span>
+                )}
                 {!clientId &&
                   (reportSenderId === m.id ? (
                     <span className="px-3 py-1 text-xs font-medium text-violet-600">
