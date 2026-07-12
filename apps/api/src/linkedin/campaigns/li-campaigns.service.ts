@@ -398,9 +398,12 @@ export class LiCampaignsService {
 
     // Earliest upcoming scheduled action per campaign (via lead → campaign).
     const now = new Date();
+    // Any not-yet-done action is the campaign's "next send" — including one whose
+    // runAt is already due/overdue (worker mid-spread or slightly behind); those
+    // are clamped to "now" for the date-window filter below.
     const actions = campaigns.length
       ? await this.prisma.liScheduledAction.findMany({
-          where: { status: { in: ['PENDING', 'QUEUED'] }, runAt: { gte: now }, lead: { campaignId: { in: campaigns.map((c) => c.id) } } },
+          where: { status: { in: ['PENDING', 'QUEUED'] }, lead: { campaignId: { in: campaigns.map((c) => c.id) } } },
           select: { runAt: true, lead: { select: { campaignId: true } } },
           orderBy: { runAt: 'asc' },
         })
@@ -417,9 +420,12 @@ export class LiCampaignsService {
     else if (range === 'custom' && opts.from) { winFrom = new Date(opts.from); winTo = opts.to ? new Date(`${opts.to}T23:59:59`) : new Date(winFrom.getTime() + 864e5); }
     // 'all' / 'upcoming' → any future send (or no window).
 
+    // A due/overdue send counts as "now" for windowing (so a running campaign
+    // whose next action is already due still shows under Today / Next 7 days).
+    const eff = (d: Date) => (d.getTime() < now.getTime() ? now : d);
     let annotated = campaigns.map((c) => ({ c, nextSendAt: nextByCampaign.get(c.id) ?? null }));
     if (range === 'today' || range === 'week' || range === 'custom') {
-      annotated = annotated.filter((x) => x.nextSendAt && x.nextSendAt >= winFrom! && x.nextSendAt < winTo!);
+      annotated = annotated.filter((x) => x.nextSendAt && eff(x.nextSendAt) >= winFrom! && eff(x.nextSendAt) < winTo!);
     } else if (range === 'upcoming') {
       annotated = annotated.filter((x) => !!x.nextSendAt);
     }
