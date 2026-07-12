@@ -252,15 +252,15 @@ function ClientCampaigns({ clientId }: { clientId: string }) {
       ) : (
       <div className="card divide-y divide-slate-100">
       {campaigns.map((c) => (
-        <div key={c.id} className="flex items-center justify-between p-4">
-          <div className="flex items-center gap-2">
+        <div key={c.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-2 min-w-0">
             <span className="font-medium text-slate-800">{c.name}</span>
             {c.mode === 'AI' && <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs text-brand-700">AI</span>}
             {c.linkedInAccount?.fullName && (
               <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500" title="LinkedIn seat">👤 {c.linkedInAccount.fullName}</span>
             )}
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm text-slate-500">{c._count?.leads ?? 0} leads</span>
             <StatusBadge status={c.status} />
             <button className="btn-ghost px-2 py-1 text-sm" onClick={() => setViewId(c.id)}>View</button>

@@ -165,8 +165,8 @@ function AccountsTab({ clientId }: { clientId: string }) {
             {accounts.map((a) => {
               const h = accountHealth(a.status, a.deactivated);
               return (
-                <div key={a.id} className="flex items-center justify-between p-4">
-                  <div className="flex items-center gap-3">
+                <div key={a.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-3 min-w-0">
                     <img src={a.avatarUrl || 'https://placehold.co/40x40/ede9fe/6d28d9?text=in'} alt="" className="h-10 w-10 rounded-full bg-brand-50 object-cover" />
                     <div>
                       <div className="font-medium text-slate-800">{a.fullName ?? 'Pending connection…'}</div>
@@ -177,7 +177,7 @@ function AccountsTab({ clientId }: { clientId: string }) {
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className={`inline-flex items-center gap-1.5 rounded-full bg-slate-50 px-2.5 py-1 text-xs font-medium ${h.text}`}>
                       <span className={`h-2 w-2 rounded-full ${h.dot}`} />{h.label}
                     </span>
@@ -271,8 +271,8 @@ function CampaignsTab({ clientId }: { clientId: string }) {
       ) : (
         <div className="card divide-y divide-slate-100">
           {campaigns.map((c) => (
-            <div key={c.id} className="flex items-center justify-between p-4">
-              <div className="flex items-center gap-2">
+            <div key={c.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-wrap items-center gap-2 min-w-0">
                 <Link href={`/linkedin/${clientId}/campaigns/${c.id}`} className="font-medium text-slate-800 hover:text-brand-700">{c.name}</Link>
                 {c.mode === 'AI' && <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs text-brand-700">AI</span>}
                 <span className="text-xs text-slate-400">{c.outreachType === 'DIRECT_MESSAGES' ? 'Direct' : 'Connect'}</span>
@@ -280,7 +280,7 @@ function CampaignsTab({ clientId }: { clientId: string }) {
                   <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500" title="LinkedIn seat">👤 {c.linkedInAccount.fullName}</span>
                 )}
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="text-sm text-slate-500">{c._count?.leads ?? 0} leads</span>
                 <StatusBadge status={c.status} />
                 <Link href={`/linkedin/${clientId}/campaigns/${c.id}`} className="btn-ghost px-2 py-1 text-sm">View</Link>
