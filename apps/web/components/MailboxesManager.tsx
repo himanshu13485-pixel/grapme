@@ -392,9 +392,9 @@ export function MailboxesManager({ clientId }: { clientId?: string }) {
             .map((m) => (
             <div
               key={m.id}
-              className="card flex items-center justify-between p-5"
+              className="card flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between"
             >
-              <div>
+              <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <div className="font-medium">{m.label}</div>
                   {!clientId && reportSenderId === m.id && (
@@ -411,7 +411,7 @@ export function MailboxesManager({ clientId }: { clientId?: string }) {
                 )}
                 {auth[m.id] && <AuthStatus result={auth[m.id]} />}
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-2">
                 <StatusBadge status={m.status} />
                 {!clientId &&
                   (reportSenderId === m.id ? (
