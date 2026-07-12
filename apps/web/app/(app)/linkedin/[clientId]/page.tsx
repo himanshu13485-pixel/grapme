@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
+import { useCanDelete } from '@/lib/auth';
 import { PageHeader, EmptyState, StatusBadge, Tabs, Modal } from '@/components/ui';
 import { LiSubscription, LinkedInAccount, LiCampaign, LiKnowledgeStats, accountHealth, timeAgo } from '@/lib/linkedin';
 import { LiInbox } from '@/components/LiInbox';
@@ -252,6 +253,7 @@ function ConnectLinkModal({ url, onClose }: { url: string; onClose: () => void }
 function CampaignsTab({ clientId }: { clientId: string }) {
   const [campaigns, setCampaigns] = useState<LiCampaign[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const canDelete = useCanDelete();
 
   const load = useCallback(async () => {
     setCampaigns(await api.get<LiCampaign[]>(`/linkedin/campaigns?clientId=${clientId}`));
@@ -260,6 +262,10 @@ function CampaignsTab({ clientId }: { clientId: string }) {
   useEffect(() => { load(); }, [load]);
 
   async function act(id: string, path: string) { await api.post(`/linkedin/campaigns/${id}/${path}`); load(); }
+  async function del(id: string, name: string) {
+    if (!confirm(`Delete LinkedIn campaign "${name}"?\n\nIt's removed from the list and stops sending. History/analytics are kept.`)) return;
+    try { await act(id, 'delete'); } catch (e: any) { alert(e?.message ?? 'Failed to delete'); }
+  }
 
   return (
     <div>
@@ -291,6 +297,9 @@ function CampaignsTab({ clientId }: { clientId: string }) {
                   <button className="btn-ghost px-2 py-1" onClick={() => act(c.id, 'pause')}>⏸ Pause</button>
                 ) : (
                   <button className="btn-primary px-2 py-1" disabled={c.status === 'ARCHIVED'} onClick={() => act(c.id, 'resume')}>▶ Start</button>
+                )}
+                {canDelete && (
+                  <button className="px-2 py-1 text-sm text-rose-500 hover:text-rose-700" onClick={() => del(c.id, c.name)}>Delete</button>
                 )}
               </div>
             </div>
