@@ -473,7 +473,27 @@ export class LiCampaignsService {
       forecast: forecastFor(c.id),
       client: cmap.get(c.clientId) ?? null,
     }));
-    return { items, total, page, pageSize };
+
+    // Tenant-wide daily totals across ALL matching campaigns (every page), so the
+    // board shows "on <date>, N invites + M messages to K leads across C campaigns".
+    const totalsByDay = new Map<string, { connections: number; messages: number; leads: Set<string>; campaigns: Set<string> }>();
+    for (const a of actions) {
+      if (a.type !== 'SEND_CONNECTION' && a.type !== 'SEND_MESSAGE') continue;
+      const cid = a.lead.campaignId;
+      const day = dayStr(a.runAt, tzByCampaign.get(cid) ?? 'Asia/Kolkata');
+      const t = totalsByDay.get(day) ?? { connections: 0, messages: 0, leads: new Set<string>(), campaigns: new Set<string>() };
+      if (a.type === 'SEND_CONNECTION') t.connections++;
+      else t.messages++;
+      t.leads.add(a.leadId);
+      t.campaigns.add(cid);
+      totalsByDay.set(day, t);
+    }
+    const dailyTotals = [...totalsByDay.entries()]
+      .sort(([a], [b]) => (a < b ? -1 : 1))
+      .slice(0, 14)
+      .map(([date, v]) => ({ date, connections: v.connections, messages: v.messages, leads: v.leads.size, campaigns: v.campaigns.size }));
+
+    return { items, total, page, pageSize, dailyTotals };
   }
 
   /** Admin cross-client leads view (leads sourced via drip / import / audience). */

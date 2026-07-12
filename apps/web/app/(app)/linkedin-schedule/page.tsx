@@ -31,6 +31,8 @@ const DAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 const fmtDays = (d: number[]) => (!d?.length ? '—' : [...d].sort().map((x) => DAYS[x] ?? x).join(' '));
 const hr = (h: number) => `${h % 12 === 0 ? 12 : h % 12} ${h < 12 ? 'AM' : 'PM'}`;
 
+interface DailyTotal { date: string; connections: number; messages: number; leads: number; campaigns: number; }
+
 export default function LinkedInSchedulePage() {
   const [items, setItems] = useState<ScheduleRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -45,6 +47,7 @@ export default function LinkedInSchedulePage() {
   const [emBusy, setEmBusy] = useState('');
   const [open, setOpen] = useState<Set<string>>(new Set());
   const toggle = (id: string) => setOpen((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const [totals, setTotals] = useState<DailyTotal[]>([]);
 
   useEffect(() => {
     const t = setTimeout(() => setDq(q.trim()), 300);
@@ -70,8 +73,8 @@ export default function LinkedInSchedulePage() {
     if (dq) params.set('client', dq);
     if (status) params.set('status', status);
     if (range === 'custom') { params.set('from', from); params.set('to', to); }
-    api.get<{ items: ScheduleRow[]; total: number }>(`/linkedin/overview/schedule?${params}`)
-      .then((r) => { setItems(r.items); setTotal(r.total); })
+    api.get<{ items: ScheduleRow[]; total: number; dailyTotals?: DailyTotal[] }>(`/linkedin/overview/schedule?${params}`)
+      .then((r) => { setItems(r.items); setTotal(r.total); setTotals(r.dailyTotals ?? []); })
       .catch(() => {})
       .finally(() => setLoaded(true));
   }, [page, dq, status, range, from, to]);
@@ -125,6 +128,23 @@ export default function LinkedInSchedulePage() {
           <option value="ARCHIVED">Archived</option>
         </select>
       </div>
+
+      {totals.length > 0 && (
+        <div className="mb-4">
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+            Daily send total · all campaigns · 🔗 invites · ✉ messages · 👤 leads
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {totals.map((t) => (
+              <div key={t.date} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs shadow-sm">
+                <div className="font-semibold text-slate-700">{new Date(`${t.date}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</div>
+                <div className="mt-0.5 text-slate-600">🔗 {t.connections} · ✉ {t.messages}</div>
+                <div className="text-[11px] text-slate-400">👤 {t.leads} leads · {t.campaigns} campaign{t.campaigns === 1 ? '' : 's'}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {!loaded ? (
         <EmptyState message="Loading…" />
