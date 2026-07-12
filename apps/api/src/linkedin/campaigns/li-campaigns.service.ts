@@ -496,10 +496,19 @@ export class LiCampaignsService {
       t.campaigns.add(cid);
       totalsByDay.set(day, t);
     }
+    const nameById = new Map(campaigns.map((c) => [c.id, c.name]));
     const dailyTotals = [...totalsByDay.entries()]
       .sort(([a], [b]) => (a < b ? -1 : 1))
       .slice(0, 14)
-      .map(([date, v]) => ({ date, connections: v.connections, messages: v.messages, leads: v.leads.size, campaigns: v.campaigns.size }));
+      .map(([date, v]) => ({
+        date,
+        connections: v.connections,
+        messages: v.messages,
+        leads: v.leads.size,
+        campaigns: v.campaigns.size,
+        // When a day's sends all belong to one campaign, name it; else it's a mix.
+        campaignName: v.campaigns.size === 1 ? (nameById.get([...v.campaigns][0]!) ?? null) : null,
+      }));
 
     return { items, total, page, pageSize, dailyTotals };
   }

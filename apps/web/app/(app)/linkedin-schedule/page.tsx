@@ -31,7 +31,7 @@ const DAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 const fmtDays = (d: number[]) => (!d?.length ? '—' : [...d].sort().map((x) => DAYS[x] ?? x).join(' '));
 const hr = (h: number) => `${h % 12 === 0 ? 12 : h % 12} ${h < 12 ? 'AM' : 'PM'}`;
 
-interface DailyTotal { date: string; connections: number; messages: number; leads: number; campaigns: number; }
+interface DailyTotal { date: string; connections: number; messages: number; leads: number; campaigns: number; campaignName?: string | null; }
 
 export default function LinkedInSchedulePage() {
   const [items, setItems] = useState<ScheduleRow[]>([]);
@@ -139,7 +139,9 @@ export default function LinkedInSchedulePage() {
               <div key={t.date} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs shadow-sm">
                 <div className="font-semibold text-slate-700">{new Date(`${t.date}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</div>
                 <div className="mt-0.5 text-slate-600">🔗 {t.connections} · ✉ {t.messages}</div>
-                <div className="text-[11px] text-slate-400">👤 {t.leads} leads · {t.campaigns} campaign{t.campaigns === 1 ? '' : 's'}</div>
+                <div className="max-w-[180px] truncate text-[11px] text-slate-400" title={t.campaignName ?? undefined}>
+                  👤 {t.leads} leads · {t.campaignName ? t.campaignName : `${t.campaigns} campaigns`}
+                </div>
               </div>
             ))}
           </div>
