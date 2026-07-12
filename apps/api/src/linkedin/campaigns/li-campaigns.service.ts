@@ -428,7 +428,7 @@ export class LiCampaignsService {
     for (const a of actions) {
       if (a.type !== 'SEND_CONNECTION' && a.type !== 'SEND_MESSAGE') continue;
       const cid = a.lead.campaignId;
-      const day = dayStr(a.runAt, tzByCampaign.get(cid) ?? 'Asia/Kolkata');
+      const day = dayStr(a.runAt.getTime() < now.getTime() ? now : a.runAt, tzByCampaign.get(cid) ?? 'Asia/Kolkata');
       if (!forecast.has(cid)) forecast.set(cid, new Map());
       const byDay = forecast.get(cid)!;
       const slot = byDay.get(day) ?? { connections: 0, messages: 0, leads: new Set<string>() };
@@ -488,7 +488,7 @@ export class LiCampaignsService {
     for (const a of actions) {
       if (a.type !== 'SEND_CONNECTION' && a.type !== 'SEND_MESSAGE') continue;
       const cid = a.lead.campaignId;
-      const day = dayStr(a.runAt, tzByCampaign.get(cid) ?? 'Asia/Kolkata');
+      const day = dayStr(a.runAt.getTime() < now.getTime() ? now : a.runAt, tzByCampaign.get(cid) ?? 'Asia/Kolkata');
       const t = totalsByDay.get(day) ?? { connections: 0, messages: 0, leads: new Set<string>(), campaigns: new Set<string>() };
       if (a.type === 'SEND_CONNECTION') t.connections++;
       else t.messages++;
