@@ -12,11 +12,29 @@ until an admin (or assigned sub-admin) approves it.
 aeo/
 ├── apps/
 │   ├── api/        NestJS + Prisma + PostgreSQL API
-│   └── web/        Next.js frontend (scaffolded next)
+│   ├── web/        Next.js frontend — the AEO product app
+│   └── marketing/  Next.js public marketing site for Grapme (SEO pages + blog)
 ├── docker-compose.yml   Postgres + Redis for local dev
 ├── .env.example
 └── package.json    npm workspaces root
 ```
+
+## Marketing site (`apps/marketing`)
+
+Public, SEO-indexable website describing the Grapme outreach platform itself —
+separate from the product app so it can be deployed and crawled independently.
+Home, Features, How It Works, Pricing, Contact, Privacy/Terms, plus a
+Markdown-driven blog under `content/blog/`. Includes `sitemap.xml`,
+`robots.txt`, and SoftwareApplication JSON-LD.
+
+```bash
+npm run dev --workspace apps/marketing     # http://localhost:3200
+npm run build --workspace apps/marketing
+```
+
+The demo-request form posts to `app/api/leads/route.ts`, which validates and
+logs the submission — wire it to a real CRM/email destination before going
+live (see the `TODO` in that file).
 
 ## Tech stack (Phase 0 implemented)
 

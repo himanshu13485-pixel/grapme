@@ -1,0 +1,587 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: #f4f6fd;
+  color: #0f1224;
+}
+
+::selection {
+  background: #dee3ff;
+  color: #0f1224;
+}
+
+/* ---------- Noise texture (subtle, tasteful) ---------- */
+.noise {
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity: 0.035;
+}
+/* A slightly stronger grain for dark panels */
+.noise-dark {
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity: 0.06;
+  mix-blend-mode: overlay;
+}
+
+/* ---------- Decorative glows ---------- */
+.bg-glow-brand {
+  background: radial-gradient(circle, rgba(79, 70, 229, 0.32) 0%, transparent 70%);
+}
+.bg-glow-teal {
+  background: radial-gradient(circle, rgba(15, 184, 148, 0.26) 0%, transparent 70%);
+}
+.bg-glow-amber {
+  background: radial-gradient(circle, rgba(245, 158, 11, 0.2) 0%, transparent 70%);
+}
+
+.bg-grid {
+  background-image: linear-gradient(rgba(15, 18, 36, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 18, 36, 0.04) 1px, transparent 1px);
+  background-size: 38px 38px;
+  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, #000 40%, transparent 100%);
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, #000 40%, transparent 100%);
+}
+
+/* ---------- Animated gradient text ---------- */
+.text-brand-gradient {
+  background: linear-gradient(100deg, #5b6bff, #4f46e5, #ff5c39, #5b6bff);
+  background-size: 250% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer-text 3s linear infinite;
+}
+@keyframes shimmer-text {
+  to {
+    background-position: 200% center;
+  }
+}
+
+/* ---------- Keyframes (amplified) ---------- */
+@keyframes float-slow {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(var(--rot, 0deg));
+  }
+  50% {
+    transform: translate3d(0, -42px, 0) rotate(var(--rot, 0deg));
+  }
+}
+@keyframes float-soft {
+  0%,
+  100% {
+    transform: translateY(0) rotate(var(--rot, 0deg));
+  }
+  50% {
+    transform: translateY(-26px) rotate(var(--rot, 0deg));
+  }
+}
+@keyframes drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(70px, 48px, 0) scale(1.35);
+  }
+}
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.6);
+  }
+  70% {
+    box-shadow: 0 0 0 14px rgba(245, 158, 11, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
+  }
+}
+@keyframes grow-bar {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+@keyframes spin-slow {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.animate-spin-slow {
+  animation: spin-slow 26s linear infinite;
+}
+
+/* ---------- Aurora "video" background ---------- */
+@keyframes aurora-a {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(22vw, 14vh, 0) scale(1.5);
+  }
+}
+@keyframes aurora-b {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1.2);
+  }
+  50% {
+    transform: translate3d(-20vw, 18vh, 0) scale(0.8);
+  }
+}
+@keyframes aurora-c {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(16vw, -12vh, 0) scale(1.4);
+  }
+}
+.animate-aurora-a {
+  animation: aurora-a 8s ease-in-out infinite;
+}
+.animate-aurora-b {
+  animation: aurora-b 10s ease-in-out infinite;
+}
+.animate-aurora-c {
+  animation: aurora-c 12s ease-in-out infinite;
+}
+
+/* ---------- Live indicator (pulsing dot + blinking label) ---------- */
+@keyframes live-ping {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(15, 184, 148, 0.8);
+  }
+  70% {
+    transform: scale(1.35);
+    box-shadow: 0 0 0 14px rgba(15, 184, 148, 0);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(15, 184, 148, 0);
+  }
+}
+@keyframes blink-soft {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+.animate-live-ping {
+  animation: live-ping 1.6s ease-out infinite;
+}
+.animate-blink-soft {
+  animation: blink-soft 1.6s ease-in-out infinite;
+}
+
+/* ======================================================================
+   HERO ANIMATIONS
+   ====================================================================== */
+
+/* staggered word reveal for headlines */
+@keyframes word-rise {
+  from {
+    opacity: 0;
+    transform: translateY(1.1em) rotate(6deg) scale(0.6);
+    filter: blur(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) rotate(0) scale(1);
+    filter: blur(0);
+  }
+}
+.word-rise {
+  display: inline-block;
+  animation: word-rise 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* panel scale + blur entrance */
+@keyframes blur-in {
+  from {
+    opacity: 0;
+    transform: scale(0.8) translateY(40px) rotate(-3deg);
+    filter: blur(24px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0) rotate(0);
+    filter: blur(0);
+  }
+}
+.animate-blur-in {
+  animation: blur-in 1.1s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* orbiting avatars around the hero */
+@keyframes orbit-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes orbit-spin-rev {
+  to {
+    transform: rotate(-360deg);
+  }
+}
+.orbit-ring {
+  animation: orbit-spin 16s linear infinite;
+}
+.orbit-item {
+  animation: orbit-spin-rev 16s linear infinite;
+}
+
+/* animated scroll-down cue */
+@keyframes cue-bounce {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.5;
+  }
+  50% {
+    transform: translateY(7px);
+    opacity: 1;
+  }
+}
+.animate-cue {
+  animation: cue-bounce 1.6s ease-in-out infinite;
+}
+
+/* floating decorative shapes */
+@keyframes float-shape {
+  0%,
+  100% {
+    transform: translateY(0) rotate(var(--rot, 0deg)) scale(1);
+  }
+  50% {
+    transform: translateY(-46px) rotate(calc(var(--rot, 0deg) + 45deg)) scale(1.2);
+  }
+}
+.animate-float-shape {
+  animation: float-shape 3.4s ease-in-out infinite;
+}
+
+/* ======================================================================
+   ACCENT ANIMATIONS
+   ====================================================================== */
+
+/* twinkling sparkle */
+@keyframes twinkle {
+  0%,
+  100% {
+    transform: scale(1) rotate(0);
+    opacity: 0.45;
+  }
+  50% {
+    transform: scale(1.45) rotate(90deg);
+    opacity: 1;
+  }
+}
+.animate-twinkle {
+  animation: twinkle 3s ease-in-out infinite;
+}
+
+/* animated gradient divider */
+.divider-shine {
+  height: 1px;
+  width: 100%;
+  background: linear-gradient(90deg, transparent, rgba(79, 70, 229, 0.55), transparent);
+  background-size: 200% 100%;
+  animation: shimmer-text 6s linear infinite;
+}
+
+/* eyebrow accent line that draws in on view */
+@keyframes line-grow {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+.line-grow {
+  transform-origin: left center;
+  animation: line-grow 0.8s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* ======================================================================
+   INTERACTIVE ANIMATIONS
+   ====================================================================== */
+
+/* 3D tilt card + cursor spotlight */
+.tilt-card {
+  transform-style: preserve-3d;
+  transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.25s ease, border-color 0.25s ease;
+  will-change: transform;
+}
+.tilt-glow {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  background: radial-gradient(240px circle at var(--mx, 50%) var(--my, 50%), rgba(79, 70, 229, 0.16), transparent 60%);
+  pointer-events: none;
+}
+.tilt-card:hover .tilt-glow {
+  opacity: 1;
+}
+
+/* button shine sweep */
+.btn-shine {
+  position: relative;
+  overflow: hidden;
+}
+.btn-shine::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -130%;
+  width: 60%;
+  height: 100%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  transform: skewX(-18deg);
+  transition: left 0.65s ease;
+  pointer-events: none;
+}
+.btn-shine:hover::after {
+  left: 140%;
+}
+
+/* click ripple */
+@keyframes ripple {
+  to {
+    transform: scale(4);
+    opacity: 0;
+  }
+}
+.ripple-ink {
+  position: absolute;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.5);
+  transform: scale(0);
+  animation: ripple 0.6s ease-out;
+  pointer-events: none;
+}
+
+/* ======================================================================
+   SPECIAL MOTION EFFECTS
+   ====================================================================== */
+
+/* scroll progress bar */
+.scroll-progress {
+  transform-origin: left center;
+  transform: scaleX(0);
+}
+
+/* flowchart connectors + chart draw-ins */
+@keyframes dash-flow {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+.animate-dash {
+  stroke-dasharray: 6 6;
+  animation: dash-flow 1s linear infinite;
+}
+@keyframes arrow-nudge {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(5px);
+  }
+}
+.animate-arrow {
+  animation: arrow-nudge 1.4s ease-in-out infinite;
+}
+@keyframes grow-x {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+.bar-grow-x {
+  transform-origin: left center;
+  animation: grow-x 1s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes draw-line {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.draw-line {
+  animation: draw-line 1.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* clip-path wipe reveal */
+@keyframes wipe-in {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+.animate-wipe {
+  animation: wipe-in 0.9s cubic-bezier(0.65, 0, 0.35, 1) both;
+}
+
+/* ---------- Kinetic typography (rotating word) ---------- */
+.rotating-word {
+  display: inline-block;
+  overflow: hidden;
+  vertical-align: bottom;
+  line-height: 1.08;
+  position: relative;
+}
+.rotating-word__item {
+  display: inline-block;
+  animation: word-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes word-in {
+  from {
+    transform: translateY(105%) rotate(3deg);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0) rotate(0);
+    opacity: 1;
+  }
+}
+
+/* ---------- Animation utilities ---------- */
+.animate-drift {
+  animation: drift 9s ease-in-out infinite;
+}
+.animate-drift-slow {
+  animation: drift 13s ease-in-out infinite;
+}
+.animate-float-slow {
+  animation: float-slow 3.6s ease-in-out infinite;
+}
+.animate-float-soft {
+  animation: float-soft 2.8s ease-in-out infinite;
+}
+.animate-pulse-ring {
+  animation: pulse-ring 1.6s ease-out infinite;
+}
+.bar-grow {
+  transform-origin: bottom;
+  animation: grow-bar 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* ---------- Scroll reveal ---------- */
+.reveal {
+  opacity: 0;
+  transform: translateY(52px) scale(0.94);
+  transition: opacity 0.75s cubic-bezier(0.22, 1, 0.36, 1), transform 0.75s cubic-bezier(0.34, 1.56, 0.64, 1);
+  will-change: opacity, transform;
+}
+.reveal.is-visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+/* ---------- Marquee ---------- */
+.marquee-track {
+  display: flex;
+  width: max-content;
+  animation: marquee 14s linear infinite;
+}
+.marquee-mask {
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+}
+.marquee-track:hover {
+  animation-play-state: paused;
+}
+
+/* ---------- Hover lift ---------- */
+.lift {
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.28s ease, border-color 0.28s ease,
+    background-color 0.28s ease;
+}
+.lift:hover {
+  transform: translateY(-4px);
+}
+
+/* ---------- Reduced motion ---------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  .reveal {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---------- Blog prose ---------- */
+.prose-blog {
+  color: #40445c;
+  line-height: 1.8;
+  font-size: 1.05rem;
+}
+.prose-blog h2 {
+  color: #0f1224;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.65rem;
+  letter-spacing: -0.02em;
+  margin: 2.2rem 0 0.8rem;
+}
+.prose-blog h3 {
+  color: #0f1224;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.25rem;
+  margin: 1.6rem 0 0.5rem;
+}
+.prose-blog p {
+  margin-bottom: 1rem;
+}
+.prose-blog ul,
+.prose-blog ol {
+  margin: 0 0 1rem 1.25rem;
+}
+.prose-blog li {
+  margin-bottom: 0.4rem;
+}
+.prose-blog a {
+  color: #4f46e5;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font-weight: 600;
+}
+.prose-blog strong {
+  color: #0f1224;
+}
