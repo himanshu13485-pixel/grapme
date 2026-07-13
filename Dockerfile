@@ -23,8 +23,11 @@ RUN npm run db:generate
 # The browser bundle bakes this at build time — point it at your PUBLIC API URL.
 ARG NEXT_PUBLIC_API_URL=http://localhost:4000/api/v1
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
-# nest build (apps/api/dist) + next build (apps/web/.next)
-RUN npm run build --workspaces --if-present
+# Build each app in its own step so a failure STOPS here and its error is the last
+# thing in the log (npm run --workspaces keeps going and hides which app broke).
+RUN echo "== building api ==" && npm run build -w apps/api
+RUN echo "== building marketing ==" && npm run build -w apps/marketing
+RUN echo "== building web ==" && npm run build -w apps/web
 
 # ---- Runtime ----
 FROM base AS runtime
