@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useCanDelete } from '@/lib/auth';
 import { PageHeader, EmptyState, StatusBadge, Tabs, Modal } from '@/components/ui';
-import { LiSubscription, LinkedInAccount, LiCampaign, LiKnowledgeStats, accountHealth, timeAgo } from '@/lib/linkedin';
+import { LiSubscription, LinkedInAccount, LiCampaign, LiKnowledgeStats, accountHealth, timeAgo, purgeCountdown } from '@/lib/linkedin';
 import { LiInbox } from '@/components/LiInbox';
 import { ValidityBadge } from '@/components/Validity';
 
@@ -306,7 +306,7 @@ function CampaignsTab({ clientId }: { clientId: string }) {
                 {c.linkedInAccount?.fullName && (
                   <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500" title="LinkedIn seat">👤 {c.linkedInAccount.fullName}</span>
                 )}
-                {view === 'deleted' && c.deletedAt && <span className="text-xs text-rose-400">deleted {timeAgo(c.deletedAt)}</span>}
+                {view === 'deleted' && c.deletedAt && <span className="text-xs text-rose-400">deleted {timeAgo(c.deletedAt)} · expires in {purgeCountdown(c.deletedAt)}d</span>}
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-sm text-slate-500">{c._count?.leads ?? 0} leads</span>

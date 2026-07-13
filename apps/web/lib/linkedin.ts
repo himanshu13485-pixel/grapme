@@ -107,6 +107,12 @@ export function timeAgo(iso?: string | null): string {
   const d = Math.floor(h / 24); return `${d}d ago`;
 }
 
+/** Days until a soft-deleted LinkedIn campaign is auto-purged (30-day window). */
+export function purgeCountdown(deletedAt?: string | null): number {
+  if (!deletedAt) return 0;
+  return Math.max(0, 30 - Math.floor((Date.now() - new Date(deletedAt).getTime()) / 86_400_000));
+}
+
 export interface LiCampaign {
   id: string;
   name: string;
