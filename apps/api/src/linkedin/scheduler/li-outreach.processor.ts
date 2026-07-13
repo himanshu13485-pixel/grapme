@@ -12,7 +12,7 @@ import { LiSchedulerService } from './li-scheduler.service';
 import { LiGenerationService } from '../campaigns/li-generation.service';
 import {
   LiJob, LiJobData, FIRST_ACCEPTANCE_CHECK_MS, RECHECK_INTERVAL_MS,
-  MAX_ACCEPTANCE_CHECKS, renderTemplate, pickVariant,
+  MAX_ACCEPTANCE_CHECKS, renderTemplate, pickVariant, reconcileName,
 } from './li-queue.constants';
 
 type LeadWithContext = NonNullable<Awaited<ReturnType<LiOutreachProcessor['loadContext']>>>;
@@ -181,16 +181,16 @@ export class LiOutreachProcessor extends WorkerHost {
     if (ctx.lead.unipileMemberId) return ctx.lead.unipileMemberId;
     if (!ctx.lead.profileUrl) throw new Error('Lead has no profileUrl to resolve');
     const member = await this.provider.resolveMember(ctx.account.unipileAccountId!, ctx.lead.profileUrl);
-    // Prefer LinkedIn's real name over the URL-slug placeholder created at import
-    // (e.g. "Sachdevahimanshu" → "Himanshu Sachdeva"). Keep an explicitly-typed name.
-    const looksLikeSlug = !ctx.lead.fullName || !/\s/.test(ctx.lead.fullName);
+    // Replace any URL-slug placeholder name (full AND first/last, used in {first_name}
+    // tokens) with the real profile name — "sachdevahimanshu" → "Himanshu Sachdeva".
+    const name = reconcileName(ctx.lead, member);
     await this.prisma.liLead.update({
       where: { id: ctx.lead.id },
       data: {
         unipileMemberId: member.memberId,
-        fullName: looksLikeSlug && member.fullName ? member.fullName : ctx.lead.fullName,
-        firstName: ctx.lead.firstName ?? member.firstName,
-        lastName: ctx.lead.lastName ?? member.lastName,
+        fullName: name.fullName || ctx.lead.fullName,
+        firstName: name.firstName,
+        lastName: name.lastName,
         title: ctx.lead.title ?? member.title,
         company: ctx.lead.company ?? member.company,
         location: ctx.lead.location ?? member.location,
@@ -198,6 +198,7 @@ export class LiOutreachProcessor extends WorkerHost {
       },
     });
     ctx.lead.unipileMemberId = member.memberId;
+    ctx.lead.firstName = name.firstName ?? ctx.lead.firstName;
     return member.memberId;
   }
 

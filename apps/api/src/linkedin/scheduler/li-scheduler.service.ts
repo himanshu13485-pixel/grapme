@@ -8,7 +8,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { QUEUE_LINKEDIN } from '../../queue/queue.constants';
 import { LINKEDIN_PROVIDER, LinkedInProvider } from '../provider/linkedin-provider.interface';
 import { LiInboxService } from '../inbox/li-inbox.service';
-import { LiJob, LiJobData, DRIP_SCAN_MS, SYNC_SWEEP_MS } from './li-queue.constants';
+import { LiJob, LiJobData, DRIP_SCAN_MS, SYNC_SWEEP_MS, reconcileName, needsNameResolve } from './li-queue.constants';
 
 const TYPE_TO_JOB: Record<LiScheduledActionType, LiJob> = {
   SEND_CONNECTION: LiJob.SendConnection,
@@ -258,19 +258,19 @@ export class LiSchedulerService implements OnModuleInit {
       for (const lead of batch) {
         try {
           let memberId = lead.unipileMemberId ?? undefined;
-          const looksLikeSlug = !lead.fullName || !/\s/.test(lead.fullName);
-          // Resolve the real profile only when we lack a member id or the name is still a
-          // URL slug — avoids re-fetching clean profiles on every 30-min sweep.
-          if (lead.profileUrl && (!memberId || looksLikeSlug)) {
+          // Resolve the real profile only when we lack a member id or a name field is
+          // still a URL slug — avoids re-fetching clean profiles on every 30-min sweep.
+          if (lead.profileUrl && (!memberId || needsNameResolve(lead))) {
             const m = await this.provider.resolveMember(accountId, lead.profileUrl);
             memberId = m.memberId ?? memberId;
+            const name = reconcileName(lead, m);
             await this.prisma.liLead.update({
               where: { id: lead.id },
               data: {
                 unipileMemberId: memberId,
-                fullName: looksLikeSlug && m.fullName ? m.fullName : lead.fullName,
-                firstName: lead.firstName ?? m.firstName,
-                lastName: lead.lastName ?? m.lastName,
+                fullName: name.fullName || lead.fullName,
+                firstName: name.firstName,
+                lastName: name.lastName,
                 title: lead.title ?? m.title,
                 company: lead.company ?? m.company,
                 location: lead.location ?? m.location,
