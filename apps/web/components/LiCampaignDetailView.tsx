@@ -222,11 +222,9 @@ function Details({ campaignId, base }: { campaignId: string; base: string }) {
               {syncing ? 'Syncing…' : '↻ Sync from LinkedIn'}
             </button>
           )}
-          {!isPortal && (
-            <button className="btn-ghost whitespace-nowrap" disabled={importingConns} onClick={importConnections} title="Import this seat's existing 1st-degree connections">
-              {importingConns ? 'Importing…' : '⇲ Import connections'}
-            </button>
-          )}
+          <button className="btn-ghost whitespace-nowrap" disabled={importingConns} onClick={importConnections} title="Import this seat's existing 1st-degree connections">
+            {importingConns ? 'Importing…' : '⇲ Import connections'}
+          </button>
           {!isPortal && (
             <button className="btn-primary whitespace-nowrap" disabled={sourcing} onClick={sourceFromAudience}>
               {sourcing ? 'Sourcing…' : '✦ Source from audience'}

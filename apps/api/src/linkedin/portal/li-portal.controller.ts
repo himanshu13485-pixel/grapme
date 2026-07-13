@@ -76,6 +76,8 @@ export class LiPortalController {
   }
   @Post('campaigns/:id/leads')
   importLeads(@CurrentUser() u: AuthUser, @Param('id') id: string, @Body() dto: ImportLiLeadsDto) { return this.portal.importLeads(u.userId, id, dto); }
+  @Post('campaigns/:id/import-connections')
+  importConnections(@CurrentUser() u: AuthUser, @Param('id') id: string, @Query('limit') limit?: string) { return this.portal.importConnections(u.userId, id, limit ? Number(limit) : undefined); }
   // Audience sourcing is admin-only (avoids client-side credit/rate-limit misuse);
   // clients import leads manually, and admins configure drip auto-sourcing.
   @Patch('campaigns/:id/audience')
