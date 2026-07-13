@@ -416,8 +416,12 @@ export class LiCampaignsService {
           orderBy: { runAt: 'asc' },
         })
       : [];
+    // Only RUNNING campaigns have live upcoming sends. A PAUSED/stopped campaign's
+    // actions are frozen (won't fire), so exclude them from next-send/forecast/totals.
+    const runningIds = new Set(campaigns.filter((c) => c.status === LiCampaignStatus.RUNNING).map((c) => c.id));
+    const liveActions = actions.filter((a) => runningIds.has(a.lead.campaignId));
     const nextByCampaign = new Map<string, Date>();
-    for (const a of actions) { const cid = a.lead.campaignId; if (!nextByCampaign.has(cid)) nextByCampaign.set(cid, a.runAt); }
+    for (const a of liveActions) { const cid = a.lead.campaignId; if (!nextByCampaign.has(cid)) nextByCampaign.set(cid, a.runAt); }
 
     // Day-by-day forecast per campaign (exact, from the scheduled actions): how many
     // connection invites / messages go out on each date, and to how many distinct leads.
@@ -425,7 +429,7 @@ export class LiCampaignsService {
     const dayStr = (d: Date, tz: string) =>
       new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
     const forecast = new Map<string, Map<string, { connections: number; messages: number; leads: Set<string> }>>();
-    for (const a of actions) {
+    for (const a of liveActions) {
       if (a.type !== 'SEND_CONNECTION' && a.type !== 'SEND_MESSAGE') continue;
       const cid = a.lead.campaignId;
       const day = dayStr(a.runAt.getTime() < now.getTime() ? now : a.runAt, tzByCampaign.get(cid) ?? 'Asia/Kolkata');
@@ -485,7 +489,7 @@ export class LiCampaignsService {
     // Tenant-wide daily totals across ALL matching campaigns (every page), so the
     // board shows "on <date>, N invites + M messages to K leads across C campaigns".
     const totalsByDay = new Map<string, { connections: number; messages: number; leads: Set<string>; campaigns: Set<string> }>();
-    for (const a of actions) {
+    for (const a of liveActions) {
       if (a.type !== 'SEND_CONNECTION' && a.type !== 'SEND_MESSAGE') continue;
       const cid = a.lead.campaignId;
       const day = dayStr(a.runAt.getTime() < now.getTime() ? now : a.runAt, tzByCampaign.get(cid) ?? 'Asia/Kolkata');
