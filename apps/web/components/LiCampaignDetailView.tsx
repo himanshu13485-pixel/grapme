@@ -215,8 +215,8 @@ function Details({ campaignId, base }: { campaignId: string; base: string }) {
     <div className="card p-5">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h3 className="text-lg font-semibold text-slate-800">Target Audience</h3>
-        <div className="flex items-center gap-2">
-          <input className="input w-56" placeholder="Search targets…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <input className="input w-full min-w-0 sm:w-48" placeholder="Search targets…" value={q} onChange={(e) => setQ(e.target.value)} />
           {!isPortal && (
             <button className="btn-ghost whitespace-nowrap" disabled={syncing} onClick={syncNow} title="Refresh names + check who accepted, from LinkedIn">
               {syncing ? 'Syncing…' : '↻ Sync from LinkedIn'}
