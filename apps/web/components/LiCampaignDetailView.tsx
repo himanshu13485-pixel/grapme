@@ -8,6 +8,8 @@ import { LiCampaignSummary } from '@/components/LiCampaignSummary';
 import { ConnectionPerformanceChart, EngagementVolumeChart } from '@/components/LiCampaignCharts';
 import { LiCampaignDetail, LiCampaignStats, LiLeadsPage, parseLeadTitleCompany } from '@/lib/linkedin';
 
+// Cumulative pipeline (WDC-style): Sent = connection-sent-or-beyond, Connected =
+// connected-or-beyond, Messaged = messaged-or-beyond. Counts come from cumulativeCounts.
 const LEAD_TABS: { key: string; label: string; status?: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'pending', label: 'Pending', status: 'PENDING' },
@@ -15,10 +17,12 @@ const LEAD_TABS: { key: string; label: string; status?: string }[] = [
   { key: 'connected', label: 'Connected', status: 'CONNECTED' },
   { key: 'messaged', label: 'Messaged', status: 'MESSAGED' },
   { key: 'replied', label: 'Replied', status: 'REPLIED' },
+  { key: 'completed', label: 'Completed', status: 'CAMPAIGN_COMPLETED' },
 ];
 const STATUS_LABEL: Record<string, string> = {
   PENDING: 'Pending', CONNECTION_PENDING: 'Sent', CONNECTED: 'Connected',
-  MESSAGED: 'Messaged', REPLIED: 'Replied', BOUNCED: 'Bounced', EXCLUDED: 'Excluded',
+  MESSAGED: 'Messaged', REPLIED: 'Replied', CAMPAIGN_COMPLETED: 'Completed',
+  BOUNCED: 'Bounced', EXCLUDED: 'Excluded',
 };
 
 /** KPIs + sentiment + Setup/Analytics/Details for a campaign. Shared by admin
@@ -124,7 +128,8 @@ function Analytics({ c, stats }: { c: LiCampaignDetail; stats: LiCampaignStats }
               <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-brand-50 text-xs text-brand-700">{s.order}</span>
               <div>
                 <div className="font-medium text-slate-800">{s.type === 'CONNECTION_REQUEST' ? 'Connection Request' : 'Message'}
-                  {s.waitHours > 0 && <span className="font-normal text-slate-400"> · wait {s.waitHours}h</span>}</div>
+                  {s.waitHours > 0 && <span className="font-normal text-slate-400"> · wait {s.waitHours}h</span>}
+                  {s.variants && s.variants.length > 0 && <span className="ml-1 rounded-full bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-700">+{s.variants.length} wording{s.variants.length > 1 ? 's' : ''}</span>}</div>
                 {(s.body || s.note) && <div className="line-clamp-2 text-slate-500">{s.body ?? s.note}</div>}
               </div>
             </li>
@@ -173,7 +178,8 @@ function Details({ campaignId, base }: { campaignId: string; base: string }) {
 
   const tabs = LEAD_TABS.map((t) => ({
     key: t.key, label: t.label,
-    count: t.key === 'all' ? data?.total : data?.tabCounts?.[t.status!],
+    // Cumulative counts (Connected = connected-or-beyond, …); fall back to raw counts.
+    count: t.key === 'all' ? data?.total : (data?.cumulativeCounts?.[t.status!] ?? data?.tabCounts?.[t.status!]),
   }));
 
   return (

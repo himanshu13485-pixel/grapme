@@ -1,6 +1,6 @@
 import { Type } from 'class-transformer';
 import {
-  ArrayMinSize, IsArray, IsBoolean, IsEnum, IsInt, IsOptional, IsString,
+  ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsEnum, IsInt, IsOptional, IsString,
   Max, Min, MinLength, ValidateNested,
 } from 'class-validator';
 import { LiCampaignMode, LiCampaignType, LiOutreachType, LiStepType } from '@prisma/client';
@@ -28,6 +28,8 @@ export class LiSequenceStepDto {
   @IsInt() @Min(0) waitHours!: number;
   @IsOptional() @IsString() body?: string;
   @IsOptional() @IsString() note?: string;
+  // Up to 2 alternate wordings (a lead gets one at random from body/note + these).
+  @IsOptional() @IsArray() @IsString({ each: true }) @ArrayMaxSize(2) variants?: string[];
 }
 
 export class UpdateLiSequenceDto {
@@ -63,6 +65,11 @@ export class UpdateLiScheduleDto {
   @IsOptional() @IsBoolean() dripEnabled?: boolean;
   @IsOptional() @IsInt() @Min(1) @Max(200) dripDailyTarget?: number;
   @IsOptional() @IsInt() @Min(1) @Max(1000) dripBuffer?: number;
+  // Human-likeness: randomized per-lead follow-up count (0/0 = off = send all) + the
+  // grace window before a no-reply lead is marked campaign-completed.
+  @IsOptional() @IsInt() @Min(0) @Max(10) followUpMin?: number;
+  @IsOptional() @IsInt() @Min(0) @Max(10) followUpMax?: number;
+  @IsOptional() @IsInt() @Min(0) @Max(720) graceHours?: number;
 }
 
 export class ImportLiLeadDto {
@@ -83,4 +90,6 @@ export class ImportLiLeadsDto {
 export class GenerateLiMessagesDto {
   @IsOptional() @IsEnum(LiOutreachType) outreachType?: LiOutreachType;
   @IsOptional() @IsInt() @Min(1) @Max(5) followUps?: number;
+  // Wordings to generate per step (1 = single, up to 3 for human-like variation).
+  @IsOptional() @IsInt() @Min(1) @Max(3) variants?: number;
 }

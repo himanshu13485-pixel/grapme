@@ -115,11 +115,14 @@ export class LiGenerationService {
     return this.campaigns.upsertAudience(campaignId, spec);
   }
 
-  async generateMessages(campaignId: string, opts: { outreachType?: LiOutreachType; followUps?: number }) {
+  async generateMessages(campaignId: string, opts: { outreachType?: LiOutreachType; followUps?: number; variants?: number }) {
     const { campaign, business, strategy } = await this.loadKnowledge(campaignId);
     const outreachType = opts.outreachType ?? campaign.outreachType;
     const direct = outreachType === LiOutreachType.DIRECT_MESSAGES;
     const followUps = Math.min(5, Math.max(1, opts.followUps ?? 2));
+    // How many wordings per step: 1 = single body, up to 3 = body + 2 alternates.
+    const variants = Math.min(3, Math.max(1, opts.variants ?? 1));
+    const extra = variants - 1;
 
     let steps: LiSequenceStepDto[];
     if (this.ai.configured) {
@@ -133,6 +136,9 @@ export class LiGenerationService {
           ? `First step type "MESSAGE" (no connection request). `
           : `First step type "CONNECTION_REQUEST" with an optional short "note". `) +
         `Then ${followUps} steps of type "MESSAGE". Each MESSAGE has: type, waitHours (integer), body. ` +
+        (extra > 0
+          ? `Also give each MESSAGE (and the CONNECTION_REQUEST note) a "variants" array of ${extra} ALTERNATE wording(s) that say the SAME thing differently (for human-like variation, never duplicates of "body"). `
+          : '') +
         `Use waitHours like 24, 48, 72. Keep bodies under 100 words.`;
       steps = await this.ai.generateJson<LiSequenceStepDto[]>(system, user);
     } else {

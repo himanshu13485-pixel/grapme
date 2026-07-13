@@ -34,7 +34,9 @@ export function LiAiWizard({ clientId, base = '/linkedin', launchMode = 'resume'
   const [outreachType, setOutreachType] = useState<'WITH_CONNECTION' | 'DIRECT_MESSAGES'>('WITH_CONNECTION');
   const [audience, setAudience] = useState<Audience>(emptyAudience);
   const [note, setNote] = useState('');
-  const [followUps, setFollowUps] = useState([{ waitHours: 24, body: '' }]);
+  const [noteVariants, setNoteVariants] = useState<string[]>([]);
+  const [aiVariants, setAiVariants] = useState(1); // wordings per step for AI generation
+  const [followUps, setFollowUps] = useState<{ waitHours: number; body: string; variants: string[] }[]>([{ waitHours: 24, body: '', variants: [] }]);
   const [sched, setSched] = useState({ timezone: 'Asia/Kolkata', run247: false, workStartHour: 9, workEndHour: 18, workDays: [1, 2, 3, 4, 5] as number[], dailyConnectionLimit: 20, dailyMessageLimit: 20 });
   const [campaignId, setCampaignId] = useState<string | null>(null);
 
@@ -51,10 +53,11 @@ export function LiAiWizard({ clientId, base = '/linkedin', launchMode = 'resume'
     const c = await api.post<{ id: string }>(`${base}/campaigns`, { clientId, linkedInAccountId: accountId, name, mode: 'AI', outreachType, businessProfileId: businessId, strategyId });
     setCampaignId(c.id); return c.id;
   }
+  const cleanVariants = (v: string[]) => v.map((x) => (x ?? '').trim()).filter(Boolean).slice(0, 2);
   function buildSteps() {
     const steps: any[] = [];
-    if (outreachType === 'WITH_CONNECTION') steps.push({ type: 'CONNECTION_REQUEST', waitHours: 0, note: note || undefined });
-    followUps.forEach((f, i) => steps.push({ type: 'MESSAGE', waitHours: outreachType === 'DIRECT_MESSAGES' && i === 0 ? 0 : Number(f.waitHours), body: f.body }));
+    if (outreachType === 'WITH_CONNECTION') steps.push({ type: 'CONNECTION_REQUEST', waitHours: 0, note: note || undefined, variants: cleanVariants(noteVariants) });
+    followUps.forEach((f, i) => steps.push({ type: 'MESSAGE', waitHours: outreachType === 'DIRECT_MESSAGES' && i === 0 ? 0 : Number(f.waitHours), body: f.body, variants: cleanVariants(f.variants) }));
     return steps;
   }
 
@@ -77,11 +80,12 @@ export function LiAiWizard({ clientId, base = '/linkedin', launchMode = 'resume'
     setGen(true); setError('');
     try {
       const cid = await ensureCampaign();
-      const camp = await api.post<{ steps: { type: string; waitHours: number; body?: string; note?: string }[] }>(`${base}/campaigns/${cid}/generate-messages`, { outreachType, followUps: Math.max(1, followUps.length) });
+      const camp = await api.post<{ steps: { type: string; waitHours: number; body?: string; note?: string; variants?: string[] }[] }>(`${base}/campaigns/${cid}/generate-messages`, { outreachType, followUps: Math.max(1, followUps.length), variants: aiVariants });
       const conn = camp.steps.find((s) => s.type === 'CONNECTION_REQUEST');
       const msgs = camp.steps.filter((s) => s.type === 'MESSAGE');
       setNote(conn?.note ?? '');
-      setFollowUps(msgs.length ? msgs.map((m) => ({ waitHours: m.waitHours, body: m.body ?? '' })) : [{ waitHours: 24, body: '' }]);
+      setNoteVariants(cleanVariants(conn?.variants ?? []));
+      setFollowUps(msgs.length ? msgs.map((m) => ({ waitHours: m.waitHours, body: m.body ?? '', variants: cleanVariants(m.variants ?? []) })) : [{ waitHours: 24, body: '', variants: [] }]);
     } catch (e: any) { setError(e.message ?? 'Generation failed'); } finally { setGen(false); }
   }
 
@@ -161,9 +165,17 @@ export function LiAiWizard({ clientId, base = '/linkedin', launchMode = 'resume'
         {step === 4 && (
           <Sec title="Messaging" desc="Generate personalized messages, or write your own.">
             <Field label="Type"><div className="flex gap-2">{(['WITH_CONNECTION', 'DIRECT_MESSAGES'] as const).map((t) => <button key={t} onClick={() => setOutreachType(t)} className={`rounded-lg border px-3 py-1.5 text-sm ${outreachType === t ? 'border-brand-300 bg-brand-50 text-brand-700' : 'border-slate-200 text-slate-600'}`}>{t === 'WITH_CONNECTION' ? 'With Connection' : 'Direct Messages'}</button>)}</div></Field>
-            <GenBanner label="Generate Messages" hint="AI writes a connection note + follow-ups from your Business + Strategy." busy={gen} onGen={generateMessages} />
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm">
+              <span className="text-slate-600">Wordings per step (human-likeness)</span>
+              <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5">
+                {[1, 2, 3].map((n) => (
+                  <button key={n} type="button" onClick={() => setAiVariants(n)} className={`rounded-md px-3 py-1 font-medium ${aiVariants === n ? 'bg-brand-600 text-white' : 'text-slate-500'}`}>{n}</button>
+                ))}
+              </div>
+            </div>
+            <GenBanner label="Generate Messages" hint={`AI writes a connection note + follow-ups (${aiVariants} wording${aiVariants > 1 ? 's each — picked at random per lead' : ''}) from your Business + Strategy.`} busy={gen} onGen={generateMessages} />
             {outreachType === 'WITH_CONNECTION' && (
-              <div className="rounded-xl border border-brand-200 p-4"><div className="font-medium text-slate-800">Connection Request</div><textarea className="input mt-2" rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional note" /></div>
+              <div className="rounded-xl border border-brand-200 p-4"><div className="font-medium text-slate-800">Connection Request</div><textarea className="input mt-2" rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional note" /><VariantsEditor variants={noteVariants} onChange={setNoteVariants} rows={2} /></div>
             )}
             {followUps.map((f, i) => (
               <div key={i} className="rounded-xl border border-slate-200 p-4">
@@ -176,9 +188,10 @@ export function LiAiWizard({ clientId, base = '/linkedin', launchMode = 'resume'
                 </div>
                 <textarea className="input" rows={3} value={f.body} onChange={(e) => setFollowUps((fs) => fs.map((x, j) => j === i ? { ...x, body: e.target.value } : x))} />
                 <div className="mt-1 text-xs text-slate-400">Tokens: {'{first_name} {company} {title}'}</div>
+                <VariantsEditor variants={f.variants} onChange={(v) => setFollowUps((fs) => fs.map((x, j) => j === i ? { ...x, variants: v } : x))} />
               </div>
             ))}
-            <button className="btn-ghost w-full" onClick={() => setFollowUps((fs) => [...fs, { waitHours: 48, body: '' }])}>+ Add message</button>
+            <button className="btn-ghost w-full" onClick={() => setFollowUps((fs) => [...fs, { waitHours: 48, body: '', variants: [] }])}>+ Add message</button>
           </Sec>
         )}
 
@@ -215,6 +228,28 @@ export function LiAiWizard({ clientId, base = '/linkedin', launchMode = 'resume'
       </div>
 
       {modal && <LiKnowledgeModal profileId={modal.id} title={modal.title} base={base} onClose={() => { setModal(null); if (step === 1) loadBusinesses(); if (step === 2 && businessId) loadStrategies(businessId); }} />}
+    </div>
+  );
+}
+
+/** Up to 2 alternate wordings for a step; a lead gets one at random from primary + these. */
+function VariantsEditor({ variants, onChange, rows = 3 }: { variants: string[]; onChange: (v: string[]) => void; rows?: number }) {
+  return (
+    <div className="mt-2 space-y-2">
+      {variants.map((v, i) => (
+        <div key={i} className="rounded-lg border border-dashed border-slate-300 bg-slate-50/60 p-2">
+          <div className="mb-1 flex items-center justify-between text-xs text-slate-500">
+            <span>Variant {String.fromCharCode(66 + i)} · picked at random per lead</span>
+            <button type="button" className="text-rose-500" onClick={() => onChange(variants.filter((_, j) => j !== i))}>Remove</button>
+          </div>
+          <textarea className="input" rows={rows} value={v} onChange={(e) => onChange(variants.map((x, j) => (j === i ? e.target.value : x)))} placeholder="Alternate wording — same meaning, different words" />
+        </div>
+      ))}
+      {variants.length < 2 && (
+        <button type="button" className="text-sm text-brand-600 hover:text-brand-700" onClick={() => onChange([...variants, ''])}>
+          + Add wording variant (up to 2 · more human)
+        </button>
+      )}
     </div>
   );
 }

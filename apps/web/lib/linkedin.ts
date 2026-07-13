@@ -145,6 +145,8 @@ export interface LiSequenceStep {
   waitHours: number;
   body?: string | null;
   note?: string | null;
+  // Up to 2 alternate wordings; a lead gets one at random from [body/note, ...variants].
+  variants?: string[];
 }
 
 export interface LiCampaignDetail extends LiCampaign {
@@ -165,6 +167,10 @@ export interface LiCampaignDetail extends LiCampaign {
   dripEnabled?: boolean;
   dripDailyTarget?: number;
   dripBuffer?: number;
+  // Human-likeness: randomized per-lead follow-up count (0/0 = off) + grace window.
+  followUpMin?: number;
+  followUpMax?: number;
+  graceHours?: number;
   linkedInAccount?: { id?: string; fullName?: string | null; avatarUrl?: string | null };
   businessProfile?: { id: string; name: string; completeness: number } | null;
   strategy?: { id: string; name: string; completeness: number } | null;
@@ -202,6 +208,37 @@ export interface LiLeadsPage {
   pages: number;
   items: LiLead[];
   tabCounts: Record<string, number>;
+  // WDC-style cumulative pipeline counts (Connected = connected-or-beyond, …).
+  cumulativeCounts?: Record<string, number>;
+}
+
+/**
+ * Target-Audience pipeline tabs (WDC-style), cumulative by stage. `key` maps to the
+ * backend lead status; counts come from LiLeadsPage.cumulativeCounts.
+ */
+export const LI_PIPELINE_TABS: { key: string; label: string }[] = [
+  { key: '', label: 'All' },
+  { key: 'PENDING', label: 'Pending' },
+  { key: 'CONNECTION_PENDING', label: 'Sent' },
+  { key: 'CONNECTED', label: 'Connected' },
+  { key: 'MESSAGED', label: 'Messaged' },
+  { key: 'REPLIED', label: 'Replied' },
+  { key: 'CAMPAIGN_COMPLETED', label: 'Completed' },
+];
+
+/** Short badge for a lead's exact status. */
+export function leadStatusLabel(status: string): string {
+  switch (status) {
+    case 'PENDING': return 'Pending';
+    case 'CONNECTION_PENDING': return 'Invite sent';
+    case 'CONNECTED': return 'Connected';
+    case 'MESSAGED': return 'Messaged';
+    case 'REPLIED': return 'Replied';
+    case 'CAMPAIGN_COMPLETED': return 'Completed';
+    case 'BOUNCED': return 'Bounced';
+    case 'EXCLUDED': return 'Excluded';
+    default: return status;
+  }
 }
 
 export interface LiInboxItem {

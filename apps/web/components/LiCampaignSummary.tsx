@@ -49,6 +49,7 @@ export function LiCampaignSummary({ campaignId, base = '/linkedin' }: { campaign
                 <div className="font-medium text-slate-700">
                   {s.type === 'CONNECTION_REQUEST' ? 'Connection request' : 'Message'}
                   {s.waitHours > 0 && <span className="font-normal text-slate-400"> · wait {s.waitHours}h</span>}
+                  {s.variants && s.variants.length > 0 && <span className="ml-1 rounded-full bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-700">+{s.variants.length} wording{s.variants.length > 1 ? 's' : ''}</span>}
                 </div>
                 <div className="line-clamp-3 text-slate-500">{s.body || s.note || <span className="italic text-slate-300">no text</span>}</div>
               </li>
@@ -66,6 +67,11 @@ export function LiCampaignSummary({ campaignId, base = '/linkedin' }: { campaign
           </Field>
           <Field label="Daily limits"><span className="text-sm text-slate-700">{c.dailyConnectionLimit} connects · {c.dailyMessageLimit} messages</span></Field>
           <Field label="Warm-up"><span className="text-sm text-slate-700">{c.warmupEnabled ? `${c.warmupStartLimit}/day → ${c.dailyConnectionLimit}/day over ${c.warmupDays} days` : 'Off'}</span></Field>
+          {!isPortal && (
+            <Field label="Follow-up variation">
+              <span className="text-sm text-slate-700">{c.followUpMin && c.followUpMax && c.followUpMin > 0 ? `${c.followUpMin}–${c.followUpMax} msgs/lead` : 'All messages'}{c.graceHours != null ? ` · ${c.graceHours}h grace` : ''}</span>
+            </Field>
+          )}
           {!isPortal && (
             <Field label="Auto-source (drip)"><span className="text-sm text-slate-700">{c.dripEnabled ? `up to ${c.dripDailyTarget}/day · buffer ${c.dripBuffer}` : 'Off'}</span></Field>
           )}

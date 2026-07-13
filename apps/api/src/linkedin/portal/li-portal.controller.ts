@@ -11,7 +11,7 @@ import {
 class NameDto { @IsString() @MinLength(2) name!: string; }
 class AnswerDto { @IsString() @MinLength(1) text!: string; }
 class ReplyDto { @IsString() @MinLength(1) text!: string; @IsOptional() @IsIn(['MANUAL', 'AI']) source?: 'MANUAL' | 'AI'; }
-class GenMsgDto { @IsOptional() @IsEnum(LiOutreachType) outreachType?: LiOutreachType; @IsOptional() @IsInt() @Min(1) @Max(5) followUps?: number; }
+class GenMsgDto { @IsOptional() @IsEnum(LiOutreachType) outreachType?: LiOutreachType; @IsOptional() @IsInt() @Min(1) @Max(5) followUps?: number; @IsOptional() @IsInt() @Min(1) @Max(3) variants?: number; }
 class ConnectDto { @IsOptional() @IsString() successRedirect?: string; }
 
 /** Client-portal LinkedIn API (CLIENT role; ownership enforced in the service). */

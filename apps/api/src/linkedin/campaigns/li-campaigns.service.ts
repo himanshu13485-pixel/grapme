@@ -61,6 +61,9 @@ export class LiCampaignsService {
         dailyMessageLimit: num('dailyMessageLimit'),
         jitterMinSeconds: num('jitterMinSeconds'),
         jitterMaxSeconds: num('jitterMaxSeconds'),
+        followUpMin: num('followUpMin'),
+        followUpMax: num('followUpMax'),
+        graceHours: num('graceHours'),
         warmupEnabled: bool('warmupEnabled'),
         warmupStartLimit: num('warmupStartLimit'),
         warmupDays: num('warmupDays'),
@@ -75,6 +78,28 @@ export class LiCampaignsService {
 
   /** Lifecycle buckets: ongoing (draft/running/paused), completed, archived, deleted. */
   static readonly ONGOING = [LiCampaignStatus.DRAFT, LiCampaignStatus.RUNNING, LiCampaignStatus.PAUSED];
+
+  /**
+   * CUMULATIVE Target-Audience pipeline (WDC-style): picking a stage includes every
+   * lead at that stage OR beyond. E.g. "Connected" = connected, messaged, replied and
+   * campaign-completed. Terminal buckets (Replied / Completed / Bounced / Excluded) are
+   * exact. Powers both the filtered list and the pipeline counts.
+   */
+  static readonly LEAD_PIPELINE: Record<string, LiLeadStatus[]> = {
+    PENDING: [LiLeadStatus.PENDING],
+    CONNECTION_PENDING: [
+      LiLeadStatus.CONNECTION_PENDING, LiLeadStatus.CONNECTED, LiLeadStatus.MESSAGED,
+      LiLeadStatus.REPLIED, LiLeadStatus.CAMPAIGN_COMPLETED,
+    ],
+    CONNECTED: [
+      LiLeadStatus.CONNECTED, LiLeadStatus.MESSAGED, LiLeadStatus.REPLIED, LiLeadStatus.CAMPAIGN_COMPLETED,
+    ],
+    MESSAGED: [LiLeadStatus.MESSAGED, LiLeadStatus.REPLIED, LiLeadStatus.CAMPAIGN_COMPLETED],
+    REPLIED: [LiLeadStatus.REPLIED],
+    CAMPAIGN_COMPLETED: [LiLeadStatus.CAMPAIGN_COMPLETED],
+    BOUNCED: [LiLeadStatus.BOUNCED],
+    EXCLUDED: [LiLeadStatus.EXCLUDED],
+  };
   private viewFilter(view?: string) {
     if (view === 'completed') return { status: LiCampaignStatus.COMPLETED };
     if (view === 'archived') return { status: LiCampaignStatus.ARCHIVED };
@@ -139,6 +164,8 @@ export class LiCampaignsService {
       this.prisma.liSequenceStep.createMany({
         data: dto.steps.map((s, i) => ({
           campaignId: id, order: i + 1, type: s.type, waitHours: s.waitHours, body: s.body, note: s.note,
+          // Keep only non-empty alternate wordings.
+          variants: (s.variants ?? []).map((v) => (v ?? '').trim()).filter((v) => v.length > 0),
         })),
       }),
     ]);
@@ -163,6 +190,10 @@ export class LiCampaignsService {
 
   async updateSchedule(id: string, dto: UpdateLiScheduleDto) {
     await this.assertExists(id);
+    // Keep the follow-up range coherent (max never below min).
+    if (dto.followUpMin != null && dto.followUpMax != null && dto.followUpMax < dto.followUpMin) {
+      dto.followUpMax = dto.followUpMin;
+    }
     return this.prisma.liCampaign.update({ where: { id }, data: dto });
   }
 
@@ -188,9 +219,11 @@ export class LiCampaignsService {
     await this.assertExists(id);
     const page = Math.max(1, opts.page ?? 1);
     const pageSize = Math.min(100, Math.max(1, opts.pageSize ?? 25));
+    // Expand a picked stage to its cumulative set (Connected = connected-or-beyond, …).
+    const pipeline = opts.status ? LiCampaignsService.LEAD_PIPELINE[opts.status] : undefined;
     const where: Prisma.LiLeadWhereInput = {
       campaignId: id,
-      status: opts.status,
+      ...(pipeline ? { status: { in: pipeline } } : opts.status ? { status: opts.status } : {}),
       ...(opts.search
         ? { OR: [
             { fullName: { contains: opts.search, mode: 'insensitive' } },
@@ -203,8 +236,14 @@ export class LiCampaignsService {
       this.prisma.liLead.findMany({ where, orderBy: { createdAt: 'desc' }, skip: (page - 1) * pageSize, take: pageSize }),
       this.prisma.liLead.groupBy({ by: ['status'], where: { campaignId: id }, _count: true, orderBy: { status: 'asc' } }),
     ]);
-    const tabCounts = Object.fromEntries(counts.map((c) => [c.status, c._count]));
-    return { total, page, pageSize, pages: Math.ceil(total / pageSize), items, tabCounts };
+    // Raw per-status counts, plus cumulative pipeline counts for the WDC-style tabs.
+    const tabCounts = Object.fromEntries(counts.map((c) => [c.status, c._count])) as Record<string, number>;
+    const cumulativeCounts = Object.fromEntries(
+      Object.entries(LiCampaignsService.LEAD_PIPELINE).map(
+        ([tab, statuses]) => [tab, statuses.reduce((a, s) => a + (tabCounts[s] ?? 0), 0)],
+      ),
+    );
+    return { total, page, pageSize, pages: Math.ceil(total / pageSize), items, tabCounts, cumulativeCounts };
   }
 
   async stats(id: string, opts: { period?: string; from?: string; to?: string } = {}) {
@@ -240,7 +279,8 @@ export class LiCampaignsService {
       const s = Object.fromEntries(byStatus.map((r) => [r.status, r._count])) as Record<string, number>;
       const g = (k: string) => s[k] ?? 0;
       replied = g('REPLIED');
-      accepted = g('CONNECTED') + g('MESSAGED') + replied;
+      // CAMPAIGN_COMPLETED leads connected + were messaged, they just never replied.
+      accepted = g('CONNECTED') + g('MESSAGED') + g('CAMPAIGN_COMPLETED') + replied;
       sent = g('CONNECTION_PENDING') + accepted;
       totalMessages = totalMsg;
       for (const r of bySentiment) {

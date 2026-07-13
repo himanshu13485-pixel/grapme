@@ -123,7 +123,7 @@ export class LiPortalService {
   async updateSequence(userId: string, id: string, dto: UpdateLiSequenceDto) { await this.assertCampaign(userId, id); return this.campaigns.updateSequence(id, dto); }
   async updateSchedule(userId: string, id: string, dto: UpdateLiScheduleDto) { await this.assertCampaign(userId, id); return this.campaigns.updateSchedule(id, dto); }
   async generateAudience(userId: string, id: string) { await this.assertCampaign(userId, id); return this.generation.generateAudience(id); }
-  async generateMessages(userId: string, id: string, opts: { outreachType?: LiOutreachType; followUps?: number }) { await this.assertCampaign(userId, id); return this.generation.generateMessages(id, opts); }
+  async generateMessages(userId: string, id: string, opts: { outreachType?: LiOutreachType; followUps?: number; variants?: number }) { await this.assertCampaign(userId, id); return this.generation.generateMessages(id, opts); }
 
   /**
    * Client submits a built campaign for admin approval to launch. Also used when a

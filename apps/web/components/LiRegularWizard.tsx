@@ -55,12 +55,16 @@ export function LiRegularWizard({
   const [outreachType, setOutreachType] = useState<'WITH_CONNECTION' | 'DIRECT_MESSAGES'>('WITH_CONNECTION');
   const [audience, setAudience] = useState<Audience>(emptyAudience);
   const [note, setNote] = useState('');
-  const [followUps, setFollowUps] = useState([{ waitHours: 24, body: 'Hi {first_name}, thanks for connecting. Would love to share how we help teams like {company}.' }]);
+  const [noteVariants, setNoteVariants] = useState<string[]>([]);
+  const [followUps, setFollowUps] = useState<{ waitHours: number; body: string; variants: string[] }[]>([
+    { waitHours: 24, body: 'Hi {first_name}, thanks for connecting. Would love to share how we help teams like {company}.', variants: [] },
+  ]);
   const [sched, setSched] = useState({
     timezone: 'Asia/Kolkata', run247: false, workStartHour: 9, workEndHour: 18,
     workDays: [1, 2, 3, 4, 5] as number[], dailyConnectionLimit: 20, dailyMessageLimit: 20,
     warmupEnabled: true, warmupStartLimit: 5, warmupDays: 14,
     dripEnabled: false, dripDailyTarget: 25, dripBuffer: 50,
+    followUpMin: 0, followUpMax: 0, graceHours: 96,
   });
 
   useEffect(() => {
@@ -89,6 +93,9 @@ export function LiRegularWizard({
         dripEnabled: d.dripEnabled ?? prev.dripEnabled,
         dripDailyTarget: d.dripDailyTarget ?? prev.dripDailyTarget,
         dripBuffer: d.dripBuffer ?? prev.dripBuffer,
+        followUpMin: (d as any).followUpMin ?? prev.followUpMin,
+        followUpMax: (d as any).followUpMax ?? prev.followUpMax,
+        graceHours: (d as any).graceHours ?? prev.graceHours,
       }));
     }).catch(() => {});
   }, [clientId, base, editCampaignId]);
@@ -112,8 +119,10 @@ export function LiRegularWizard({
         });
         setAudience(next);
       }
-      setNote(c.steps.find((s) => s.type === 'CONNECTION_REQUEST')?.note ?? '');
-      const msgs = c.steps.filter((s) => s.type === 'MESSAGE').map((s) => ({ waitHours: s.waitHours, body: s.body ?? '' }));
+      const conn = c.steps.find((s) => s.type === 'CONNECTION_REQUEST');
+      setNote(conn?.note ?? '');
+      setNoteVariants(conn?.variants ?? []);
+      const msgs = c.steps.filter((s) => s.type === 'MESSAGE').map((s) => ({ waitHours: s.waitHours, body: s.body ?? '', variants: s.variants ?? [] }));
       if (msgs.length) setFollowUps(msgs);
       setSched((prev) => ({
         ...prev,
@@ -130,6 +139,9 @@ export function LiRegularWizard({
         dripEnabled: c.dripEnabled ?? prev.dripEnabled,
         dripDailyTarget: c.dripDailyTarget ?? prev.dripDailyTarget,
         dripBuffer: c.dripBuffer ?? prev.dripBuffer,
+        followUpMin: c.followUpMin ?? prev.followUpMin,
+        followUpMax: c.followUpMax ?? prev.followUpMax,
+        graceHours: c.graceHours ?? prev.graceHours,
       }));
     }).catch(() => {});
   }, [editCampaignId, base]);
@@ -142,10 +154,11 @@ export function LiRegularWizard({
     setCampaignId(c.id); return c.id;
   }
 
+  const cleanVariants = (v: string[]) => v.map((x) => (x ?? '').trim()).filter(Boolean).slice(0, 2);
   function buildSteps() {
     const steps: any[] = [];
-    if (outreachType === 'WITH_CONNECTION') steps.push({ type: 'CONNECTION_REQUEST', waitHours: 0, note: note || undefined });
-    followUps.forEach((f, i) => steps.push({ type: 'MESSAGE', waitHours: outreachType === 'DIRECT_MESSAGES' && i === 0 ? 0 : Number(f.waitHours), body: f.body }));
+    if (outreachType === 'WITH_CONNECTION') steps.push({ type: 'CONNECTION_REQUEST', waitHours: 0, note: note || undefined, variants: cleanVariants(noteVariants) });
+    followUps.forEach((f, i) => steps.push({ type: 'MESSAGE', waitHours: outreachType === 'DIRECT_MESSAGES' && i === 0 ? 0 : Number(f.waitHours), body: f.body, variants: cleanVariants(f.variants) }));
     return steps;
   }
 
@@ -297,6 +310,7 @@ export function LiRegularWizard({
                 <div className="font-medium text-slate-800">Connection Request</div>
                 <div className="mb-2 text-sm text-slate-500">Sent to your targets first.</div>
                 <textarea className="input" rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional note (leave blank for no note)" />
+                <VariantsEditor variants={noteVariants} onChange={setNoteVariants} rows={2} />
               </div>
             )}
             {followUps.map((f, i) => (
@@ -312,9 +326,14 @@ export function LiRegularWizard({
                 </div>
                 <textarea className="input" rows={3} value={f.body} onChange={(e) => setFollowUps((fs) => fs.map((x, j) => j === i ? { ...x, body: e.target.value } : x))} />
                 <div className="mt-1 text-xs text-slate-400">Tokens: {'{first_name} {last_name} {company} {title}'}</div>
+                <VariantsEditor variants={f.variants} onChange={(v) => setFollowUps((fs) => fs.map((x, j) => j === i ? { ...x, variants: v } : x))} />
               </div>
             ))}
-            <button className="btn-ghost w-full" onClick={() => setFollowUps((fs) => [...fs, { waitHours: 48, body: '' }])}>+ Add message</button>
+            <button className="btn-ghost w-full" onClick={() => setFollowUps((fs) => [...fs, { waitHours: 48, body: '', variants: [] }])}>+ Add message</button>
+            <p className="mt-2 text-xs text-slate-500">
+              💡 Add alternate wordings to any step — each lead gets one at random, so no message repeats to your
+              whole audience (looks human, safer for the account).
+            </p>
           </Step>
         )}
 
@@ -392,6 +411,28 @@ export function LiRegularWizard({
               )}
             </div>
             )}
+
+            {/* Human-likeness — randomized per-lead follow-up count + grace window (admin only) */}
+            {!isPortal && (
+            <div className="mt-2 rounded-xl border border-violet-200 bg-violet-50/50 p-4">
+              <div className="text-sm font-medium text-slate-800">Human-likeness</div>
+              <p className="mt-1 text-xs text-slate-500">
+                Vary how many follow-ups each lead receives so the audience isn&apos;t hit with an identical pattern.
+                Set both to 0 to send every configured message to everyone.
+              </p>
+              <div className="mt-3 grid gap-4 sm:grid-cols-3">
+                <Field label="Min follow-ups / lead"><input type="number" min={0} max={10} className="input" value={sched.followUpMin} onChange={(e) => setSched({ ...sched, followUpMin: Number(e.target.value) })} /></Field>
+                <Field label="Max follow-ups / lead"><input type="number" min={0} max={10} className="input" value={sched.followUpMax} onChange={(e) => setSched({ ...sched, followUpMax: Number(e.target.value) })} /></Field>
+                <Field label="Grace window (hours)"><input type="number" min={0} max={720} className="input" value={sched.graceHours} onChange={(e) => setSched({ ...sched, graceHours: Number(e.target.value) })} /></Field>
+              </div>
+              <div className="mt-2 text-xs text-slate-500">
+                {sched.followUpMin > 0 && sched.followUpMax >= sched.followUpMin
+                  ? `Each lead randomly gets ${sched.followUpMin}–${sched.followUpMax} of your ${followUps.length} message(s).`
+                  : `Every lead gets all ${followUps.length} message(s).`}
+                {' '}After the last message, a lead is marked <strong>Completed</strong> if there&apos;s no reply within {sched.graceHours}h (≈{Math.round(sched.graceHours / 24)}d).
+              </div>
+            </div>
+            )}
           </Step>
         )}
 
@@ -451,6 +492,27 @@ function AudField({ label, v, on, sug, ph }: { label: string; v: string[]; on: (
 }
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <div><label className="mb-1 block text-sm font-medium text-slate-600">{label}</label>{children}</div>;
+}
+/** Up to 2 alternate wordings for a step; a lead gets one at random from primary + these. */
+function VariantsEditor({ variants, onChange, rows = 3 }: { variants: string[]; onChange: (v: string[]) => void; rows?: number }) {
+  return (
+    <div className="mt-2 space-y-2">
+      {variants.map((v, i) => (
+        <div key={i} className="rounded-lg border border-dashed border-slate-300 bg-slate-50/60 p-2">
+          <div className="mb-1 flex items-center justify-between text-xs text-slate-500">
+            <span>Variant {String.fromCharCode(66 + i)} · picked at random per lead</span>
+            <button type="button" className="text-rose-500" onClick={() => onChange(variants.filter((_, j) => j !== i))}>Remove</button>
+          </div>
+          <textarea className="input" rows={rows} value={v} onChange={(e) => onChange(variants.map((x, j) => (j === i ? e.target.value : x)))} placeholder="Alternate wording — same meaning, different words" />
+        </div>
+      ))}
+      {variants.length < 2 && (
+        <button type="button" className="text-sm text-brand-600 hover:text-brand-700" onClick={() => onChange([...variants, ''])}>
+          + Add wording variant (up to 2 · more human)
+        </button>
+      )}
+    </div>
+  );
 }
 function Row({ k, v }: { k: string; v: string }) {
   return <div className="flex justify-between border-b border-slate-100 py-2 last:border-0"><span className="text-slate-500">{k}</span><span className="max-w-[60%] text-right font-medium text-slate-800">{v}</span></div>;

@@ -12,7 +12,7 @@ import { LiSchedulerService } from './li-scheduler.service';
 import { LiGenerationService } from '../campaigns/li-generation.service';
 import {
   LiJob, LiJobData, FIRST_ACCEPTANCE_CHECK_MS, RECHECK_INTERVAL_MS,
-  MAX_ACCEPTANCE_CHECKS, renderTemplate,
+  MAX_ACCEPTANCE_CHECKS, renderTemplate, pickVariant,
 } from './li-queue.constants';
 
 type LeadWithContext = NonNullable<Awaited<ReturnType<LiOutreachProcessor['loadContext']>>>;
@@ -47,7 +47,10 @@ export class LiOutreachProcessor extends WorkerHost {
     // even before the engine tick pauses the campaign. Defer, don't cancel — the
     // action is restored when the campaign resumes on reactivation.
     if (!(await this.clientCanSend(ctx.campaign.clientId))) return this.scheduler.rearm(scheduledActionId, this.scheduler.tomorrow());
-    if (ctx.lead.status === LiLeadStatus.REPLIED || ctx.lead.status === LiLeadStatus.EXCLUDED) return this.complete(scheduledActionId);
+    if (ctx.lead.status === LiLeadStatus.REPLIED || ctx.lead.status === LiLeadStatus.EXCLUDED || ctx.lead.status === LiLeadStatus.CAMPAIGN_COMPLETED) return this.complete(scheduledActionId);
+    // Grace-window close needs no provider call — handle it before the account check so
+    // a disconnected seat can't block marking finished leads as completed.
+    if ((job.name as LiJob) === LiJob.CompleteLead) return this.doCompleteLead(scheduledActionId, ctx);
     if (!ctx.account.unipileAccountId) return this.fail(scheduledActionId, 'Account not connected to provider');
 
     try {
@@ -75,7 +78,8 @@ export class LiOutreachProcessor extends WorkerHost {
 
     const step1 = ctx.steps.find((s) => s.order === 1);
     const memberId = await this.ensureMemberId(ctx);
-    const note = step1?.note ? renderTemplate(step1.note, ctx.lead) : undefined;
+    const noteRaw = pickVariant(step1?.note, step1?.variants);
+    const note = noteRaw ? renderTemplate(noteRaw, ctx.lead) : undefined;
     await this.provider.sendConnection({ accountId: ctx.account.unipileAccountId!, memberId, note });
 
     await this.prisma.liLead.update({
@@ -103,10 +107,12 @@ export class LiOutreachProcessor extends WorkerHost {
     if (sentToday >= ctx.campaign.dailyMessageLimit) return this.scheduler.rearm(actionId, this.scheduler.tomorrow());
 
     const step = ctx.steps.find((s) => s.order === stepOrder);
-    if (!step || !step.body) return this.complete(actionId);
+    if (!step) return this.complete(actionId);
+    const bodyRaw = pickVariant(step.body, step.variants);
+    if (!bodyRaw) return this.complete(actionId);
 
     const memberId = await this.ensureMemberId(ctx);
-    const text = renderTemplate(step.body, ctx.lead);
+    const text = renderTemplate(bodyRaw, ctx.lead);
     const res = await this.provider.sendMessage({ accountId: ctx.account.unipileAccountId!, memberId, text });
 
     const conversation = await this.prisma.liConversation.upsert({
@@ -123,9 +129,50 @@ export class LiOutreachProcessor extends WorkerHost {
   }
 
   private async scheduleNextMessage(ctx: LeadWithContext, afterOrder: number) {
-    const next = ctx.steps.find((s) => s.order === afterOrder + 1);
-    if (!next || next.type !== 'MESSAGE') return;
-    await this.scheduler.schedule(ctx.lead.id, LiScheduledActionType.SEND_MESSAGE, next.order, new Date(Date.now() + next.waitHours * 60 * 60 * 1000));
+    const assigned = await this.resolveAssignedMessages(ctx);
+    const messageSteps = ctx.steps.filter((s) => s.type === 'MESSAGE');
+    const next = ctx.steps.find((s) => s.order === afterOrder + 1 && s.type === 'MESSAGE');
+    if (next) {
+      // 1-based position of `next` among MESSAGE steps = its follow-up number. Only send
+      // it if it's within this lead's randomly-assigned message count.
+      const idx = messageSteps.findIndex((s) => s.order === next.order) + 1;
+      if (idx <= assigned) {
+        await this.scheduler.schedule(ctx.lead.id, LiScheduledActionType.SEND_MESSAGE, next.order, new Date(Date.now() + next.waitHours * 60 * 60 * 1000));
+        return;
+      }
+    }
+    // No further messages for this lead → open the grace window, then mark completed.
+    const graceMs = Math.max(0, ctx.campaign.graceHours ?? 96) * 60 * 60 * 1000;
+    await this.scheduler.schedule(ctx.lead.id, LiScheduledActionType.COMPLETE_LEAD, undefined, new Date(Date.now() + graceMs));
+  }
+
+  /**
+   * Draw (once, then persist) how many MESSAGE steps THIS lead receives, from the
+   * campaign's [followUpMin, followUpMax]. 0/0 (feature off) → all configured steps.
+   * Clamped to the number of steps that actually exist.
+   */
+  private async resolveAssignedMessages(ctx: LeadWithContext): Promise<number> {
+    if (ctx.lead.assignedMessages != null) return ctx.lead.assignedMessages;
+    const total = ctx.steps.filter((s) => s.type === 'MESSAGE').length;
+    const min = ctx.campaign.followUpMin ?? 0;
+    const max = ctx.campaign.followUpMax ?? 0;
+    let assigned = total;
+    if (min > 0 && max >= min) {
+      const lo = Math.min(min, total);
+      const hi = Math.min(max, total);
+      assigned = hi <= lo ? lo : lo + Math.floor(Math.random() * (hi - lo + 1));
+    }
+    await this.prisma.liLead.update({ where: { id: ctx.lead.id }, data: { assignedMessages: assigned } });
+    ctx.lead.assignedMessages = assigned;
+    return assigned;
+  }
+
+  /** Grace window elapsed: if the lead never replied, mark it CAMPAIGN_COMPLETED. */
+  private async doCompleteLead(actionId: string, ctx: LeadWithContext) {
+    if (ctx.lead.status === LiLeadStatus.CONNECTED || ctx.lead.status === LiLeadStatus.MESSAGED) {
+      await this.prisma.liLead.update({ where: { id: ctx.lead.id }, data: { status: LiLeadStatus.CAMPAIGN_COMPLETED } });
+    }
+    await this.complete(actionId);
   }
 
   private async ensureMemberId(ctx: LeadWithContext): Promise<string> {

@@ -12,6 +12,7 @@ const TYPE_TO_JOB: Record<LiScheduledActionType, LiJob> = {
   SEND_CONNECTION: LiJob.SendConnection,
   CHECK_ACCEPTANCE: LiJob.CheckAcceptance,
   SEND_MESSAGE: LiJob.SendMessage,
+  COMPLETE_LEAD: LiJob.CompleteLead,
 };
 
 @Injectable()

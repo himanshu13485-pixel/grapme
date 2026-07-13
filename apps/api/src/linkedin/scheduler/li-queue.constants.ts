@@ -2,6 +2,7 @@ export enum LiJob {
   SendConnection = 'li_send_connection',
   CheckAcceptance = 'li_check_acceptance',
   SendMessage = 'li_send_message',
+  CompleteLead = 'li_complete_lead', // grace-window close: mark CAMPAIGN_COMPLETED if no reply
   DripSource = 'li_drip_source', // repeatable tick: auto-refill campaign audiences
 }
 
@@ -33,4 +34,18 @@ export function renderTemplate(
 
 export function jitterMs(): number {
   return MIN_JITTER_MS + Math.floor(Math.random() * (MAX_JITTER_MS - MIN_JITTER_MS));
+}
+
+/**
+ * Pick one wording at random from a step's pool: the primary body/note plus any
+ * alternate `variants`. Blank entries are ignored. Returns undefined when the pool
+ * is empty. This is what makes outreach look human — the same string never repeats
+ * to the whole audience.
+ */
+export function pickVariant(primary: string | null | undefined, variants?: string[] | null): string | undefined {
+  const pool = [primary, ...(variants ?? [])]
+    .map((t) => (t ?? '').trim())
+    .filter((t) => t.length > 0);
+  if (pool.length === 0) return undefined;
+  return pool[Math.floor(Math.random() * pool.length)];
 }
