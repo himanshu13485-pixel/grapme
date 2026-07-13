@@ -386,7 +386,7 @@ export class LiCampaignsService {
   }
 
   /** Admin cross-client campaign schedule board. */
-  async globalSchedule(tenantId: string, opts: { clientSearch?: string; status?: LiCampaignStatus; range?: string; from?: string; to?: string; page?: number; pageSize?: number }) {
+  async globalSchedule(tenantId: string, opts: { clientSearch?: string; status?: LiCampaignStatus; range?: string; from?: string; to?: string; page?: number; pageSize?: number; clientId?: string }) {
     const page = Math.max(1, opts.page ?? 1);
     const pageSize = Math.min(100, Math.max(1, opts.pageSize ?? 25));
     const clientIds = await this.clientIdsForSearch(tenantId, opts.clientSearch);
@@ -395,7 +395,7 @@ export class LiCampaignsService {
     const where: Prisma.LiCampaignWhereInput = {
       tenantId,
       status: opts.status ?? { not: LiCampaignStatus.DELETED },
-      ...(clientIds ? { clientId: { in: clientIds } } : {}),
+      ...(opts.clientId ? { clientId: opts.clientId } : clientIds ? { clientId: { in: clientIds } } : {}),
     };
     // Load all matching campaigns, then annotate each with its next scheduled send
     // and apply the date-window filter — mirrors the email cohort agenda.

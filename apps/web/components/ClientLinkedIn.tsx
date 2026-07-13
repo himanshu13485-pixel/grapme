@@ -60,6 +60,7 @@ export function ClientLinkedIn({ clientId }: { clientId: string }) {
       <Tabs
         tabs={[
           { key: 'campaigns', label: 'Campaigns' },
+          { key: 'schedule', label: 'Schedule' },
           { key: 'inbox', label: 'Inbox' },
           { key: 'accounts', label: 'Accounts', count: accounts.length || undefined },
         ]}
@@ -67,6 +68,7 @@ export function ClientLinkedIn({ clientId }: { clientId: string }) {
         onChange={setView}
       />
       {view === 'campaigns' && <ClientCampaigns clientId={clientId} />}
+      {view === 'schedule' && <ClientSchedule clientId={clientId} />}
       {view === 'inbox' && <LiInbox clientId={clientId} base={BASE} />}
       {view === 'accounts' && <ClientAccounts clientId={clientId} accounts={accounts} seats={sub?.seats} reload={loadAccounts} />}
     </div>
@@ -273,6 +275,73 @@ function ClientCampaigns({ clientId }: { clientId: string }) {
         </div>
       ))}
       </div>
+      )}
+    </div>
+  );
+}
+
+/** Read-only upcoming send schedule + forecast for the client's own campaigns. */
+function ClientSchedule({ clientId }: { clientId: string }) {
+  const [data, setData] = useState<{ items: any[]; dailyTotals: any[] } | null>(null);
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  const toggle = (id: string) => setOpen((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  useEffect(() => {
+    api.get<{ items: any[]; dailyTotals: any[] }>(`${BASE}/clients/${clientId}/schedule`).then(setData).catch(() => {});
+  }, [clientId]);
+  if (!data) return <EmptyState message="Loading…" />;
+  const totals = data.dailyTotals ?? [];
+  const items = data.items ?? [];
+  const fmtDay = (d: string) => new Date(`${d}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+  const hr = (h: number) => `${h % 12 === 0 ? 12 : h % 12} ${h < 12 ? 'AM' : 'PM'}`;
+  return (
+    <div>
+      {totals.length > 0 && (
+        <div className="mb-4">
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Daily send total · 🔗 invites · ✉ messages · 👤 leads</div>
+          <div className="flex flex-wrap gap-2">
+            {totals.map((t) => (
+              <div key={t.date} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs shadow-sm">
+                <div className="font-semibold text-slate-700">{fmtDay(t.date)}</div>
+                <div className="mt-0.5 text-slate-600">🔗 {t.connections} · ✉ {t.messages}</div>
+                <div className="text-[11px] text-slate-400">👤 {t.leads} leads</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {items.length === 0 ? (
+        <EmptyState message="No scheduled sends yet. Once a campaign is running, its upcoming sends appear here." />
+      ) : (
+        <div className="card divide-y divide-slate-100">
+          {items.map((c) => (
+            <div key={c.id}>
+              <div className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  {!!c.forecast?.length && <button onClick={() => toggle(c.id)} className="text-slate-400 hover:text-slate-700">{open.has(c.id) ? '▾' : '▸'}</button>}
+                  <span className="font-medium text-slate-800">{c.name}</span>
+                  {c.seat && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">👤 {c.seat}</span>}
+                  <StatusBadge status={c.status} />
+                </div>
+                <div className="flex flex-wrap items-center gap-3 text-sm text-slate-500">
+                  <span>{c.run247 ? '24/7' : `${hr(c.workStartHour)}–${hr(c.workEndHour)}`}</span>
+                  <span>{c.nextSendAt ? `Next: ${new Date(c.nextSendAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` : 'No upcoming send'}</span>
+                </div>
+              </div>
+              {open.has(c.id) && !!c.forecast?.length && (
+                <div className="bg-slate-50/60 px-4 py-3">
+                  <div className="flex flex-wrap gap-2">
+                    {c.forecast.map((f: any) => (
+                      <div key={f.date} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs">
+                        <div className="font-medium text-slate-700">{fmtDay(f.date)}</div>
+                        <div className="mt-0.5 text-slate-500">🔗 {f.connections} · ✉ {f.messages} · 👤 {f.leads}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
