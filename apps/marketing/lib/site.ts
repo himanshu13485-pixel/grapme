@@ -8,6 +8,7 @@ export const SITE = {
   phone: '+91-9891797878',
   phoneHref: 'tel:+919891797878',
   whatsappHref: 'https://wa.me/919891797878',
+  appUrl: 'https://app.grapme.com',
   twitter: '@grapme',
 } as const;
 

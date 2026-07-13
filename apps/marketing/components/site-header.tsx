@@ -32,8 +32,11 @@ export function SiteHeader() {
         </nav>
 
         <div className="hidden items-center gap-3 lg:flex">
-          <a href={SITE.phoneHref} className="text-[14px] font-bold text-muted transition hover:text-ink">
-            {SITE.phone}
+          <a
+            href={SITE.appUrl}
+            className="text-[14px] font-bold text-muted transition hover:text-ink"
+          >
+            Log in
           </a>
           <Link
             href="/contact"
@@ -66,8 +69,8 @@ export function SiteHeader() {
                 {link.label}
               </Link>
             ))}
-            <a href={SITE.phoneHref} className="px-3 py-2.5 text-base font-bold text-ink/80 hover:text-ink">
-              {SITE.phone}
+            <a href={SITE.appUrl} className="px-3 py-2.5 text-base font-bold text-ink/80 hover:text-ink">
+              Log in
             </a>
             <Link
               href="/contact"
