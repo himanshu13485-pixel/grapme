@@ -401,12 +401,6 @@ export class LiCampaignsService {
     return this.scheduler.runNext(id);
   }
 
-  /** Admin: pull live profile + acceptance state from LinkedIn for this campaign now. */
-  async syncConnections(id: string) {
-    await this.assertExists(id);
-    return this.scheduler.syncConnections(id);
-  }
-
   /**
    * Suspend a client's LinkedIn outreach — pause every RUNNING campaign (cancels its
    * scheduled actions via the scheduler). Called when a client's plan validity expires

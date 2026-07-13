@@ -113,17 +113,7 @@ export class UnipileProvider implements LinkedInProvider {
   async isConnectionAccepted(params: { accountId: string; memberId: string }): Promise<boolean> {
     const client = this.getClient();
     const p = await client.users.getProfile({ account_id: params.accountId, identifier: params.memberId });
-    // Unipile spells the 1st-degree signal a few different ways across API versions —
-    // accept any of them so a field rename can't silently strand every lead as "Sent".
-    const dist = String(p?.network_distance ?? '').toUpperCase();
-    const accepted =
-      ['FIRST_DEGREE', 'DISTANCE_1', 'FIRST', '1'].includes(dist) ||
-      p?.is_relationship === true ||
-      p?.is_connection === true ||
-      p?.connection_degree === 1 ||
-      p?.degree === 1;
-    this.logger.log(`isConnectionAccepted member=${params.memberId} distance=${dist || '∅'} → ${accepted}`);
-    return accepted;
+    return p?.network_distance === 'FIRST_DEGREE' || p?.is_relationship === true;
   }
 
   async listMessages(params: { accountId: string; chatId: string }): Promise<ProviderMessage[]> {

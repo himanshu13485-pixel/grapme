@@ -179,14 +179,10 @@ export class LiOutreachProcessor extends WorkerHost {
     if (ctx.lead.unipileMemberId) return ctx.lead.unipileMemberId;
     if (!ctx.lead.profileUrl) throw new Error('Lead has no profileUrl to resolve');
     const member = await this.provider.resolveMember(ctx.account.unipileAccountId!, ctx.lead.profileUrl);
-    // Prefer LinkedIn's real name over the URL-slug placeholder created at import
-    // (e.g. "Sachdevahimanshu" → "Himanshu Sachdeva"). Keep an explicitly-typed name.
-    const looksLikeSlug = !ctx.lead.fullName || !/\s/.test(ctx.lead.fullName);
     await this.prisma.liLead.update({
       where: { id: ctx.lead.id },
       data: {
         unipileMemberId: member.memberId,
-        fullName: looksLikeSlug && member.fullName ? member.fullName : ctx.lead.fullName,
         firstName: ctx.lead.firstName ?? member.firstName,
         lastName: ctx.lead.lastName ?? member.lastName,
         title: ctx.lead.title ?? member.title,
