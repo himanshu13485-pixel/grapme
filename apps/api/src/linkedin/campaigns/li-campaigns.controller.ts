@@ -23,8 +23,8 @@ export class LiCampaignsController {
   }
 
   @Get()
-  list(@Query('clientId') clientId: string, @Query('status') status?: LiCampaignStatus) {
-    return this.campaigns.list(clientId, status);
+  list(@Query('clientId') clientId: string, @Query('view') view?: string) {
+    return this.campaigns.list(clientId, view);
   }
 
   @Get(':id')
@@ -110,6 +110,18 @@ export class LiCampaignsController {
   @Post(':id/delete')
   softDelete(@Param('id') id: string) {
     return this.campaigns.setStatus(id, LiCampaignStatus.DELETED);
+  }
+
+  /** Restore a soft-deleted / archived campaign back to Draft. */
+  @Post(':id/restore')
+  restore(@Param('id') id: string) {
+    return this.campaigns.restore(id);
+  }
+
+  /** Hard delete (permanent) — admin only, from the Deleted tab. */
+  @Post(':id/hard-delete')
+  hardDelete(@Param('id') id: string) {
+    return this.campaigns.hardDelete(id);
   }
 
   /** Admin test: fire the campaign's next scheduled action immediately. */

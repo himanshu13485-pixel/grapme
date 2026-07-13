@@ -1084,6 +1084,7 @@ model LiCampaign {
   mode                 LiCampaignMode   @default(REGULAR)
   outreachType         LiOutreachType   @default(WITH_CONNECTION)
   status               LiCampaignStatus @default(DRAFT)
+  deletedAt            DateTime?         // set on soft-delete; auto-purged after 30 days
   timezone             String           @default("Asia/Kolkata")
   run247               Boolean          @default(false)
   workStartHour        Int              @default(9)

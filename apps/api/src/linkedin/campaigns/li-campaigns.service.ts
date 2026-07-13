@@ -31,7 +31,8 @@ export class LiCampaignsService {
     // Enforce the plan's LinkedIn campaign limit (0 = unlimited).
     if (sub?.campaignLimit && sub.campaignLimit > 0) {
       const used = await this.prisma.liCampaign.count({
-        where: { clientId: dto.clientId, status: { not: LiCampaignStatus.DELETED } },
+        // Only ONGOING campaigns use a plan slot; completed/archived/deleted don't count.
+        where: { clientId: dto.clientId, status: { in: LiCampaignsService.ONGOING } },
       });
       if (used >= sub.campaignLimit) {
         throw new BadRequestException(`LinkedIn campaign limit reached (${sub.campaignLimit}) for this client's plan.`);
@@ -72,9 +73,19 @@ export class LiCampaignsService {
     });
   }
 
-  async list(clientId: string, status?: LiCampaignStatus) {
+  /** Lifecycle buckets: ongoing (draft/running/paused), completed, archived, deleted. */
+  static readonly ONGOING = [LiCampaignStatus.DRAFT, LiCampaignStatus.RUNNING, LiCampaignStatus.PAUSED];
+  private viewFilter(view?: string) {
+    if (view === 'completed') return { status: LiCampaignStatus.COMPLETED };
+    if (view === 'archived') return { status: LiCampaignStatus.ARCHIVED };
+    if (view === 'deleted') return { status: LiCampaignStatus.DELETED };
+    if (view === 'ongoing') return { status: { in: LiCampaignsService.ONGOING } };
+    return { status: { not: LiCampaignStatus.DELETED } }; // default (back-compat)
+  }
+
+  async list(clientId: string, view?: string) {
     const campaigns = await this.prisma.liCampaign.findMany({
-      where: { clientId, status: status ?? { not: LiCampaignStatus.DELETED } },
+      where: { clientId, ...this.viewFilter(view) },
       orderBy: { createdAt: 'desc' },
       include: {
         linkedInAccount: { select: { fullName: true, avatarUrl: true } },
@@ -297,7 +308,8 @@ export class LiCampaignsService {
 
   async setStatus(id: string, status: LiCampaignStatus) {
     await this.assertExists(id);
-    const data: { status: LiCampaignStatus; warmupStartedAt?: Date } = { status };
+    const data: { status: LiCampaignStatus; warmupStartedAt?: Date; deletedAt?: Date | null } = { status };
+    if (status === LiCampaignStatus.DELETED) data.deletedAt = new Date();
     if (status === LiCampaignStatus.RUNNING) {
       // Anchor the warm-up ramp the first time the campaign starts sending.
       const c = await this.prisma.liCampaign.findUnique({ where: { id }, select: { warmupStartedAt: true } });
@@ -313,6 +325,32 @@ export class LiCampaignsService {
       await this.scheduler.pauseCampaign(id);
     }
     return campaign;
+  }
+
+  /** Restore a soft-deleted (or archived) campaign back to DRAFT so it can be relaunched. */
+  async restore(id: string) {
+    return this.prisma.liCampaign.update({
+      where: { id },
+      data: { status: LiCampaignStatus.DRAFT, deletedAt: null },
+    });
+  }
+
+  /** Hard-delete: cancel queued jobs, then cascade-remove the campaign and all its data. */
+  async hardDelete(id: string) {
+    try { await this.scheduler.pauseCampaign(id); } catch { /* jobs may already be gone */ }
+    await this.prisma.liCampaign.delete({ where: { id } });
+    return { ok: true };
+  }
+
+  /** Cron: permanently purge campaigns soft-deleted more than 30 days ago. */
+  async purgeExpiredDeleted(): Promise<{ purged: number }> {
+    const cutoff = new Date(Date.now() - 30 * 864e5);
+    const rows = await this.prisma.liCampaign.findMany({
+      where: { status: LiCampaignStatus.DELETED, deletedAt: { lt: cutoff } },
+      select: { id: true },
+    });
+    for (const r of rows) await this.hardDelete(r.id).catch(() => undefined);
+    return { purged: rows.length };
   }
 
   /** Admin test: fire this campaign's next scheduled action immediately (cap still enforced). */

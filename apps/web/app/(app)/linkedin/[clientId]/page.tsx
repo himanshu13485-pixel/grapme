@@ -250,21 +250,29 @@ function ConnectLinkModal({ url, onClose }: { url: string; onClose: () => void }
 }
 
 // ── Campaigns ────────────────────────────────────────────────────────────
+const CAMPAIGN_TABS: [string, string][] = [['ongoing', 'Ongoing'], ['completed', 'Completed'], ['archived', 'Archived'], ['deleted', 'Deleted']];
+
 function CampaignsTab({ clientId }: { clientId: string }) {
   const [campaigns, setCampaigns] = useState<LiCampaign[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [view, setView] = useState('ongoing');
   const canDelete = useCanDelete();
 
   const load = useCallback(async () => {
-    setCampaigns(await api.get<LiCampaign[]>(`/linkedin/campaigns?clientId=${clientId}`));
+    setLoaded(false);
+    setCampaigns(await api.get<LiCampaign[]>(`/linkedin/campaigns?clientId=${clientId}&view=${view}`));
     setLoaded(true);
-  }, [clientId]);
+  }, [clientId, view]);
   useEffect(() => { load(); }, [load]);
 
   async function act(id: string, path: string) { await api.post(`/linkedin/campaigns/${id}/${path}`); load(); }
   async function del(id: string, name: string) {
-    if (!confirm(`Delete LinkedIn campaign "${name}"?\n\nIt's removed from the list and stops sending. History/analytics are kept.`)) return;
+    if (!confirm(`Delete LinkedIn campaign "${name}"?\n\nIt moves to the Deleted tab and stops sending. You can restore it, or permanently delete it there.`)) return;
     try { await act(id, 'delete'); } catch (e: any) { alert(e?.message ?? 'Failed to delete'); }
+  }
+  async function hardDel(id: string, name: string) {
+    if (!confirm(`Permanently delete "${name}"?\n\nThis CANNOT be undone — its leads, messages and history are erased.`)) return;
+    try { await act(id, 'hard-delete'); } catch (e: any) { alert(e?.message ?? 'Failed'); }
   }
   async function sendNext(id: string) {
     try {
@@ -273,42 +281,66 @@ function CampaignsTab({ clientId }: { clientId: string }) {
     } catch (e: any) { alert(e?.message ?? 'Failed'); }
   }
 
+  const emptyMsg = view === 'deleted' ? 'No deleted campaigns.' : view === 'archived' ? 'No archived campaigns.' : view === 'completed' ? 'No completed campaigns.' : 'No campaigns yet.';
+
   return (
     <div>
-      <div className="mb-3 flex justify-end">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex gap-1 overflow-x-auto">
+          {CAMPAIGN_TABS.map(([k, l]) => (
+            <button key={k} onClick={() => setView(k)} className={`shrink-0 rounded-lg px-3 py-1.5 text-sm font-medium transition ${view === k ? 'bg-brand-600 text-white' : 'text-slate-500 hover:text-slate-700'}`}>{l}</button>
+          ))}
+        </div>
         <Link href={`/linkedin/${clientId}/campaigns/new`} className="btn-primary">+ New Campaign</Link>
       </div>
       {!loaded ? <EmptyState message="Loading…" /> : campaigns.length === 0 ? (
-        <EmptyState message="No campaigns yet." />
+        <EmptyState message={emptyMsg} />
       ) : (
         <div className="card divide-y divide-slate-100">
           {campaigns.map((c) => (
             <div key={c.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex flex-wrap items-center gap-2 min-w-0">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <Link href={`/linkedin/${clientId}/campaigns/${c.id}`} className="font-medium text-slate-800 hover:text-brand-700">{c.name}</Link>
                 {c.mode === 'AI' && <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs text-brand-700">AI</span>}
                 <span className="text-xs text-slate-400">{c.outreachType === 'DIRECT_MESSAGES' ? 'Direct' : 'Connect'}</span>
                 {c.linkedInAccount?.fullName && (
                   <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500" title="LinkedIn seat">👤 {c.linkedInAccount.fullName}</span>
                 )}
+                {view === 'deleted' && c.deletedAt && <span className="text-xs text-rose-400">deleted {timeAgo(c.deletedAt)}</span>}
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-sm text-slate-500">{c._count?.leads ?? 0} leads</span>
                 <StatusBadge status={c.status} />
-                <Link href={`/linkedin/${clientId}/campaigns/${c.id}`} className="btn-ghost px-2 py-1 text-sm">View</Link>
-                {(c.status === 'DRAFT' || c.status === 'PAUSED') && (
-                  <Link href={`/linkedin/${clientId}/campaigns/${c.id}/edit`} className="btn-ghost px-2 py-1 text-sm">Edit</Link>
-                )}
-                {c.status === 'RUNNING' && (
-                  <button className="btn-ghost px-2 py-1 text-sm" onClick={() => sendNext(c.id)} title="Send the next scheduled action immediately (test)">⚡ Send next</button>
-                )}
-                {c.status === 'RUNNING' ? (
-                  <button className="btn-ghost px-2 py-1" onClick={() => act(c.id, 'pause')}>⏸ Pause</button>
+                {view === 'deleted' ? (
+                  <>
+                    <button className="btn-ghost px-2 py-1 text-sm" onClick={() => act(c.id, 'restore')}>♻ Restore</button>
+                    {canDelete && <button className="px-2 py-1 text-sm text-rose-600 hover:text-rose-800" onClick={() => hardDel(c.id, c.name)}>Delete Forever</button>}
+                  </>
+                ) : view === 'archived' ? (
+                  <>
+                    <Link href={`/linkedin/${clientId}/campaigns/${c.id}`} className="btn-ghost px-2 py-1 text-sm">View</Link>
+                    <button className="btn-ghost px-2 py-1 text-sm" onClick={() => act(c.id, 'restore')}>♻ Restore</button>
+                    {canDelete && <button className="px-2 py-1 text-sm text-rose-500 hover:text-rose-700" onClick={() => del(c.id, c.name)}>Delete</button>}
+                  </>
                 ) : (
-                  <button className="btn-primary px-2 py-1" disabled={c.status === 'ARCHIVED'} onClick={() => act(c.id, 'resume')}>▶ Start</button>
-                )}
-                {canDelete && (
-                  <button className="px-2 py-1 text-sm text-rose-500 hover:text-rose-700" onClick={() => del(c.id, c.name)}>Delete</button>
+                  <>
+                    <Link href={`/linkedin/${clientId}/campaigns/${c.id}`} className="btn-ghost px-2 py-1 text-sm">View</Link>
+                    {(c.status === 'DRAFT' || c.status === 'PAUSED') && (
+                      <Link href={`/linkedin/${clientId}/campaigns/${c.id}/edit`} className="btn-ghost px-2 py-1 text-sm">Edit</Link>
+                    )}
+                    {c.status === 'RUNNING' && (
+                      <button className="btn-ghost px-2 py-1 text-sm" onClick={() => sendNext(c.id)} title="Send the next scheduled action immediately (test)">⚡ Send next</button>
+                    )}
+                    {c.status === 'RUNNING' ? (
+                      <button className="btn-ghost px-2 py-1" onClick={() => act(c.id, 'pause')}>⏸ Pause</button>
+                    ) : (
+                      <button className="btn-primary px-2 py-1" onClick={() => act(c.id, 'resume')}>▶ Start</button>
+                    )}
+                    {(c.status === 'DRAFT' || c.status === 'PAUSED' || c.status === 'COMPLETED') && (
+                      <button className="btn-ghost px-2 py-1 text-sm" onClick={() => act(c.id, 'archive')}>Archive</button>
+                    )}
+                    {canDelete && <button className="px-2 py-1 text-sm text-rose-500 hover:text-rose-700" onClick={() => del(c.id, c.name)}>Delete</button>}
+                  </>
                 )}
               </div>
             </div>

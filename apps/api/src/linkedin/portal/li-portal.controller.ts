@@ -55,7 +55,11 @@ export class LiPortalController {
   @Post('campaigns')
   create(@CurrentUser() u: AuthUser, @Body() dto: CreateLiCampaignDto) { return this.portal.createCampaign(u.userId, u.tenantId, dto); }
   @Get('campaigns')
-  list(@CurrentUser() u: AuthUser, @Query('clientId') clientId: string) { return this.portal.listCampaigns(u.userId, clientId); }
+  list(@CurrentUser() u: AuthUser, @Query('clientId') clientId: string, @Query('view') view?: string) { return this.portal.listCampaigns(u.userId, clientId, view); }
+  @Post('campaigns/:id/delete')
+  deleteCampaign(@CurrentUser() u: AuthUser, @Param('id') id: string) { return this.portal.deleteCampaign(u.userId, id); }
+  @Post('campaigns/:id/restore')
+  restoreCampaign(@CurrentUser() u: AuthUser, @Param('id') id: string) { return this.portal.restoreCampaign(u.userId, id); }
   @Get('clients/:clientId/schedule')
   clientSchedule(@CurrentUser() u: AuthUser, @Param('clientId') clientId: string) { return this.portal.schedule(u.userId, u.tenantId, clientId); }
   @Get('campaigns/:id')

@@ -160,11 +160,13 @@ function ClientCampaigns({ clientId }: { clientId: string }) {
   const [busy, setBusy] = useState('');
   const [creating, setCreating] = useState<'choose' | 'REGULAR' | 'AI' | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
+  const [tab, setTab] = useState('ongoing');
 
   const load = useCallback(async () => {
-    setCampaigns(await api.get<LiCampaign[]>(`${BASE}/campaigns?clientId=${clientId}`));
+    setLoaded(false);
+    setCampaigns(await api.get<LiCampaign[]>(`${BASE}/campaigns?clientId=${clientId}&view=${tab}`));
     setLoaded(true);
-  }, [clientId]);
+  }, [clientId, tab]);
   useEffect(() => { load(); }, [load]);
 
   async function act(id: string, path: string, okMsg?: string) {
@@ -244,33 +246,57 @@ function ClientCampaigns({ clientId }: { clientId: string }) {
     );
   }
 
+  const CT: [string, string][] = [['ongoing', 'Ongoing'], ['completed', 'Completed'], ['archived', 'Archived'], ['deleted', 'Deleted']];
+  const delCampaign = (id: string) => { if (confirm('Delete this campaign? It moves to the Deleted tab — you can restore it there.')) act(id, 'delete'); };
+  const emptyMsg = tab === 'deleted' ? 'No deleted campaigns.' : tab === 'archived' ? 'No archived campaigns.' : tab === 'completed' ? 'No completed campaigns yet.' : 'No LinkedIn campaigns yet. Click “New Campaign” to build one — it’ll go to your account team for approval before launch.';
+
   return (
     <div>
-      <div className="mb-3 flex justify-end">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex gap-1 overflow-x-auto">
+          {CT.map(([k, l]) => (
+            <button key={k} onClick={() => setTab(k)} className={`shrink-0 rounded-lg px-3 py-1.5 text-sm font-medium transition ${tab === k ? 'bg-brand-600 text-white' : 'text-slate-500 hover:text-slate-700'}`}>{l}</button>
+          ))}
+        </div>
         <button className="btn-primary" onClick={() => setCreating('REGULAR')}>+ New Campaign</button>
       </div>
-      {campaigns.length === 0 ? (
-        <EmptyState message="No LinkedIn campaigns yet. Click “New Campaign” to build one — it’ll go to your account team for approval before launch." />
+      {!loaded ? <EmptyState message="Loading…" /> : campaigns.length === 0 ? (
+        <EmptyState message={emptyMsg} />
       ) : (
       <div className="card divide-y divide-slate-100">
       {campaigns.map((c) => (
         <div key={c.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-wrap items-center gap-2 min-w-0">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
             <span className="font-medium text-slate-800">{c.name}</span>
             {c.mode === 'AI' && <span className="rounded-full bg-brand-50 px-2 py-0.5 text-xs text-brand-700">AI</span>}
             {c.linkedInAccount?.fullName && (
               <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500" title="LinkedIn seat">👤 {c.linkedInAccount.fullName}</span>
             )}
+            {tab === 'deleted' && c.deletedAt && <span className="text-xs text-rose-400">deleted {timeAgo(c.deletedAt)}</span>}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm text-slate-500">{c._count?.leads ?? 0} leads</span>
             <StatusBadge status={c.status} />
-            <button className="btn-ghost px-2 py-1 text-sm" onClick={() => setViewId(c.id)}>View</button>
-            {c.pendingApproval && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">⏳ Under review</span>}
-            {!c.pendingApproval && (c.status === 'DRAFT' || c.status === 'PAUSED') && <button className="btn-ghost px-2 py-1 text-sm" onClick={() => setEditId(c.id)}>Edit</button>}
-            {!c.pendingApproval && c.status === 'DRAFT' && <button className="btn-primary px-2 py-1" disabled={busy !== ''} onClick={() => act(c.id, 'submit', 'Submitted for approval — your account team will review it.')}>Submit for approval</button>}
-            {c.status === 'RUNNING' && <button className="btn-ghost px-2 py-1" disabled={busy !== ''} onClick={() => act(c.id, 'pause')}>⏸ Pause</button>}
-            {c.status === 'PAUSED' && <button className="btn-primary px-2 py-1" disabled={busy !== ''} onClick={() => act(c.id, 'resume')}>▶ Resume</button>}
+            {tab === 'deleted' ? (
+              <button className="btn-ghost px-2 py-1 text-sm" disabled={busy !== ''} onClick={() => act(c.id, 'restore')}>♻ Restore</button>
+            ) : tab === 'archived' ? (
+              <>
+                <button className="btn-ghost px-2 py-1 text-sm" onClick={() => setViewId(c.id)}>View</button>
+                <button className="btn-ghost px-2 py-1 text-sm" disabled={busy !== ''} onClick={() => act(c.id, 'restore')}>♻ Restore</button>
+                <button className="px-2 py-1 text-sm text-rose-500 hover:text-rose-700" disabled={busy !== ''} onClick={() => delCampaign(c.id)}>Delete</button>
+              </>
+            ) : (
+              <>
+                <button className="btn-ghost px-2 py-1 text-sm" onClick={() => setViewId(c.id)}>View</button>
+                {c.pendingApproval && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">⏳ Under review</span>}
+                {!c.pendingApproval && (c.status === 'DRAFT' || c.status === 'PAUSED') && <button className="btn-ghost px-2 py-1 text-sm" onClick={() => setEditId(c.id)}>Edit</button>}
+                {!c.pendingApproval && c.status === 'DRAFT' && <button className="btn-primary px-2 py-1" disabled={busy !== ''} onClick={() => act(c.id, 'submit', 'Submitted for approval — your account team will review it.')}>Submit for approval</button>}
+                {c.status === 'RUNNING' && <button className="btn-ghost px-2 py-1" disabled={busy !== ''} onClick={() => act(c.id, 'pause')}>⏸ Pause</button>}
+                {c.status === 'PAUSED' && <button className="btn-primary px-2 py-1" disabled={busy !== ''} onClick={() => act(c.id, 'resume')}>▶ Resume</button>}
+                {!c.pendingApproval && (c.status === 'DRAFT' || c.status === 'PAUSED' || c.status === 'COMPLETED') && <button className="btn-ghost px-2 py-1 text-sm" disabled={busy !== ''} onClick={() => act(c.id, 'archive')}>Archive</button>}
+                <button className="px-2 py-1 text-sm text-rose-500 hover:text-rose-700" disabled={busy !== ''} onClick={() => delCampaign(c.id)}>Delete</button>
+              </>
+            )}
           </div>
         </div>
       ))}

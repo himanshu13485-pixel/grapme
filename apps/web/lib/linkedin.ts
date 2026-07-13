@@ -117,6 +117,7 @@ export interface LiCampaign {
   linkedInAccount?: { fullName?: string | null; avatarUrl?: string | null };
   _count?: { leads: number };
   pendingApproval?: boolean;
+  deletedAt?: string | null;
 }
 
 export interface LiKnowledgeStats {
