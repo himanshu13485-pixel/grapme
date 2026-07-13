@@ -4,6 +4,7 @@ import { Job } from 'bullmq';
 import { ProgramsService } from '../programs/programs.service';
 import { ClientReportService } from '../reports/client-report.service';
 import { BounceService } from '../bounce/bounce.service';
+import { LiCampaignsService } from '../linkedin/campaigns/li-campaigns.service';
 import {
   QUEUE_ENROLL,
   JOB_RUN_AUTO_COHORT,
@@ -24,6 +25,7 @@ export class EnrollProcessor extends WorkerHost {
     private programs: ProgramsService,
     private clientReports: ClientReportService,
     private bounce: BounceService,
+    private liCampaigns: LiCampaignsService,
   ) {
     super();
   }
@@ -33,8 +35,10 @@ export class EnrollProcessor extends WorkerHost {
       await this.programs.runAutoCohorts();
     } else if (job.name === JOB_SEND_REPORTS) {
       await this.clientReports.runDueReports();
-      // Piggyback the hourly sweep: auto-disable mailboxes bouncing too hard.
+      // Piggyback the hourly sweep: auto-disable mailboxes bouncing too hard, and
+      // permanently purge LinkedIn campaigns soft-deleted more than 30 days ago.
       await this.bounce.checkBounceRates();
+      await this.liCampaigns.purgeExpiredDeleted();
     } else {
       await this.programs.runDueNow();
     }
