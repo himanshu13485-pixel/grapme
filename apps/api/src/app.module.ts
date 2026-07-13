@@ -28,6 +28,7 @@ import { GreetingsModule } from './greetings/greetings.module';
 import { AssetsModule } from './assets/assets.module';
 import { LinkedinModule } from './linkedin/linkedin.module';
 import { LiPortalModule } from './linkedin/portal/li-portal.module';
+import { UpdatesModule } from './updates/updates.module';
 import { HealthController } from './health.controller';
 
 // The sending engine needs Redis. Set QUEUE_ENABLED=false to run the rest of
@@ -68,6 +69,7 @@ const engineModules = queueEnabled
     AssetsModule,
     LinkedinModule,
     LiPortalModule,
+    UpdatesModule,
     ...engineModules,
   ],
   controllers: [HealthController],

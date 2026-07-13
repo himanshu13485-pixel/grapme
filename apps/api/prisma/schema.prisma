@@ -731,12 +731,61 @@ model Notification {
   type      String
   title     String
   body      String?
+  link      String? // in-app deep link, e.g. /updates?thread=<id>
   read      Boolean  @default(false)
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([userId])
+  @@index([userId, read])
+}
+
+// ───────────────── Work / Meetings / Notification board ─────────────────
+// A two-way threaded update between the agency (admin/sub-admin) and a client.
+// Each thread is a Work / Meeting / Notification item with a rich-text body and
+// a list of plain-text replies. Per-item toggles fan out an email (and a
+// WhatsApp stub) copy, and a bell Notification row to the counterparties.
+enum UpdateType {
+  WORK
+  MEETING
+  NOTIFICATION
+}
+
+model UpdateThread {
+  id              String     @id @default(uuid())
+  tenantId        String
+  clientId        String // the client workspace this update belongs to
+  type            UpdateType @default(WORK)
+  title           String
+  bodyHtml        String // rich-text body of the opening comment
+  authorUserId    String
+  authorRole      Role
+  authorName      String // denormalized for display
+  notifyEmail     Boolean    @default(false)
+  notifyWhatsapp  Boolean    @default(false)
+  lastActivityAt  DateTime   @default(now()) // opening post or latest reply
+  lastActorUserId String? // who caused the latest activity (for unread math)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  replies UpdateReply[]
+
+  @@index([tenantId, type])
+  @@index([clientId])
+  @@index([lastActivityAt])
+}
+
+model UpdateReply {
+  id           String       @id @default(uuid())
+  threadId     String
+  thread       UpdateThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  body         String // plain-text reply
+  authorUserId String
+  authorRole   Role
+  authorName   String
+  createdAt    DateTime     @default(now())
+
+  @@index([threadId])
 }
 
 // ───────────────────────── GRAPOUT cohort engine ─────────────────────────

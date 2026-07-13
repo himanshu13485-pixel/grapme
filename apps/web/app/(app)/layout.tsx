@@ -13,10 +13,11 @@ import { api } from '@/lib/api';
 // "Email Outreach" header, the 'linkedin' group under a LinkedIn "More…" toggle.
 type NavItem = {
   href: string; label: string; icon: string; module: string;
-  admin?: boolean; superOnly?: boolean; inboxBadge?: boolean; group?: 'email' | 'linkedin';
+  admin?: boolean; superOnly?: boolean; inboxBadge?: boolean; updatesBadge?: boolean; group?: 'email' | 'linkedin';
 };
 const NAV: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: '▦', module: 'dashboard' },
+  { href: '/updates', label: 'Updates', icon: '🔔', module: 'updates', updatesBadge: true },
   { href: '/registered-clients', label: 'Registered Clients', icon: '👥', admin: true, module: 'registered-clients' },
   { href: '/clients', label: 'Clients Workspace', icon: '🏢', admin: true, module: 'clients' },
   // ── Email Outreach (collapsed under "More…") ──
@@ -52,9 +53,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   const [unread, setUnread] = useState(0);
+  const [updatesUnread, setUpdatesUnread] = useState(0);
   const [toast, setToast] = useState('');
+  const [updatesToast, setUpdatesToast] = useState('');
   const prevUnread = useRef<number | null>(null);
+  const prevUpdates = useRef<number | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const updatesToastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [clientProfiles, setClientProfiles] = useState<
     { id: string; name: string; serviceType?: string | null; plan?: string }[]
   >([]);
@@ -99,7 +104,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         if (
           !pathname.startsWith('/clients') &&
           pathname !== '/my-profile' &&
-          pathname !== '/client-home'
+          pathname !== '/client-home' &&
+          pathname !== '/updates' &&
+          pathname !== '/pricing'
         ) {
           router.replace('/client-home');
         }
@@ -150,6 +157,37 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       window.removeEventListener('inbox-read', onRead);
     };
   }, [user]);
+
+  // Notification-bell (Updates board) unread count, polled + refreshed whenever the
+  // board opens/clears a thread. Shown as a badge on the "Updates" nav item, with a
+  // toast when a genuinely new update arrives.
+  useEffect(() => {
+    if (!user) return;
+    let stop = false;
+    async function check() {
+      try {
+        const { count } = await api.get<{ count: number }>('/updates/bell/unread');
+        if (stop) return;
+        const prev = prevUpdates.current;
+        if (prev !== null && count > prev && pathname !== '/updates') {
+          setUpdatesToast(`🔔 ${count - prev} new update${count - prev === 1 ? '' : 's'}`);
+          if (updatesToastTimer.current) clearTimeout(updatesToastTimer.current);
+          updatesToastTimer.current = setTimeout(() => setUpdatesToast(''), 8000);
+        }
+        prevUpdates.current = count;
+        setUpdatesUnread(count);
+      } catch { /* ignore */ }
+    }
+    check();
+    const id = setInterval(check, 60_000);
+    const onChanged = () => check();
+    window.addEventListener('updates-changed', onChanged);
+    return () => {
+      stop = true;
+      clearInterval(id);
+      window.removeEventListener('updates-changed', onChanged);
+    };
+  }, [user, pathname]);
 
   if (loading || !user) {
     return (
@@ -231,6 +269,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               icon="▦"
               label="Dashboard"
               color={themeColor}
+            />
+            <ClientNavItem
+              href="/updates"
+              active={pathname === '/updates'}
+              icon="🔔"
+              label="Updates"
+              color={themeColor}
+              badge={updatesUnread > 0 ? (
+                <span className="rounded-full bg-rose-500 px-2 py-0.5 text-[10px] font-semibold text-white shadow">{updatesUnread}</span>
+              ) : null}
             />
 
             <div className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-wider text-white/50">
@@ -345,6 +393,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             {toast}
           </button>
         )}
+        {updatesToast && (
+          <button
+            onClick={() => { setUpdatesToast(''); router.push('/updates'); }}
+            className="fixed bottom-24 right-6 z-50 flex items-center gap-2 rounded-xl bg-slate-800 px-4 py-3 text-sm font-medium text-white shadow-lg transition hover:brightness-110"
+          >
+            {updatesToast}
+            <span className="text-xs text-slate-300">— view</span>
+          </button>
+        )}
       </div>
     );
   }
@@ -399,6 +456,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   {item.inboxBadge && unread > 0 && (
                     <span className="rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white shadow">
                       {unread}
+                    </span>
+                  )}
+                  {item.updatesBadge && updatesUnread > 0 && (
+                    <span className="rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white shadow">
+                      {updatesUnread}
                     </span>
                   )}
                 </Link>
@@ -477,6 +539,16 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         >
           {toast}
           <span className="text-xs text-indigo-200">— view</span>
+        </button>
+      )}
+      {/* New-update (bell) alert toast */}
+      {updatesToast && (
+        <button
+          onClick={() => { setUpdatesToast(''); router.push('/updates'); }}
+          className="fixed bottom-24 right-6 z-50 flex items-center gap-2 rounded-xl bg-slate-800 px-4 py-3 text-sm font-medium text-white shadow-lg transition hover:brightness-110"
+        >
+          {updatesToast}
+          <span className="text-xs text-slate-300">— view</span>
         </button>
       )}
     </div>
