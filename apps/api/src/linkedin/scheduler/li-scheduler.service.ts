@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger, OnModuleInit, Optional } from '@nestjs/comm
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import {
-  LiCampaignStatus, LiLeadStatus, LiScheduledActionStatus, LiScheduledActionType,
+  LiCampaignStatus, LiLeadStatus, LiScheduledActionStatus, LiScheduledActionType, Prisma,
 } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { QUEUE_LINKEDIN } from '../../queue/queue.constants';
@@ -164,22 +164,45 @@ export class LiSchedulerService implements OnModuleInit {
    * connection was accepted — accepted leads flip to CONNECTED and their first
    * message is scheduled immediately, instead of waiting for the periodic poll.
    */
-  async syncConnections(campaignId: string): Promise<{ ok: boolean; checked: number; accepted: number; refreshed: number; messagesSynced: number; message?: string }> {
+  // Above this many leads, run the sync in the background so the HTTP request (and the
+  // reverse-proxy) doesn't time out on hundreds of provider calls.
+  private static readonly SYNC_INLINE_MAX = 200;
+
+  async syncConnections(campaignId: string): Promise<{ ok: boolean; started?: boolean; total: number; checked: number; accepted: number; refreshed: number; messagesSynced: number; message?: string }> {
+    const zero = { checked: 0, accepted: 0, refreshed: 0, messagesSynced: 0 };
     const campaign = await this.prisma.liCampaign.findUnique({
       where: { id: campaignId },
       include: { steps: { orderBy: { order: 'asc' } }, linkedInAccount: true },
     });
-    if (!campaign) return { ok: false, checked: 0, accepted: 0, refreshed: 0, messagesSynced: 0, message: 'Campaign not found' };
+    if (!campaign) return { ok: false, total: 0, ...zero, message: 'Campaign not found' };
     const account = campaign.linkedInAccount;
     if (!account?.unipileAccountId || account.status !== 'CONNECTED') {
-      return { ok: false, checked: 0, accepted: 0, refreshed: 0, messagesSynced: 0, message: 'Connect the LinkedIn account before syncing.' };
+      return { ok: false, total: 0, ...zero, message: 'Connect the LinkedIn account before syncing.' };
     }
     const accountId = account.unipileAccountId;
-    const leads = await this.prisma.liLead.findMany({
-      where: { campaignId, status: { in: [LiLeadStatus.CONNECTION_PENDING, LiLeadStatus.CONNECTED, LiLeadStatus.MESSAGED] } },
-      include: { conversation: { select: { unipileChatId: true } } },
-      take: 100,
-    });
+    const where = { campaignId, status: { in: [LiLeadStatus.CONNECTION_PENDING, LiLeadStatus.CONNECTED, LiLeadStatus.MESSAGED] } };
+    const total = await this.prisma.liLead.count({ where });
+    if (total === 0) return { ok: true, total: 0, ...zero };
+    const firstMsg = campaign.steps.find((s) => s.type === 'MESSAGE');
+
+    // Large audiences: kick off in the background and return immediately.
+    if (total > LiSchedulerService.SYNC_INLINE_MAX) {
+      void this.runSyncAll(campaignId, accountId, where, firstMsg)
+        .catch((e) => this.logger.error(`Background sync ${campaignId} failed: ${(e as Error).message}`));
+      return { ok: true, started: true, total, ...zero };
+    }
+    const res = await this.runSyncAll(campaignId, accountId, where, firstMsg);
+    return { ok: true, total, ...res };
+  }
+
+  /** Paginate the WHOLE matching audience (cursor-based — safe as statuses change) and
+   *  for each lead: refresh profile, check acceptance, and backfill chat history. */
+  private async runSyncAll(
+    campaignId: string,
+    accountId: string,
+    where: Prisma.LiLeadWhereInput,
+    firstMsg?: { order: number; waitHours: number; type: string },
+  ): Promise<{ checked: number; accepted: number; refreshed: number; messagesSynced: number }> {
     // One pass over the seat's chats → member id → chat id, so we can backfill history
     // even for conversations the engine never started (manual messages). Best-effort.
     const chatByMember = new Map<string, string>();
@@ -191,55 +214,67 @@ export class LiSchedulerService implements OnModuleInit {
       this.logger.warn(`listChats failed for ${accountId}: ${(e as Error).message}`);
     }
 
-    const firstMsg = campaign.steps.find((s) => s.type === 'MESSAGE');
     let checked = 0; let accepted = 0; let refreshed = 0; let messagesSynced = 0;
-    for (const lead of leads) {
-      try {
-        let memberId = lead.unipileMemberId ?? undefined;
-        // Refresh the real profile (name/title/company) — best effort.
-        if (lead.profileUrl) {
-          const m = await this.provider.resolveMember(accountId, lead.profileUrl);
-          memberId = m.memberId ?? memberId;
-          const looksLikeSlug = !lead.fullName || !/\s/.test(lead.fullName);
-          await this.prisma.liLead.update({
-            where: { id: lead.id },
-            data: {
-              unipileMemberId: memberId,
-              fullName: looksLikeSlug && m.fullName ? m.fullName : lead.fullName,
-              firstName: lead.firstName ?? m.firstName,
-              lastName: lead.lastName ?? m.lastName,
-              title: lead.title ?? m.title,
-              company: lead.company ?? m.company,
-              location: lead.location ?? m.location,
-              avatarUrl: lead.avatarUrl ?? m.avatarUrl,
-            },
-          });
-          refreshed++;
-        }
-        if (lead.status === LiLeadStatus.CONNECTION_PENDING && memberId) {
-          checked++;
-          const isAcc = await this.provider.isConnectionAccepted({ accountId, memberId });
-          if (isAcc) {
-            await this.prisma.liLead.update({ where: { id: lead.id }, data: { status: LiLeadStatus.CONNECTED, connectedAt: new Date(), currentStep: 1 } });
-            await this.cancelPendingChecks(lead.id);
-            // Kick off the first message; the processor handles subsequent steps.
-            if (firstMsg && !(await this.hasScheduledMessage(lead.id))) {
-              await this.schedule(lead.id, LiScheduledActionType.SEND_MESSAGE, firstMsg.order, new Date(Date.now() + firstMsg.waitHours * 3600 * 1000));
-            }
-            accepted++;
+    let cursor: string | undefined;
+    for (;;) {
+      const batch = await this.prisma.liLead.findMany({
+        where,
+        include: { conversation: { select: { unipileChatId: true } } },
+        orderBy: { id: 'asc' },
+        take: 100,
+        ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+      });
+      if (batch.length === 0) break;
+      for (const lead of batch) {
+        try {
+          let memberId = lead.unipileMemberId ?? undefined;
+          // Refresh the real profile (name/title/company) — best effort.
+          if (lead.profileUrl) {
+            const m = await this.provider.resolveMember(accountId, lead.profileUrl);
+            memberId = m.memberId ?? memberId;
+            const looksLikeSlug = !lead.fullName || !/\s/.test(lead.fullName);
+            await this.prisma.liLead.update({
+              where: { id: lead.id },
+              data: {
+                unipileMemberId: memberId,
+                fullName: looksLikeSlug && m.fullName ? m.fullName : lead.fullName,
+                firstName: lead.firstName ?? m.firstName,
+                lastName: lead.lastName ?? m.lastName,
+                title: lead.title ?? m.title,
+                company: lead.company ?? m.company,
+                location: lead.location ?? m.location,
+                avatarUrl: lead.avatarUrl ?? m.avatarUrl,
+              },
+            });
+            refreshed++;
           }
+          if (lead.status === LiLeadStatus.CONNECTION_PENDING && memberId) {
+            checked++;
+            const isAcc = await this.provider.isConnectionAccepted({ accountId, memberId });
+            if (isAcc) {
+              await this.prisma.liLead.update({ where: { id: lead.id }, data: { status: LiLeadStatus.CONNECTED, connectedAt: new Date(), currentStep: 1 } });
+              await this.cancelPendingChecks(lead.id);
+              // Kick off the first message; the processor handles subsequent steps.
+              if (firstMsg && !(await this.hasScheduledMessage(lead.id))) {
+                await this.schedule(lead.id, LiScheduledActionType.SEND_MESSAGE, firstMsg.order, new Date(Date.now() + firstMsg.waitHours * 3600 * 1000));
+              }
+              accepted++;
+            }
+          }
+          // Backfill the full conversation (both directions) if we can find its chat —
+          // surfaces manually-exchanged messages and marks replies. If they replied, the
+          // processor skips any first message we just queued (REPLIED leads are gated).
+          const chatId = lead.conversation?.unipileChatId ?? (memberId ? chatByMember.get(memberId) : undefined);
+          if (chatId) messagesSynced += await this.inbox.backfillLeadMessages(lead.id, accountId, chatId);
+        } catch (e) {
+          this.logger.warn(`Sync failed for lead ${lead.id}: ${(e as Error).message}`);
         }
-        // Backfill the full conversation (both directions) if we can find its chat —
-        // surfaces manually-exchanged messages and marks replies. If they replied, the
-        // processor skips any first message we just queued (REPLIED leads are gated).
-        const chatId = lead.conversation?.unipileChatId ?? (memberId ? chatByMember.get(memberId) : undefined);
-        if (chatId) messagesSynced += await this.inbox.backfillLeadMessages(lead.id, accountId, chatId);
-      } catch (e) {
-        this.logger.warn(`Sync failed for lead ${lead.id}: ${(e as Error).message}`);
       }
+      cursor = batch[batch.length - 1].id;
+      if (batch.length < 100) break;
     }
     this.logger.log(`Sync campaign ${campaignId}: checked ${checked}, accepted ${accepted}, refreshed ${refreshed}, messages ${messagesSynced}`);
-    return { ok: true, checked, accepted, refreshed, messagesSynced };
+    return { checked, accepted, refreshed, messagesSynced };
   }
 
   private async cancelPendingChecks(leadId: string) {
