@@ -80,7 +80,9 @@
       "Bash(cp \"C:/Users/AYAN/Pictures/Screenshots/Screenshot 2026-07-13 184959.png\" mailboxes.png)",
       "Bash(cp \"C:/Users/AYAN/Pictures/Screenshots/Screenshot 2026-07-13 185031.png\" cohorts.png)",
       "Bash(git status *)",
-      "Bash(git fetch *)"
+      "Bash(git fetch *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git pull *)"
     ]
   }
 }
