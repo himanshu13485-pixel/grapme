@@ -129,4 +129,10 @@ export class LiCampaignsController {
   sendNext(@Param('id') id: string) {
     return this.campaigns.sendNextNow(id);
   }
+
+  /** Admin: refresh lead profiles + check acceptance from LinkedIn now (no 6h wait). */
+  @Post(':id/sync')
+  sync(@Param('id') id: string) {
+    return this.campaigns.syncConnections(id);
+  }
 }

@@ -14,9 +14,9 @@ export interface LiJobData {
   stepOrder?: number;
 }
 
-export const FIRST_ACCEPTANCE_CHECK_MS = 6 * 60 * 60 * 1000; // +6h after invite
-export const RECHECK_INTERVAL_MS = 12 * 60 * 60 * 1000; // every 12h
-export const MAX_ACCEPTANCE_CHECKS = 20; // ~10 days then give up
+export const FIRST_ACCEPTANCE_CHECK_MS = 30 * 60 * 1000; // +30 min after invite
+export const RECHECK_INTERVAL_MS = 3 * 60 * 60 * 1000; // every 3h
+export const MAX_ACCEPTANCE_CHECKS = 40; // ~5 days then give up
 
 export const MIN_JITTER_MS = 20_000;
 export const MAX_JITTER_MS = 90_000;
