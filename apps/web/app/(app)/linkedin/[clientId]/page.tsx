@@ -306,7 +306,7 @@ function CampaignsTab({ clientId }: { clientId: string }) {
                 {c.linkedInAccount?.fullName && (
                   <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500" title="LinkedIn seat">👤 {c.linkedInAccount.fullName}</span>
                 )}
-                {view === 'deleted' && c.deletedAt && <span className="text-xs text-rose-400">deleted {timeAgo(c.deletedAt)} · expires in {purgeCountdown(c.deletedAt)}d</span>}
+                {view === 'deleted' && c.deletedAt && <span className="text-xs text-rose-400">deleted {timeAgo(c.deletedAt)} · expires in {purgeCountdown(c.deletedAt)} days</span>}
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-sm text-slate-500">{c._count?.leads ?? 0} leads</span>
