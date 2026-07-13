@@ -20,6 +20,7 @@ export class CreateLiCampaignDto {
 export class UpdateLiCampaignDto {
   @IsOptional() @IsString() @MinLength(2) name?: string;
   @IsOptional() @IsEnum(LiCampaignType) type?: LiCampaignType;
+  @IsOptional() @IsEnum(LiOutreachType) outreachType?: LiOutreachType;
   @IsOptional() @IsString() timezone?: string;
 }
 

@@ -149,7 +149,7 @@ export function LiRegularWizard({
   const setAud = (k: string, v: string[]) => setAudience((a) => ({ ...a, [k]: v }));
 
   async function ensureCampaign() {
-    if (campaignId) { await api.patch(`${base}/campaigns/${campaignId}`, { name }); return campaignId; }
+    if (campaignId) { await api.patch(`${base}/campaigns/${campaignId}`, { name, outreachType }); return campaignId; }
     const c = await api.post<{ id: string }>(`${base}/campaigns`, { clientId, linkedInAccountId: accountId, name, mode: 'REGULAR', outreachType });
     setCampaignId(c.id); return c.id;
   }

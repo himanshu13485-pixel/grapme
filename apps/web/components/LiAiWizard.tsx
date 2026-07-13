@@ -49,7 +49,7 @@ export function LiAiWizard({ clientId, base = '/linkedin', launchMode = 'resume'
   const setAud = (k: string, v: string[]) => setAudience((a) => ({ ...a, [k]: v }));
 
   async function ensureCampaign() {
-    if (campaignId) { await api.patch(`${base}/campaigns/${campaignId}`, { name }); return campaignId; }
+    if (campaignId) { await api.patch(`${base}/campaigns/${campaignId}`, { name, outreachType }); return campaignId; }
     const c = await api.post<{ id: string }>(`${base}/campaigns`, { clientId, linkedInAccountId: accountId, name, mode: 'AI', outreachType, businessProfileId: businessId, strategyId });
     setCampaignId(c.id); return c.id;
   }
