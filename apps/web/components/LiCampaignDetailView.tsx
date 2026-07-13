@@ -155,9 +155,9 @@ function Details({ campaignId, base }: { campaignId: string; base: string }) {
   async function syncNow() {
     setSyncing(true);
     try {
-      const r = await api.post<{ ok: boolean; checked: number; accepted: number; refreshed: number; message?: string }>(`${base}/campaigns/${campaignId}/sync`, {});
+      const r = await api.post<{ ok: boolean; checked: number; accepted: number; refreshed: number; messagesSynced: number; message?: string }>(`${base}/campaigns/${campaignId}/sync`, {});
       alert(r.ok
-        ? `Synced from LinkedIn: ${r.refreshed} profile${r.refreshed === 1 ? '' : 's'} refreshed, ${r.accepted} newly connected (of ${r.checked} pending checked).`
+        ? `Synced from LinkedIn: ${r.refreshed} profile${r.refreshed === 1 ? '' : 's'} refreshed, ${r.accepted} newly connected (of ${r.checked} pending checked), ${r.messagesSynced} message${r.messagesSynced === 1 ? '' : 's'} imported.`
         : (r.message ?? 'Sync unavailable.'));
       setReloadKey((k) => k + 1);
     } catch (e: any) { alert(e.message ?? 'Sync failed'); }

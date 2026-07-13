@@ -131,12 +131,44 @@ export class UnipileProvider implements LinkedInProvider {
     const res = await client.messaging.getAllMessagesFromChat({ chat_id: params.chatId });
     const items = res?.items ?? res ?? [];
     return items.map((m: any) => ({
-      messageId: m.id,
+      messageId: m.id ?? m.message_id ?? '',
       chatId: params.chatId,
-      direction: m.is_sender ? 'OUTBOUND' : 'INBOUND',
-      text: m.text ?? '',
-      timestamp: m.timestamp ?? m.created_at,
+      direction: (m.is_sender ?? m.is_self) ? 'OUTBOUND' : 'INBOUND',
+      text: m.text ?? m.message ?? '',
+      timestamp: m.timestamp ?? m.created_at ?? new Date().toISOString(),
     }));
+  }
+
+  /** Collect the other participant(s)' provider ids from a Unipile chat object. */
+  private chatMemberIds(c: any): string[] {
+    const ids = new Set<string>();
+    const add = (v: any) => { if (v) ids.add(String(v)); };
+    add(c?.attendee_provider_id);
+    for (const a of (c?.attendees ?? c?.attendee_ids ?? [])) {
+      if (typeof a === 'string') add(a);
+      else add(a?.provider_id ?? a?.id);
+    }
+    for (const id of (c?.attendee_provider_ids ?? [])) add(id);
+    return [...ids];
+  }
+
+  async listChats(params: { accountId: string }): Promise<{ chatId: string; memberIds: string[] }[]> {
+    const client = this.getClient();
+    const res = await client.messaging.getAllChats({ account_id: params.accountId });
+    const items = res?.items ?? res ?? [];
+    return items
+      .map((c: any) => ({ chatId: c.id ?? c.chat_id ?? '', memberIds: this.chatMemberIds(c) }))
+      .filter((c: { chatId: string }) => c.chatId);
+  }
+
+  async getChatMemberIds(params: { accountId: string; chatId: string }): Promise<string[]> {
+    const client = this.getClient();
+    try {
+      const c = await client.messaging.getChat({ chat_id: params.chatId });
+      return this.chatMemberIds(c?.data ?? c ?? {});
+    } catch {
+      return [];
+    }
   }
 
   // Maps Unipile LinkedIn source status → our account status.

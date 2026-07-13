@@ -24,14 +24,19 @@ export class LiInboxService {
   ) {}
 
   /** Ingest an inbound message from the Unipile messaging webhook. */
-  async ingestInbound(payload: { account_id?: string; chat_id?: string; message_id?: string; text?: string; is_sender?: boolean; timestamp?: string }) {
+  async ingestInbound(payload: { account_id?: string; chat_id?: string; message_id?: string; text?: string; is_sender?: boolean; timestamp?: string; sender_id?: string }) {
     if (payload.is_sender) return { ok: true, ignored: 'outbound echo' };
     const chatId = payload.chat_id;
     const text = payload.text ?? '';
     if (!chatId) return { ok: false, reason: 'no chat_id' };
 
-    const conversation = await this.prisma.liConversation.findFirst({ where: { unipileChatId: chatId }, include: { lead: true } });
-    if (!conversation) { this.logger.warn(`Inbound for unknown chat ${chatId}`); return { ok: false, reason: 'no conversation' }; }
+    let conversation = await this.prisma.liConversation.findFirst({ where: { unipileChatId: chatId }, include: { lead: true } });
+    // Unknown chat: the lead was messaged manually (or replied before we messaged) —
+    // match the chat's participant to a lead on this seat and attach it, instead of dropping.
+    if (!conversation) {
+      conversation = await this.attachUnknownChat(payload.account_id, chatId, payload.sender_id);
+    }
+    if (!conversation) { this.logger.warn(`Inbound for unknown chat ${chatId} (no matching lead)`); return { ok: false, reason: 'no conversation' }; }
 
     if (payload.message_id) {
       const dupe = await this.prisma.liMessage.findUnique({ where: { unipileMessageId: payload.message_id } });
@@ -48,6 +53,80 @@ export class LiInboxService {
       this.prisma.liLead.update({ where: { id: conversation.leadId }, data: { status: LiLeadStatus.REPLIED, sentiment, lastReplyAt: at } }),
     ]);
     return { ok: true };
+  }
+
+  /**
+   * Resolve an inbound message on a chat we haven't seen to the right lead: match the
+   * chat's participant (from the webhook's sender id, else fetched from the provider)
+   * to a lead on the same seat, then create the conversation. Returns null if no lead
+   * matches (a genuinely unrelated chat).
+   */
+  private async attachUnknownChat(accountId: string | undefined, chatId: string, senderId?: string) {
+    if (!accountId) return null;
+    const memberIds = senderId ? [senderId] : await this.provider.getChatMemberIds({ accountId, chatId });
+    if (memberIds.length === 0) return null;
+    const lead = await this.prisma.liLead.findFirst({
+      where: {
+        unipileMemberId: { in: memberIds },
+        campaign: { linkedInAccount: { unipileAccountId: accountId } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!lead) return null;
+    const conv = await this.prisma.liConversation.upsert({
+      where: { leadId: lead.id },
+      create: { leadId: lead.id, unipileChatId: chatId },
+      update: { unipileChatId: chatId },
+      include: { lead: true },
+    });
+    return conv;
+  }
+
+  /**
+   * Pull a lead's full chat history from the provider (both directions) and reconcile
+   * it into the DB — used by the admin "Sync from LinkedIn" so manually-exchanged
+   * messages appear too. Dedupes by provider message id. Returns messages added.
+   */
+  async backfillLeadMessages(leadId: string, accountId: string, chatId: string): Promise<number> {
+    const msgs = await this.provider.listMessages({ accountId, chatId }).catch(() => []);
+    if (msgs.length === 0) return 0;
+    const conv = await this.prisma.liConversation.upsert({
+      where: { leadId },
+      create: { leadId, unipileChatId: chatId },
+      update: { unipileChatId: chatId },
+    });
+    let added = 0;
+    let lastInboundAt: Date | null = null;
+    let lastInboundText = '';
+    for (const m of msgs) {
+      if (m.messageId) {
+        const dupe = await this.prisma.liMessage.findUnique({ where: { unipileMessageId: m.messageId } });
+        if (dupe) continue;
+      }
+      const at = m.timestamp ? new Date(m.timestamp) : new Date();
+      const inbound = m.direction === 'INBOUND';
+      await this.prisma.liMessage.create({
+        data: {
+          conversationId: conv.id,
+          direction: inbound ? LiMessageDirection.INBOUND : LiMessageDirection.OUTBOUND,
+          source: inbound ? LiMessageSource.MANUAL : LiMessageSource.AUTO,
+          body: m.text,
+          unipileMessageId: m.messageId || null,
+          sentAt: at,
+        },
+      });
+      added++;
+      if (inbound && (!lastInboundAt || at > lastInboundAt)) { lastInboundAt = at; lastInboundText = m.text; }
+    }
+    // If they've replied at any point, reflect it on the conversation + lead.
+    if (lastInboundAt) {
+      await this.prisma.liConversation.update({ where: { id: conv.id }, data: { needsReply: true, lastReplyAt: lastInboundAt } });
+      await this.prisma.liLead.update({
+        where: { id: leadId },
+        data: { status: LiLeadStatus.REPLIED, lastReplyAt: lastInboundAt, sentiment: quickSentiment(lastInboundText) },
+      });
+    }
+    return added;
   }
 
   /** Unified inbox list for a client. */

@@ -24,6 +24,9 @@ export class LiInboxWebhooksController {
       text: d.text ?? d.message,
       is_sender: d.is_sender ?? false,
       timestamp: d.timestamp ?? d.created_at,
+      // Sender's LinkedIn member id (spelled a few ways) — lets us attach a reply on a
+      // chat the engine never started to the right lead, without an extra API call.
+      sender_id: d.sender?.attendee_provider_id ?? d.sender_id ?? d.from?.provider_id ?? d.attendee_provider_id,
     });
   }
 }

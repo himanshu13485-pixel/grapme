@@ -54,6 +54,12 @@ export interface ProviderSearchResult {
   cursor?: string;
 }
 
+/** A messaging chat on an account, with the other participant(s)' member ids. */
+export interface ProviderChat {
+  chatId: string;
+  memberIds: string[];
+}
+
 export const LINKEDIN_PROVIDER = Symbol('LINKEDIN_PROVIDER');
 
 export interface LinkedInProvider {
@@ -64,5 +70,9 @@ export interface LinkedInProvider {
   sendMessage(params: { accountId: string; memberId: string; text: string }): Promise<{ chatId: string; messageId: string }>;
   isConnectionAccepted(params: { accountId: string; memberId: string }): Promise<boolean>;
   listMessages(params: { accountId: string; chatId: string }): Promise<ProviderMessage[]>;
+  /** Recent chats on the account, each with the other participant(s)' member ids. */
+  listChats(params: { accountId: string }): Promise<ProviderChat[]>;
+  /** The other participant(s)' member ids for a single chat (webhook auto-attach). */
+  getChatMemberIds(params: { accountId: string; chatId: string }): Promise<string[]>;
   searchPeople(params: { accountId: string; keywords: string; cursor?: string }): Promise<ProviderSearchResult>;
 }
