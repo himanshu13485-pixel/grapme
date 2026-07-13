@@ -13,7 +13,7 @@ import { api } from '@/lib/api';
 // "Email Outreach" header, the 'linkedin' group under a LinkedIn "More…" toggle.
 type NavItem = {
   href: string; label: string; icon: string; module: string;
-  admin?: boolean; superOnly?: boolean; inboxBadge?: boolean; updatesBadge?: boolean; group?: 'email' | 'linkedin';
+  admin?: boolean; superOnly?: boolean; inboxBadge?: boolean; updatesBadge?: boolean; group?: 'email' | 'linkedin' | 'main';
 };
 const NAV: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: '▦', module: 'dashboard' },
@@ -33,17 +33,18 @@ const NAV: NavItem[] = [
   { href: '/linkedin-schedule', label: 'LinkedIn Campaigns Schedule', icon: '🗓', admin: true, module: 'linkedin-schedule' },
   { href: '/linkedin-inbox', label: 'LinkedIn Inbox', icon: '📨', admin: true, module: 'linkedin-inbox', group: 'linkedin' },
   { href: '/linkedin-leads', label: 'LinkedIn Leads', icon: '🧲', admin: true, module: 'linkedin-leads', group: 'linkedin' },
+  // ── Main Menu (collapsed folder: Approvals → WhatsApp) ──
+  { href: '/approvals', label: 'Approvals', icon: '✓', admin: true, module: 'approvals', group: 'main' },
+  { href: '/compliance', label: 'Compliance', icon: '⚖', admin: true, module: 'compliance', group: 'main' },
+  { href: '/greetings', label: 'Greetings', icon: '👋', admin: true, module: 'greetings', group: 'main' },
+  { href: '/sub-admins', label: 'Sub Admins', icon: '⚇', admin: true, superOnly: true, module: 'sub-admins', group: 'main' },
+  { href: '/activity-logs', label: 'Activity Logs', icon: '◷', admin: true, module: 'activity-logs', group: 'main' },
+  { href: '/pricing', label: 'Membership', icon: '🪙', module: 'pricing', group: 'main' },
+  { href: '/plans', label: 'Set Membership', icon: '🏷', admin: true, module: 'plans', group: 'main' },
+  { href: '/plan-requests', label: 'Plan Upgrade Request', icon: '🧾', admin: true, module: 'plan-requests', group: 'main' },
+  { href: '/billing', label: 'Payment / Billing', icon: '💳', admin: true, module: 'billing', group: 'main' },
+  { href: '/whatsapp', label: 'WhatsApp', icon: '💬', admin: true, module: 'whatsapp', group: 'main' },
   // ── everything else ──
-  { href: '/approvals', label: 'Approvals', icon: '✓', admin: true, module: 'approvals' },
-  { href: '/compliance', label: 'Compliance', icon: '⚖', admin: true, module: 'compliance' },
-  { href: '/greetings', label: 'Greetings', icon: '👋', admin: true, module: 'greetings' },
-  { href: '/sub-admins', label: 'Sub Admins', icon: '⚇', admin: true, superOnly: true, module: 'sub-admins' },
-  { href: '/activity-logs', label: 'Activity Logs', icon: '◷', admin: true, module: 'activity-logs' },
-  { href: '/pricing', label: 'Membership', icon: '🪙', module: 'pricing' },
-  { href: '/plans', label: 'Set Membership', icon: '🏷', admin: true, module: 'plans' },
-  { href: '/plan-requests', label: 'Plan Upgrade Request', icon: '🧾', admin: true, module: 'plan-requests' },
-  { href: '/billing', label: 'Payment / Billing', icon: '💳', admin: true, module: 'billing' },
-  { href: '/whatsapp', label: 'WhatsApp', icon: '💬', admin: true, module: 'whatsapp' },
   { href: '/my-profile', label: 'My Account', icon: '👤', module: 'my-profile' },
 ];
 
@@ -67,6 +68,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [emailOpen, setEmailOpen] = useState(false);
   const [liMoreOpen, setLiMoreOpen] = useState(false);
+  const [mainOpen, setMainOpen] = useState(false);
 
   useEffect(() => {
     if (!loading && !user) router.replace('/login');
@@ -77,10 +79,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   // Auto-open a collapsed nav group when the current route lives inside it.
   useEffect(() => {
-    const inGroup = (g: 'email' | 'linkedin') =>
+    const inGroup = (g: 'email' | 'linkedin' | 'main') =>
       NAV.filter((n) => n.group === g).some((n) => pathname.startsWith(n.href));
     if (inGroup('email')) setEmailOpen(true);
     if (inGroup('linkedin')) setLiMoreOpen(true);
+    if (inGroup('main')) setMainOpen(true);
   }, [pathname]);
 
   // Client portal is themed by the client's membership colour.
@@ -482,6 +485,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             const els: React.ReactNode[] = [];
             let emailHeaderDone = false;
             let liMoreDone = false;
+            let mainHeaderDone = false;
             for (const item of nav) {
               if (item.group === 'email') {
                 if (!emailHeaderDone) {
@@ -495,6 +499,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   els.push(groupToggle('li-more', '⋯', 'More…', liMoreOpen, () => setLiMoreOpen((o) => !o)));
                 }
                 if (liMoreOpen) els.push(renderLink(item));
+              } else if (item.group === 'main') {
+                if (!mainHeaderDone) {
+                  mainHeaderDone = true;
+                  els.push(groupToggle('main-hdr', '📂', 'Main Menu', mainOpen, () => setMainOpen((o) => !o)));
+                }
+                if (mainOpen) els.push(renderLink(item));
               } else {
                 els.push(renderLink(item));
               }
