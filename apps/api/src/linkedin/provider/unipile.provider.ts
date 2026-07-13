@@ -202,6 +202,35 @@ export class UnipileProvider implements LinkedInProvider {
     return { people, cursor: data?.cursor };
   }
 
+  /** The account's own 1st-degree connections (one page). Raw REST — /users/relations. */
+  async listRelations(params: { accountId: string; cursor?: string }): Promise<{ people: ProviderMember[]; cursor?: string }> {
+    const key = (this.config.get<string>('UNIPILE_API_KEY') ?? '').trim();
+    const qs = new URLSearchParams({ account_id: params.accountId, limit: '100' });
+    if (params.cursor) qs.set('cursor', params.cursor);
+    const res = await fetch(`${this.baseUrl()}/api/v1/users/relations?${qs}`, {
+      method: 'GET',
+      headers: { 'X-API-KEY': key, accept: 'application/json' },
+    });
+    if (!res.ok) throw new Error(`Unipile relations failed (${res.status}): ${(await res.text()).slice(0, 200)}`);
+    const data: any = await res.json();
+    const items: any[] = data?.items ?? data?.relations ?? data?.data ?? [];
+    const people: ProviderMember[] = items.map((p) => {
+      const ident = p.public_identifier ?? p.public_id;
+      return {
+        memberId: String(p.member_id ?? p.provider_id ?? p.id ?? ident ?? ''),
+        fullName: p.name ?? ([p.first_name, p.last_name].filter(Boolean).join(' ') || undefined),
+        firstName: p.first_name,
+        lastName: p.last_name,
+        title: p.headline ?? undefined,
+        company: p.current_positions?.[0]?.company ?? p.work_experience?.[0]?.company ?? this.companyFromHeadline(p.headline) ?? undefined,
+        location: p.location ?? undefined,
+        profileUrl: p.public_profile_url ?? p.profile_url ?? (ident ? `https://www.linkedin.com/in/${ident}` : undefined),
+        avatarUrl: p.profile_picture_url ?? undefined,
+      };
+    }).filter((m) => m.memberId);
+    return { people, cursor: data?.cursor };
+  }
+
   /** Best-effort company from a LinkedIn headline: text after " at "/" @ " up to a separator. */
   private companyFromHeadline(headline?: string): string | undefined {
     if (!headline) return undefined;

@@ -148,6 +148,7 @@ function Details({ campaignId, base }: { campaignId: string; base: string }) {
   const [importing, setImporting] = useState(false);
   const [sourcing, setSourcing] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [importingConns, setImportingConns] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [q, setQ] = useState('');
   const [dq, setDq] = useState('');
@@ -164,6 +165,19 @@ function Details({ campaignId, base }: { campaignId: string; base: string }) {
       setReloadKey((k) => k + 1);
     } catch (e: any) { alert(e.message ?? 'Sync failed'); }
     finally { setSyncing(false); }
+  }
+
+  async function importConnections() {
+    if (!confirm("Import this seat's existing LinkedIn connections into this campaign as ready-to-message leads? (Best used on a Direct Messages campaign.)")) return;
+    setImportingConns(true);
+    try {
+      const r = await api.post<{ imported: number; creditsCharged?: number }>(`${base}/campaigns/${campaignId}/import-connections`, {});
+      alert(r.imported > 0
+        ? `Imported ${r.imported} connection${r.imported === 1 ? '' : 's'}.${r.creditsCharged ? ' · 1 credit used.' : ''} Run more anytime — the daily send cap paces outreach.`
+        : 'No new connections found to import (all are already in this campaign).');
+      setTab('all'); setPage(1); setReloadKey((k) => k + 1);
+    } catch (e: any) { alert(e.message ?? 'Import failed'); }
+    finally { setImportingConns(false); }
   }
 
   async function sourceFromAudience() {
@@ -206,6 +220,11 @@ function Details({ campaignId, base }: { campaignId: string; base: string }) {
           {!isPortal && (
             <button className="btn-ghost whitespace-nowrap" disabled={syncing} onClick={syncNow} title="Refresh names + check who accepted, from LinkedIn">
               {syncing ? 'Syncing…' : '↻ Sync from LinkedIn'}
+            </button>
+          )}
+          {!isPortal && (
+            <button className="btn-ghost whitespace-nowrap" disabled={importingConns} onClick={importConnections} title="Import this seat's existing 1st-degree connections">
+              {importingConns ? 'Importing…' : '⇲ Import connections'}
             </button>
           )}
           {!isPortal && (

@@ -70,6 +70,8 @@ export interface LinkedInProvider {
   sendMessage(params: { accountId: string; memberId: string; text: string }): Promise<{ chatId: string; messageId: string }>;
   isConnectionAccepted(params: { accountId: string; memberId: string }): Promise<boolean>;
   listMessages(params: { accountId: string; chatId: string }): Promise<ProviderMessage[]>;
+  /** The account's own 1st-degree connections (paginated), for bulk import. */
+  listRelations(params: { accountId: string; cursor?: string }): Promise<{ people: ProviderMember[]; cursor?: string }>;
   /** Recent chats on the account, each with the other participant(s)' member ids. */
   listChats(params: { accountId: string }): Promise<ProviderChat[]>;
   /** The other participant(s)' member ids for a single chat (webhook auto-attach). */

@@ -1,7 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { ApprovalEntity, ApprovalStatus, LiCampaignStatus, LiLeadStatus, Prisma } from '@prisma/client';
+import { ApprovalEntity, ApprovalStatus, LiCampaignStatus, LiCreditReason, LiLeadStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LiSchedulerService } from '../scheduler/li-scheduler.service';
+import { LinkedInSubscriptionService } from '../subscription/linkedin-subscription.service';
 import {
   CreateLiCampaignDto, UpdateLiCampaignDto, UpdateLiSequenceDto,
   UpsertLiAudienceDto, UpdateLiScheduleDto, ImportLiLeadsDto,
@@ -14,6 +15,7 @@ export class LiCampaignsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly scheduler: LiSchedulerService,
+    private readonly subs: LinkedInSubscriptionService,
   ) {}
 
   async create(tenantId: string, dto: CreateLiCampaignDto) {
@@ -199,6 +201,15 @@ export class LiCampaignsService {
 
   async importLeads(id: string, dto: ImportLiLeadsDto) {
     await this.assertExists(id);
+    const campaign = await this.prisma.liCampaign.findUnique({ where: { id }, select: { tenantId: true, clientId: true } });
+    if (!campaign) throw new BadRequestException('Campaign not found');
+    // Optional per-client credit metering: 1 credit per import run (same as sourcing).
+    const client = await this.prisma.client.findUnique({ where: { id: campaign.clientId }, select: { linkedInCreditMetering: true } });
+    const metered = !!client?.linkedInCreditMetering;
+    if (metered) {
+      const sub = await this.subs.getOrCreate(campaign.tenantId, campaign.clientId);
+      if (sub.creditsBalance < 1) throw new BadRequestException('Insufficient LinkedIn credits to import leads.');
+    }
     const rows: Prisma.LiLeadCreateManyInput[] = dto.leads.map((l) => ({
       campaignId: id,
       fullName: l.fullName,
@@ -212,7 +223,12 @@ export class LiCampaignsService {
       currentStep: 0,
     }));
     const res = await this.prisma.liLead.createMany({ data: rows });
-    return { imported: res.count };
+    let creditsCharged = 0;
+    if (metered && res.count > 0) {
+      await this.subs.debit(campaign.tenantId, campaign.clientId, 1, LiCreditReason.LEAD_SOURCING, { refType: 'LiCampaign', refId: id });
+      creditsCharged = 1;
+    }
+    return { imported: res.count, creditsCharged };
   }
 
   async leads(id: string, opts: { status?: LiLeadStatus; page?: number; pageSize?: number; search?: string }) {

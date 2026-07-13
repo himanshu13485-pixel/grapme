@@ -92,6 +92,12 @@ export class LiCampaignsController {
     return this.generation.sourceLeads(id, limit ? Number(limit) : undefined);
   }
 
+  /** Bulk-import the seat's own existing 1st-degree connections into this campaign. */
+  @Post(':id/import-connections')
+  importConnections(@Param('id') id: string, @Query('limit') limit?: string) {
+    return this.generation.importConnections(id, limit ? Number(limit) : undefined);
+  }
+
   @Post(':id/pause')
   pause(@Param('id') id: string) {
     return this.campaigns.setStatus(id, LiCampaignStatus.PAUSED);

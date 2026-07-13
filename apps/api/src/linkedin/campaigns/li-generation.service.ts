@@ -97,6 +97,70 @@ export class LiGenerationService {
     return { sourced: r.count, keywords, creditsCharged };
   }
 
+  /**
+   * Bulk-import the seat's own 1st-degree connections into the campaign's audience,
+   * deduped against the current leads. They come in already-connected (connectedAt set)
+   * so a Direct-Messages campaign reaches them without an invite. Charges 1 credit per
+   * run when the client's LinkedIn credit metering is on (same as search sourcing).
+   */
+  async importConnections(campaignId: string, limit?: number) {
+    const campaign = await this.prisma.liCampaign.findUnique({ where: { id: campaignId }, include: { linkedInAccount: true } });
+    if (!campaign) throw new BadRequestException('Campaign not found');
+    const account = campaign.linkedInAccount;
+    if (!account?.unipileAccountId || account.status !== 'CONNECTED') {
+      throw new BadRequestException('This campaign needs a CONNECTED LinkedIn account before importing connections.');
+    }
+
+    const client = await this.prisma.client.findUnique({ where: { id: campaign.clientId }, select: { linkedInCreditMetering: true } });
+    const metered = !!client?.linkedInCreditMetering;
+    if (metered) {
+      const sub = await this.subs.getOrCreate(campaign.tenantId, campaign.clientId);
+      if (sub.creditsBalance < 1) throw new BadRequestException('Insufficient LinkedIn credits to import connections.');
+    }
+
+    // Import up to `limit` new connections per run (default 500) — the daily send cap
+    // governs actual outreach pace, so a big list just drips out safely over time.
+    const cap = Math.min(2000, Math.max(1, limit ?? 500));
+    const existing = await this.prisma.liLead.findMany({ where: { campaignId }, select: { profileUrl: true, unipileMemberId: true } });
+    const seenSlugs = new Set(existing.map((l) => this.leadSlug(l.profileUrl)).filter(Boolean) as string[]);
+    const seenMembers = new Set(existing.map((l) => l.unipileMemberId).filter(Boolean) as string[]);
+
+    const rows: Prisma.LiLeadCreateManyInput[] = [];
+    let cursor: string | undefined;
+    for (let page = 0; page < 40 && rows.length < cap; page++) {
+      const res = await this.provider.listRelations({ accountId: account.unipileAccountId, cursor });
+      for (const p of res.people) {
+        if (p.memberId && seenMembers.has(p.memberId)) continue;
+        const slug = this.leadSlug(p.profileUrl);
+        if (slug && seenSlugs.has(slug)) continue;
+        if (p.memberId) seenMembers.add(p.memberId);
+        if (slug) seenSlugs.add(slug);
+        rows.push({
+          campaignId,
+          fullName: p.fullName ?? (slug ? this.nameFromSlug(slug) : 'LinkedIn member'),
+          firstName: p.firstName ?? undefined, lastName: p.lastName ?? undefined,
+          title: p.title ?? undefined, company: p.company ?? undefined, location: p.location ?? undefined,
+          profileUrl: p.profileUrl ?? undefined, unipileMemberId: p.memberId ?? undefined, avatarUrl: p.avatarUrl ?? undefined,
+          // Already a 1st-degree connection: mark connectedAt; keep status PENDING so the
+          // engine schedules the first (direct) message via startCampaign.
+          status: LiLeadStatus.PENDING, currentStep: 0, connectedAt: new Date(),
+        });
+        if (rows.length >= cap) break;
+      }
+      if (!res.cursor || res.people.length === 0) break;
+      cursor = res.cursor;
+    }
+    if (rows.length === 0) return { imported: 0, creditsCharged: 0 };
+    const r = await this.prisma.liLead.createMany({ data: rows });
+
+    let creditsCharged = 0;
+    if (metered) {
+      await this.subs.debit(campaign.tenantId, campaign.clientId, 1, LiCreditReason.LEAD_SOURCING, { refType: 'LiCampaign', refId: campaignId });
+      creditsCharged = 1;
+    }
+    return { imported: r.count, creditsCharged };
+  }
+
   async generateAudience(campaignId: string) {
     const { business, strategy } = await this.loadKnowledge(campaignId);
     let spec: UpsertLiAudienceDto;
