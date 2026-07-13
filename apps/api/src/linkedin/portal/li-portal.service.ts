@@ -106,7 +106,9 @@ export class LiPortalService {
   async listCampaigns(userId: string, clientId: string, view?: string) { await this.assertOwnsClient(userId, clientId); return this.campaigns.list(clientId, view); }
   /** Client soft-deletes their own campaign (goes to the Deleted tab; restorable). */
   async deleteCampaign(userId: string, id: string) { await this.assertCampaign(userId, id); return this.campaigns.setStatus(id, LiCampaignStatus.DELETED); }
-  /** Client restores their own soft-deleted campaign back to Draft. */
+  /** Client archives their own campaign (moves it to the Archived tab). */
+  async archiveCampaign(userId: string, id: string) { await this.assertCampaign(userId, id); return this.campaigns.setStatus(id, LiCampaignStatus.ARCHIVED); }
+  /** Client restores their own soft-deleted / archived campaign back to Draft. */
   async restoreCampaign(userId: string, id: string) { await this.assertCampaign(userId, id); return this.campaigns.restore(id); }
   /** Read-only upcoming send schedule + forecast for the client's own campaigns. */
   async schedule(userId: string, tenantId: string, clientId: string) {
