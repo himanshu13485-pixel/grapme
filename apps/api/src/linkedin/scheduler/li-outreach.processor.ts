@@ -33,6 +33,8 @@ export class LiOutreachProcessor extends WorkerHost {
   async process(job: Job<LiJobData>): Promise<void> {
     // Repeatable drip tick — no scheduled action; refill campaign audiences.
     if (job.name === LiJob.DripSource) { await this.dripSweep(); return; }
+    // Repeatable sync tick — re-sync acceptance + messages for running campaigns.
+    if (job.name === LiJob.SyncSweep) { await this.scheduler.syncSweep(); return; }
 
     const { scheduledActionId } = job.data;
     const action = await this.prisma.liScheduledAction.findUnique({ where: { id: scheduledActionId } });

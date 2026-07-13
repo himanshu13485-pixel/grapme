@@ -4,9 +4,11 @@ export enum LiJob {
   SendMessage = 'li_send_message',
   CompleteLead = 'li_complete_lead', // grace-window close: mark CAMPAIGN_COMPLETED if no reply
   DripSource = 'li_drip_source', // repeatable tick: auto-refill campaign audiences
+  SyncSweep = 'li_sync_sweep', // repeatable tick: re-sync acceptance + messages for running campaigns
 }
 
 export const DRIP_SCAN_MS = 60 * 60 * 1000; // sweep drip campaigns hourly
+export const SYNC_SWEEP_MS = 30 * 60 * 1000; // re-sync running campaigns every 30 min
 
 export interface LiJobData {
   scheduledActionId: string;

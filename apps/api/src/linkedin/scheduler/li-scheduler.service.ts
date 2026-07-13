@@ -8,7 +8,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { QUEUE_LINKEDIN } from '../../queue/queue.constants';
 import { LINKEDIN_PROVIDER, LinkedInProvider } from '../provider/linkedin-provider.interface';
 import { LiInboxService } from '../inbox/li-inbox.service';
-import { LiJob, LiJobData, DRIP_SCAN_MS } from './li-queue.constants';
+import { LiJob, LiJobData, DRIP_SCAN_MS, SYNC_SWEEP_MS } from './li-queue.constants';
 
 const TYPE_TO_JOB: Record<LiScheduledActionType, LiJob> = {
   SEND_CONNECTION: LiJob.SendConnection,
@@ -33,7 +33,37 @@ export class LiSchedulerService implements OnModuleInit {
   async onModuleInit() {
     if (!this.queue) return;
     await this.queue.add(LiJob.DripSource, {}, { repeat: { every: DRIP_SCAN_MS }, removeOnComplete: true, removeOnFail: true });
-    this.logger.log(`LinkedIn drip-sourcer registered (every ${DRIP_SCAN_MS}ms)`);
+    await this.queue.add(LiJob.SyncSweep, {}, { repeat: { every: SYNC_SWEEP_MS }, removeOnComplete: true, removeOnFail: true });
+    this.logger.log(`LinkedIn drip-sourcer (every ${DRIP_SCAN_MS}ms) + sync sweep (every ${SYNC_SWEEP_MS}ms) registered`);
+  }
+
+  /**
+   * Repeatable sweep: re-sync acceptance + message history for every RUNNING campaign,
+   * so the panel stays current even if the Unipile messaging webhook misses events or
+   * isn't configured. Runs inline (it's already inside a background job).
+   */
+  async syncSweep() {
+    const running = await this.prisma.liCampaign.findMany({ where: { status: LiCampaignStatus.RUNNING }, select: { id: true } });
+    for (const c of running) {
+      try {
+        await this.syncCampaignInline(c.id);
+      } catch (e) {
+        this.logger.warn(`Sync sweep failed for campaign ${c.id}: ${(e as Error).message}`);
+      }
+    }
+  }
+
+  /** Guard + run the full sync for one campaign, awaited (used by the sweep). */
+  private async syncCampaignInline(campaignId: string) {
+    const campaign = await this.prisma.liCampaign.findUnique({
+      where: { id: campaignId },
+      include: { steps: { orderBy: { order: 'asc' } }, linkedInAccount: true },
+    });
+    const account = campaign?.linkedInAccount;
+    if (!campaign || !account?.unipileAccountId || account.status !== 'CONNECTED') return;
+    const where = { campaignId, status: { in: [LiLeadStatus.CONNECTION_PENDING, LiLeadStatus.CONNECTED, LiLeadStatus.MESSAGED] } };
+    const firstMsg = campaign.steps.find((s) => s.type === 'MESSAGE');
+    await this.runSyncAll(campaignId, account.unipileAccountId, where, firstMsg);
   }
 
   /** Launch or resume a campaign: enqueue the first action per lead + re-attach orphans. */
@@ -228,11 +258,12 @@ export class LiSchedulerService implements OnModuleInit {
       for (const lead of batch) {
         try {
           let memberId = lead.unipileMemberId ?? undefined;
-          // Refresh the real profile (name/title/company) — best effort.
-          if (lead.profileUrl) {
+          const looksLikeSlug = !lead.fullName || !/\s/.test(lead.fullName);
+          // Resolve the real profile only when we lack a member id or the name is still a
+          // URL slug — avoids re-fetching clean profiles on every 30-min sweep.
+          if (lead.profileUrl && (!memberId || looksLikeSlug)) {
             const m = await this.provider.resolveMember(accountId, lead.profileUrl);
             memberId = m.memberId ?? memberId;
-            const looksLikeSlug = !lead.fullName || !/\s/.test(lead.fullName);
             await this.prisma.liLead.update({
               where: { id: lead.id },
               data: {
