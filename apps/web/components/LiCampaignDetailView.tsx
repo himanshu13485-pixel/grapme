@@ -147,9 +147,22 @@ function Details({ campaignId, base }: { campaignId: string; base: string }) {
   const [data, setData] = useState<LiLeadsPage | null>(null);
   const [importing, setImporting] = useState(false);
   const [sourcing, setSourcing] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [q, setQ] = useState('');
   const [dq, setDq] = useState('');
+
+  async function syncNow() {
+    setSyncing(true);
+    try {
+      const r = await api.post<{ ok: boolean; checked: number; accepted: number; refreshed: number; message?: string }>(`${base}/campaigns/${campaignId}/sync`, {});
+      alert(r.ok
+        ? `Synced from LinkedIn: ${r.refreshed} profile${r.refreshed === 1 ? '' : 's'} refreshed, ${r.accepted} newly connected (of ${r.checked} pending checked).`
+        : (r.message ?? 'Sync unavailable.'));
+      setReloadKey((k) => k + 1);
+    } catch (e: any) { alert(e.message ?? 'Sync failed'); }
+    finally { setSyncing(false); }
+  }
 
   async function sourceFromAudience() {
     setSourcing(true);
@@ -188,6 +201,11 @@ function Details({ campaignId, base }: { campaignId: string; base: string }) {
         <h3 className="text-lg font-semibold text-slate-800">Target Audience</h3>
         <div className="flex items-center gap-2">
           <input className="input w-56" placeholder="Search targets…" value={q} onChange={(e) => setQ(e.target.value)} />
+          {!isPortal && (
+            <button className="btn-ghost whitespace-nowrap" disabled={syncing} onClick={syncNow} title="Refresh names + check who accepted, from LinkedIn">
+              {syncing ? 'Syncing…' : '↻ Sync from LinkedIn'}
+            </button>
+          )}
           {!isPortal && (
             <button className="btn-primary whitespace-nowrap" disabled={sourcing} onClick={sourceFromAudience}>
               {sourcing ? 'Sourcing…' : '✦ Source from audience'}
