@@ -18,6 +18,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 });
     }
   }
-  revalidateTag('public-plans');
-  return NextResponse.json({ ok: true, revalidated: 'public-plans', at: Date.now() });
+  const body = (await req.json().catch(() => ({}))) as { tag?: string };
+  const tags = body.tag ? [body.tag] : ['public-plans', 'public-posts'];
+  tags.forEach((t) => revalidateTag(t));
+  return NextResponse.json({ ok: true, revalidated: tags, at: Date.now() });
 }

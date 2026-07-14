@@ -1,23 +1,30 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 /**
  * Lightweight rich-text editor (contentEditable + execCommand toolbar). Emits HTML
  * via onChange. The server sanitizes the HTML before storing, so this stays simple.
+ *
+ * Pass `onImageUpload` to enable an "Image" button that uploads a picked file and
+ * inserts it inline (returns the image URL to embed).
  */
 export function RichText({
   value,
   onChange,
   placeholder,
   minHeight = 130,
+  onImageUpload,
 }: {
   value: string;
   onChange: (html: string) => void;
   placeholder?: string;
   minHeight?: number;
+  onImageUpload?: (file: File) => Promise<string>;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
 
   // Seed the editor once on mount (and when the value is externally reset to empty),
   // never on every keystroke — that would fight the caret position.
@@ -36,6 +43,21 @@ export function RichText({
     const url = window.prompt('Link URL (https://…):');
     if (url) cmd('createLink', /^https?:\/\//i.test(url) ? url : `https://${url}`);
   };
+  async function pickImage(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !onImageUpload) return;
+    setUploading(true);
+    try {
+      const url = await onImageUpload(file);
+      ref.current?.focus();
+      cmd('insertHTML', `<img src="${url}" alt="" style="max-width:100%;height:auto;border-radius:8px;" />`);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Image upload failed');
+    } finally {
+      setUploading(false);
+    }
+  }
 
   return (
     <div className="rounded-lg border border-slate-300 focus-within:border-brand-400 focus-within:ring-2 focus-within:ring-brand-100">
@@ -47,8 +69,16 @@ export function RichText({
         <Btn label="Bulleted list" onClick={() => cmd('insertUnorderedList')}>• List</Btn>
         <Btn label="Numbered list" onClick={() => cmd('insertOrderedList')}>1. List</Btn>
         <Btn label="Add link" onClick={addLink}>🔗</Btn>
+        {onImageUpload && (
+          <Btn label="Insert image" onClick={() => fileRef.current?.click()}>
+            {uploading ? '⏳' : '🖼'}
+          </Btn>
+        )}
         <Btn label="Clear formatting" onClick={() => cmd('removeFormat')}>✕</Btn>
       </div>
+      {onImageUpload && (
+        <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={pickImage} />
+      )}
       <div
         ref={ref}
         contentEditable

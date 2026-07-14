@@ -5,24 +5,29 @@ import { ArrowLeft } from 'lucide-react';
 import { Container } from '@/components/container';
 import { Reveal } from '@/components/reveal';
 import { FloatingDecor } from '@/components/floating-decor';
-import { getAllPosts, getPostBySlug } from '@/lib/posts';
+import { BlogActions } from '@/components/blog-actions';
+import { getBlogArticle } from '@/lib/posts';
 
-export function generateStaticParams() {
-  return getAllPosts().map((post) => ({ slug: post.slug }));
-}
+// Posts are DB-backed (and may change any time), so render on demand.
+export const dynamicParams = true;
 
 export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
-  const post = await getPostBySlug(params.slug);
+  const post = await getBlogArticle(params.slug);
   if (!post) return {};
   return {
     title: post.title,
     description: post.description,
-    openGraph: { title: post.title, description: post.description, type: 'article' },
+    openGraph: {
+      title: post.title,
+      description: post.description,
+      type: 'article',
+      images: post.coverImage ? [post.coverImage] : undefined,
+    },
   };
 }
 
 export default async function BlogPostPage({ params }: { params: { slug: string } }) {
-  const post = await getPostBySlug(params.slug);
+  const post = await getBlogArticle(params.slug);
   if (!post) notFound();
 
   return (
@@ -34,13 +39,28 @@ export default async function BlogPostPage({ params }: { params: { slug: string 
             <ArrowLeft size={16} /> Back to blog
           </Link>
 
-          <p className="mb-3 text-xs font-bold uppercase tracking-widest text-faint">{post.date}</p>
-          <h1 className="mb-8 font-display text-[clamp(2.2rem,5vw,3.4rem)] font-bold leading-[1.02] tracking-tightest text-ink">{post.title}</h1>
+          <p className="mb-3 text-xs font-bold uppercase tracking-widest text-faint">
+            {post.date}{post.authorName ? ` · ${post.authorName}` : ''}
+          </p>
+          <h1 className="mb-6 font-display text-[clamp(2.2rem,5vw,3.4rem)] font-bold leading-[1.02] tracking-tightest text-ink">{post.title}</h1>
         </Reveal>
 
-        <Reveal delay={120} className="prose-blog" >
+        {post.coverImage && (
+          <Reveal delay={80}>
+            <div className="mb-8 overflow-hidden rounded-2xl border border-line bg-mist">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={post.coverImage} alt="" className="max-h-[440px] w-full object-cover" />
+            </div>
+          </Reveal>
+        )}
+
+        <Reveal delay={120} className="prose-blog">
           <div dangerouslySetInnerHTML={{ __html: post.contentHtml }} />
         </Reveal>
+
+        <div className="mt-10 border-t border-line pt-6">
+          <BlogActions slug={post.slug} title={post.title} initialLikes={post.likes ?? 0} />
+        </div>
       </Container>
     </article>
   );

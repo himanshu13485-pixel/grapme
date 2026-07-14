@@ -21,6 +21,7 @@ const NAV: NavItem[] = [
   { href: '/registered-clients', label: 'Registered Clients', icon: '👥', admin: true, module: 'registered-clients' },
   { href: '/clients', label: 'Clients Workspace', icon: '🏢', admin: true, module: 'clients' },
   { href: '/live-clients', label: 'Live Clients', icon: '🟢', admin: true, module: 'live-clients' },
+  { href: '/blog', label: 'Blog', icon: '📝', admin: true, module: 'blog' },
   // ── Email Outreach (collapsed under "More…") ──
   { href: '/cohort-schedule', label: 'Cohort Schedule', icon: '📅', admin: true, module: 'cohort-schedule', group: 'email' },
   { href: '/campaigns', label: 'Campaigns', icon: '✈', module: 'campaigns', group: 'email' },

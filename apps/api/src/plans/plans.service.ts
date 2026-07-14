@@ -37,7 +37,11 @@ export class PlansService {
     const secret = process.env.REVALIDATE_SECRET;
     void fetch(url, {
       method: 'POST',
-      headers: secret ? { 'x-revalidate-secret': secret } : {},
+      headers: {
+        'content-type': 'application/json',
+        ...(secret ? { 'x-revalidate-secret': secret } : {}),
+      },
+      body: JSON.stringify({ tag: 'public-plans' }),
     }).catch(() => {});
   }
 

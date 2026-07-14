@@ -4,15 +4,15 @@ import { Container } from '@/components/container';
 import { Reveal } from '@/components/reveal';
 import { TiltCard } from '@/components/tilt-card';
 import { FloatingDecor } from '@/components/floating-decor';
-import { getAllPosts } from '@/lib/posts';
+import { getBlogCards } from '@/lib/posts';
 
 export const metadata: Metadata = {
   title: 'Blog',
   description: 'Notes on approval workflows, sub-admin delegation, and deliverability for agencies running outreach at scale.',
 };
 
-export default function BlogIndexPage() {
-  const posts = getAllPosts();
+export default async function BlogIndexPage() {
+  const posts = await getBlogCards();
 
   return (
     <section className="relative overflow-hidden py-20">
@@ -29,15 +29,28 @@ export default function BlogIndexPage() {
               <TiltCard max={5}>
                 <Link
                   href={`/blog/${post.slug}`}
-                  className="block rounded-2xl border border-line bg-paper/85 p-7 shadow-soft backdrop-blur-sm transition hover:border-brand/40 hover:shadow-card"
+                  className="block overflow-hidden rounded-2xl border border-line bg-paper/85 shadow-soft backdrop-blur-sm transition hover:border-brand/40 hover:shadow-card"
                 >
-                  <p className="mb-2 text-xs font-bold uppercase tracking-widest text-faint">{post.date}</p>
-                  <h2 className="mb-2 font-display text-2xl font-bold leading-tight text-ink">{post.title}</h2>
-                  <p className="text-sm text-muted">{post.description}</p>
+                  {post.coverImage && (
+                    <div className="aspect-[16/7] w-full overflow-hidden bg-mist">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={post.coverImage} alt="" className="h-full w-full object-cover" />
+                    </div>
+                  )}
+                  <div className="p-7">
+                    <p className="mb-2 text-xs font-bold uppercase tracking-widest text-faint">
+                      {post.date}{post.authorName ? ` · ${post.authorName}` : ''}
+                    </p>
+                    <h2 className="mb-2 font-display text-2xl font-bold leading-tight text-ink">{post.title}</h2>
+                    {post.description && <p className="text-sm text-muted">{post.description}</p>}
+                  </div>
                 </Link>
               </TiltCard>
             </Reveal>
           ))}
+          {posts.length === 0 && (
+            <p className="text-center text-muted">No posts yet — check back soon.</p>
+          )}
         </div>
       </Container>
     </section>

@@ -175,6 +175,7 @@ model Tenant {
   plans           Plan[]
   greetings       Greeting[]
   assets          Asset[]
+  blogPosts       BlogPost[]
 }
 
 // Uploaded images (e.g. for email templates), served publicly by id so mail
@@ -190,6 +191,28 @@ model Asset {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
+}
+
+/// Marketing blog posts, authored in the admin and surfaced on grapme.com/blog.
+model BlogPost {
+  id          String    @id @default(uuid())
+  tenantId    String
+  slug        String // URL slug (unique per tenant)
+  title       String
+  excerpt     String? // short summary for the list card + meta description
+  contentHtml String // sanitized HTML body (images are Asset URLs, not inlined)
+  coverImage  String? // Asset URL (or external) for the hero image
+  authorName  String? // publisher / author display name
+  status      String    @default("draft") // "draft" | "published"
+  publishedAt DateTime? // when it went live (drives the public date + ordering)
+  likes       Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, slug])
+  @@index([tenantId, status])
 }
 
 // Admin-authored "Happy Business" messages shown in the daily client greeting.
