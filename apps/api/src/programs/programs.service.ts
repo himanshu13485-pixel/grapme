@@ -406,6 +406,7 @@ export class ProgramsService {
         ...(user.role === Role.CLIENT ? { ownerUserId: user.userId } : {}),
       },
       include: {
+        owner: { select: { id: true, email: true, name: true, emailVerified: true } },
         mailboxes: {
           select: { id: true, label: true, emailAddress: true, status: true, rotationOrder: true },
           orderBy: { rotationOrder: 'asc' },
