@@ -454,6 +454,14 @@ export class ProgramsService {
       }
     }
     const updated = await this.prisma.client.update({ where: { id }, data });
+    // Log a subscription period when the plan or validity window changes via the edit
+    // form, so plan upgrades/downgrades show in the renewal history (not just Renew).
+    const planChanged = updated.plan !== before.plan;
+    const validityChanged = validityDays !== undefined && validityDays !== (before.validityDays ?? 0);
+    if ((planChanged || validityChanged) && updated.validityDays && updated.validityStartAt) {
+      const endAt = new Date(new Date(updated.validityStartAt).getTime() + updated.validityDays * 86_400_000);
+      await this.subscriptions.record(user.tenantId, id, { plan: updated.plan, validityDays: updated.validityDays, source: 'admin', endAt });
+    }
     // Record only the fields that actually changed, so the audit trail is clear.
     const changedBefore: Record<string, unknown> = { name: before.name };
     const changedAfter: Record<string, unknown> = { name: updated.name };

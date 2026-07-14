@@ -20,11 +20,13 @@ export class SubscriptionsService {
   async record(
     tenantId: string,
     clientId: string,
-    opts: { plan?: string | null; validityDays: number | null; amount?: number | null; currency?: string | null; source?: string },
+    opts: { plan?: string | null; validityDays: number | null; amount?: number | null; currency?: string | null; source?: string; endAt?: Date | null },
   ) {
     if (!opts.validityDays || opts.validityDays <= 0) return null;
     const now = new Date();
-    const endAt = new Date(now.getTime() + opts.validityDays * 86_400_000);
+    // A fresh window ends now + validityDays; a mid-window plan change passes the
+    // existing expiry so the new plan just runs to the same end.
+    const endAt = opts.endAt && opts.endAt > now ? opts.endAt : new Date(now.getTime() + opts.validityDays * 86_400_000);
     const open = await this.prisma.subscriptionPeriod.findFirst({
       where: { clientId, endedReason: null, endAt: { gt: now } },
       orderBy: { startAt: 'desc' },
