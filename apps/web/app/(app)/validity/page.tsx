@@ -12,6 +12,7 @@ interface Client {
   name: string;
   email?: string | null;
   plan: string;
+  status?: string;
   validityDays?: number | null;
   validityStartAt?: string | null;
   owner?: { email: string } | null;
@@ -113,12 +114,29 @@ function ClientRows({ client, onSaved }: { client: Client; onSaved: () => void }
   const state = clientSubState(client.validityDays, client.validityStartAt);
   const m = STATE_META[state];
 
+  const active = (client.status ?? 'active').toLowerCase() === 'active';
+
   async function save(value: number | null) {
     setBusy(true); setNote('');
     try {
       await api.patch(`/clients/${client.id}/validity`, { days: value });
       setNote('Saved'); onSaved();
     } catch (e) { setNote(e instanceof Error ? e.message : 'Failed'); }
+    finally { setBusy(false); }
+  }
+
+  async function toggleActive(next: boolean) {
+    setBusy(true); setNote('');
+    try { await api.patch(`/clients/${client.id}/status`, { active: next }); onSaved(); }
+    catch (e) { setNote(e instanceof Error ? e.message : 'Failed'); }
+    finally { setBusy(false); }
+  }
+
+  async function forceExpire() {
+    if (!confirm(`Force-expire ${client.name}'s active plan now? Outreach stops immediately until you renew.`)) return;
+    setBusy(true); setNote('');
+    try { await api.post(`/clients/${client.id}/subscription/expire`, {}); setNote('Expired'); onSaved(); }
+    catch (e) { setNote(e instanceof Error ? e.message : 'Failed'); }
     finally { setBusy(false); }
   }
 
@@ -148,6 +166,17 @@ function ClientRows({ client, onSaved }: { client: Client; onSaved: () => void }
             <input type="number" min={0} className="input w-20 py-1 text-sm" placeholder="Days" value={days} onChange={(e) => setDays(e.target.value)} />
             <button type="button" className="btn-primary px-3 py-1 text-xs" onClick={() => save(days ? Number(days) : null)} disabled={busy}>{busy ? '…' : 'Renew'}</button>
             {note && <span className="text-xs text-slate-400">{note}</span>}
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+            <span className={`rounded-full px-2 py-0.5 font-medium ${active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-200 text-slate-600'}`}>{active ? 'Active client' : 'Deactivated'}</span>
+            {active ? (
+              <button type="button" className="rounded-md border border-slate-200 px-2 py-1 text-slate-600 hover:bg-slate-50" onClick={() => toggleActive(false)} disabled={busy}>Deactivate</button>
+            ) : (
+              <button type="button" className="rounded-md border border-emerald-200 px-2 py-1 text-emerald-700 hover:bg-emerald-50" onClick={() => toggleActive(true)} disabled={busy}>Activate</button>
+            )}
+            {!v.none && !v.expired && (
+              <button type="button" className="rounded-md border border-rose-200 px-2 py-1 text-rose-600 hover:bg-rose-50" onClick={forceExpire} disabled={busy}>Expire now</button>
+            )}
           </div>
         </td>
       </tr>

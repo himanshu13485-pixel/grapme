@@ -103,6 +103,12 @@ export class ProgramsController {
     return this.programs.setClientStatus(user, id, dto.active);
   }
 
+  /** Admin: force-expire a client's active plan immediately. */
+  @Post('clients/:id/subscription/expire')
+  forceExpire(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.programs.forceExpireSubscription(user, id);
+  }
+
   /** Admin: set a client's plan validity window (days). */
   @Patch('clients/:id/validity')
   setClientValidity(

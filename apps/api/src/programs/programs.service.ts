@@ -1993,6 +1993,34 @@ export class ProgramsService {
     return updated;
   }
 
+  /**
+   * Force-expire a client's active plan right now: move the validity window into the
+   * past (so it reads Expired but keeps the plan/day count) and close the open
+   * subscription period as CANCELLED. Outreach halts immediately (the engine gates on
+   * validity). Re-set a validity to renew.
+   */
+  async forceExpireSubscription(user: AuthUser, clientId: string) {
+    this.assertAdmin(user);
+    const client = await this.assertClient(user, clientId);
+    if (!client.validityDays || client.validityDays <= 0) {
+      throw new BadRequestException('This client has no active plan window to expire.');
+    }
+    const now = new Date();
+    await this.prisma.client.update({
+      where: { id: clientId },
+      data: { validityStartAt: new Date(now.getTime() - client.validityDays * 86_400_000), validityNotifyStage: 0 },
+    });
+    await this.prisma.subscriptionPeriod.updateMany({
+      where: { clientId, endedReason: null, endAt: { gt: now } },
+      data: { endAt: now, endedReason: 'CANCELLED' },
+    });
+    await this.activity.log({
+      tenantId: user.tenantId, actorId: user.userId, action: 'FORCE_EXPIRE_SUBSCRIPTION',
+      entityType: 'Client', entityId: clientId, after: { client: client.name },
+    });
+    return { ok: true };
+  }
+
   private assertAdmin(user: AuthUser) {
     if (user.role !== Role.SUPER_ADMIN && user.role !== Role.SUB_ADMIN) {
       throw new ForbiddenException('Admins only');
