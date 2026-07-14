@@ -1281,6 +1281,9 @@ model LiLead {
   aiFetches    LiAiFetch[]
   scheduled    LiScheduledAction[]
 
+  // A profile can't appear twice in the same campaign's audience. (Postgres treats
+  // NULLs as distinct, so leads without a profileUrl aren't blocked.)
+  @@unique([campaignId, profileUrl])
   @@index([campaignId, status])
   @@index([status])
 }

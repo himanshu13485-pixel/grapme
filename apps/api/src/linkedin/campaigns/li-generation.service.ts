@@ -87,7 +87,7 @@ export class LiGenerationService {
       cursor = res.cursor;
     }
     if (rows.length === 0) return { sourced: 0, keywords, creditsCharged: 0 };
-    const r = await this.prisma.liLead.createMany({ data: rows });
+    const r = await this.prisma.liLead.createMany({ data: rows, skipDuplicates: true });
 
     let creditsCharged = 0;
     if (metered) {
@@ -151,7 +151,7 @@ export class LiGenerationService {
       cursor = res.cursor;
     }
     if (rows.length === 0) return { imported: 0, creditsCharged: 0 };
-    const r = await this.prisma.liLead.createMany({ data: rows });
+    const r = await this.prisma.liLead.createMany({ data: rows, skipDuplicates: true });
 
     let creditsCharged = 0;
     if (metered) {

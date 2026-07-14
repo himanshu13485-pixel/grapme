@@ -222,7 +222,7 @@ export class LiCampaignsService {
       status: LiLeadStatus.PENDING,
       currentStep: 0,
     }));
-    const res = await this.prisma.liLead.createMany({ data: rows });
+    const res = await this.prisma.liLead.createMany({ data: rows, skipDuplicates: true });
     let creditsCharged = 0;
     if (metered && res.count > 0) {
       await this.subs.debit(campaign.tenantId, campaign.clientId, 1, LiCreditReason.LEAD_SOURCING, { refType: 'LiCampaign', refId: id });
