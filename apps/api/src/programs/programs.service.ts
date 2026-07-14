@@ -7,8 +7,10 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as argon2 from 'argon2';
+import { randomBytes, createHash } from 'crypto';
 import {
   ApprovalEntity,
+  ApprovalStatus,
   Client,
   Prisma,
   EmailAccount,
@@ -406,7 +408,7 @@ export class ProgramsService {
         ...(user.role === Role.CLIENT ? { ownerUserId: user.userId } : {}),
       },
       include: {
-        owner: { select: { id: true, email: true, name: true, emailVerified: true } },
+        owner: { select: { id: true, email: true, name: true, emailVerified: true, pendingEmail: true } },
         mailboxes: {
           select: { id: true, label: true, emailAddress: true, status: true, rotationOrder: true },
           orderBy: { rotationOrder: 'asc' },
@@ -1618,43 +1620,94 @@ export class ProgramsService {
   async setClientLogin(
     user: AuthUser,
     clientId: string,
-    dto: { email: string; password: string },
+    dto: { email: string; password?: string },
   ) {
     const client = await this.assertClient(user, clientId);
-    const email = dto.email.toLowerCase();
-    const passwordHash = await argon2.hash(dto.password, { type: argon2.argon2id });
+    const email = dto.email.trim().toLowerCase();
+    if (!email) throw new BadRequestException('Enter a login email.');
+    const password = dto.password?.trim();
+    const currentOwner = client.ownerUserId
+      ? await this.prisma.user.findUnique({ where: { id: client.ownerUserId } })
+      : null;
 
-    // Reuse an existing login for this email, else create a CLIENT user.
-    let owner = await this.prisma.user.findUnique({ where: { email } });
-    if (owner) {
-      owner = await this.prisma.user.update({
-        where: { id: owner.id },
-        data: { passwordHash, role: Role.CLIENT },
-      });
-    } else {
-      owner = await this.prisma.user.create({
-        data: {
-          tenantId: user.tenantId,
-          name: client.contactPerson || client.name,
-          email,
-          passwordHash,
-          role: Role.CLIENT,
-        },
-      });
+    // ── First-time login (no owner yet): create/link immediately (needs a password). ──
+    if (!currentOwner) {
+      if (!password || password.length < 6) throw new BadRequestException('Set a password (min 6 characters) to create the login.');
+      const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
+      let owner = await this.prisma.user.findUnique({ where: { email } });
+      if (owner) {
+        owner = await this.prisma.user.update({ where: { id: owner.id }, data: { passwordHash, role: Role.CLIENT } });
+      } else {
+        owner = await this.prisma.user.create({
+          data: { tenantId: user.tenantId, name: client.contactPerson || client.name, email, passwordHash, role: Role.CLIENT },
+        });
+      }
+      await this.prisma.client.update({ where: { id: clientId }, data: { ownerUserId: owner.id } });
+      await this.activity.log({ tenantId: user.tenantId, actorId: user.userId, action: 'SET_CLIENT_LOGIN', entityType: 'Client', entityId: clientId, after: { email, client: client.name } });
+      return { ok: true, email, pending: false };
     }
-    await this.prisma.client.update({
-      where: { id: clientId },
-      data: { ownerUserId: owner.id },
+
+    // ── Password reset applies immediately (if provided). ──
+    if (password) {
+      if (password.length < 6) throw new BadRequestException('Password must be at least 6 characters.');
+      await this.prisma.user.update({ where: { id: currentOwner.id }, data: { passwordHash: await argon2.hash(password, { type: argon2.argon2id }) } });
+    }
+
+    // ── Email unchanged: nothing to gate. ──
+    if (email === currentOwner.email.toLowerCase()) {
+      return { ok: true, email, pending: false };
+    }
+
+    // ── Email CHANGE: gate it. The current login keeps working until the client
+    // confirms via the emailed link OR an admin approves it in the queue. ──
+    const taken = await this.prisma.user.findFirst({ where: { email, id: { not: currentOwner.id } } });
+    if (taken) throw new BadRequestException('That email is already used by another account.');
+
+    const token = randomBytes(32).toString('hex');
+    const tokenHash = createHash('sha256').update(token).digest('hex');
+    await this.prisma.user.update({
+      where: { id: currentOwner.id },
+      data: { pendingEmail: email, pendingEmailTokenHash: tokenHash, pendingEmailExpires: new Date(Date.now() + 48 * 3600 * 1000) },
     });
+
+    // Confirmation link to the NEW email.
+    const link = `${this.webUrlBase()}/verify-email-change?token=${token}`;
+    this.logger.log(`[login-email-change] confirm link for ${email}: ${link}`);
+    try {
+      const account = await this.tenantSystemMailbox(user.tenantId);
+      if (account) {
+        await this.mailer.send({
+          account,
+          to: email,
+          subject: 'Confirm your new GrapMe login email',
+          html: `
+            <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto">
+              <h2 style="color:#0f766e">Confirm your new login email</h2>
+              <p>Your account team set this address as the login email for your GrapMe portal (${client.name}).
+                 Confirm it to activate — your current login keeps working until you do.</p>
+              <p style="margin:22px 0">
+                <a href="${link}" style="background:#0f766e;color:#fff;padding:12px 22px;border-radius:8px;text-decoration:none;font-weight:600">Confirm new login email</a>
+              </p>
+              <p style="color:#94a3b8;font-size:12px">This link expires in 48 hours. If you didn't expect this, you can ignore this email.</p>
+            </div>`,
+        });
+      }
+    } catch (e) {
+      this.logger.warn(`login-email-change email to ${email} failed: ${(e as Error).message}`);
+    }
+
+    // Fallback approval so an admin can apply the change if the email never arrives.
+    const pending = await this.prisma.approval.count({
+      where: { entityType: ApprovalEntity.CLIENT_LOGIN_EMAIL, entityId: currentOwner.id, status: ApprovalStatus.PENDING },
+    });
+    if (!pending) {
+      await this.approvals.submit({ tenantId: user.tenantId, entityType: ApprovalEntity.CLIENT_LOGIN_EMAIL, entityId: currentOwner.id, submittedById: user.userId });
+    }
     await this.activity.log({
-      tenantId: user.tenantId,
-      actorId: user.userId,
-      action: 'SET_CLIENT_LOGIN',
-      entityType: 'Client',
-      entityId: clientId,
-      after: { email, client: client.name },
+      tenantId: user.tenantId, actorId: user.userId, action: 'REQUEST_CLIENT_LOGIN_EMAIL_CHANGE',
+      entityType: 'Client', entityId: clientId, after: { from: currentOwner.email, to: email, client: client.name },
     });
-    return { ok: true, email };
+    return { ok: true, email: currentOwner.email, pending: true, pendingEmail: email };
   }
 
   /** True once a client's validity window has elapsed. */

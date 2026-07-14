@@ -96,6 +96,15 @@ export class AuthController {
     return this.auth.verifyClientEmail(dto.token);
   }
 
+  /** Client confirms an admin-initiated change to their portal login email. */
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @HttpCode(200)
+  @Post('confirm-email-change')
+  confirmEmailChange(@Body() dto: ClientVerifyDto) {
+    return this.auth.confirmEmailChange(dto.token);
+  }
+
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @HttpCode(200)
   @Post('change-password')

@@ -504,6 +504,36 @@ export class AuthService {
     return this.issueSession(updated);
   }
 
+  /**
+   * Client confirms an admin-initiated login-email change via the emailed link:
+   * apply the pending email, clear the pending state, and close the fallback approval.
+   */
+  async confirmEmailChange(token: string) {
+    const user = await this.prisma.user.findFirst({
+      where: { pendingEmailTokenHash: this.sha256(token), pendingEmailExpires: { gt: new Date() } },
+    });
+    if (!user || !user.pendingEmail) {
+      throw new UnauthorizedException('This confirmation link is invalid or has expired.');
+    }
+    const taken = await this.prisma.user.findFirst({ where: { email: user.pendingEmail, id: { not: user.id } } });
+    if (taken) throw new BadRequestException('That email is now in use by another account.');
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        email: user.pendingEmail,
+        emailVerified: true,
+        pendingEmail: null,
+        pendingEmailTokenHash: null,
+        pendingEmailExpires: null,
+      },
+    });
+    await this.prisma.approval.updateMany({
+      where: { entityType: ApprovalEntity.CLIENT_LOGIN_EMAIL, entityId: user.id, status: ApprovalStatus.PENDING },
+      data: { status: ApprovalStatus.APPROVED, decidedAt: new Date() },
+    });
+    return { ok: true, email: user.pendingEmail };
+  }
+
   /** Self-service password change (no approval). Verifies the current one. */
   async changePassword(
     userId: string,

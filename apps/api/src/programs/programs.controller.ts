@@ -88,7 +88,7 @@ export class ProgramsController {
   setClientLogin(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
-    @Body() dto: { email: string; password: string },
+    @Body() dto: { email: string; password?: string },
   ) {
     return this.programs.setClientLogin(user, id, dto);
   }

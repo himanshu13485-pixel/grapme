@@ -943,18 +943,21 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
   }
 
   async function saveLogin() {
-    if (!loginEmail || !loginPassword) {
-      setLoginNote('Enter an email and password.');
-      return;
-    }
+    if (!loginEmail) { setLoginNote('Enter a login email.'); return; }
+    if (!hasOwner && !loginPassword) { setLoginNote('Set a password to create the login.'); return; }
     setLoginBusy(true);
     setLoginNote('');
     try {
-      await api.post(`/clients/${client.id}/login`, {
-        email: loginEmail,
-        password: loginPassword,
-      });
-      setLoginNote(`Client login set: ${loginEmail}`);
+      const res = await api.post<{ ok: boolean; pending?: boolean; pendingEmail?: string; email: string }>(
+        `/clients/${client.id}/login`,
+        { email: loginEmail, ...(loginPassword ? { password: loginPassword } : {}) },
+      );
+      if (res.pending) {
+        setLoginNote(`Login-email change pending. A confirmation link was sent to ${res.pendingEmail}, and it's queued in Approvals (approve there if the client doesn't get the email). The current login (${res.email}) keeps working until it's confirmed.`);
+        setLoginEmail(res.email); // reflect that the change hasn't applied yet
+      } else {
+        setLoginNote(`Client login saved: ${res.email}`);
+      }
       setLoginPassword('');
     } catch (e) {
       setLoginNote(e instanceof Error ? e.message : 'Failed');
