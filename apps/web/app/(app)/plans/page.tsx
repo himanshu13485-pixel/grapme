@@ -120,6 +120,7 @@ function PlanRow({
     plan.cardStyle === 'features' ? 'features' : 'entitlements',
   );
   const [features, setFeatures] = useState<string[]>(() => plan.features ?? []);
+  const [popular, setPopular] = useState(!!plan.popular);
   const [busy, setBusy] = useState(false);
   const set = (k: keyof typeof form, v: number) => setForm((f) => ({ ...f, [k]: v }));
   // Per-period entitlements: base `form` = monthly; `yearly` holds the yearly overrides.
@@ -157,6 +158,7 @@ function PlanRow({
     JSON.stringify(pricing) !== JSON.stringify(plan.pricing ?? []) ||
     cardStyle !== (plan.cardStyle === 'features' ? 'features' : 'entitlements') ||
     JSON.stringify(features) !== JSON.stringify(plan.features ?? []) ||
+    popular !== !!plan.popular ||
     color.toLowerCase() !== plan.color.toLowerCase() ||
     emailOn !== (plan.emailEnabled !== false) ||
     linkedInOn !== (plan.linkedInEnabled !== false) ||
@@ -189,6 +191,7 @@ function PlanRow({
         yearlyEntitlements: yearly,
         cardStyle,
         features: features.map((f) => f.trim()).filter(Boolean),
+        popular,
       });
       onSaved();
     } catch {
@@ -218,6 +221,10 @@ function PlanRow({
           <span className="text-base font-semibold text-slate-800">{plan.name}</span>
         </div>
         <div className="flex items-center gap-3">
+          <label className="flex cursor-pointer items-center gap-1.5 text-xs font-medium text-slate-500" title="Highlight this plan as “Most popular” on the pricing pages">
+            <input type="checkbox" checked={popular} onChange={(e) => setPopular(e.target.checked)} />
+            ⭐ Popular
+          </label>
           <input
             type="color"
             className="h-8 w-12 cursor-pointer rounded border border-slate-200 bg-white p-0.5"

@@ -42,6 +42,7 @@ export interface Plan {
   // "features" shows a simple price + best price + a free-text feature list.
   cardStyle?: string;
   features?: string[] | null;
+  popular?: boolean;
 }
 
 /**

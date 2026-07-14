@@ -282,6 +282,7 @@ model Plan {
   //  "features"               = simple price + best price + a free-text feature list
   cardStyle             String   @default("entitlements")
   features              Json? // feature bullet list (string[]) for the "features" card
+  popular               Boolean  @default(false) // highlight this plan as "Most popular"
   createdAt             DateTime @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)

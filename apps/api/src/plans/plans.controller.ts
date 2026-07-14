@@ -54,6 +54,7 @@ export class PlansController {
       yearlyEntitlements?: unknown;
       cardStyle?: string;
       features?: unknown;
+      popular?: boolean;
     },
   ) {
     return this.plans.update(user, id, dto);

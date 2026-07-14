@@ -83,6 +83,7 @@ export class PlansService {
       yearlyEntitlements: p.yearlyEntitlements ?? null,
       cardStyle: p.cardStyle,
       features: Array.isArray(p.features) ? p.features : [],
+      popular: p.popular,
     }));
   }
 
@@ -122,6 +123,7 @@ export class PlansService {
       yearlyEntitlements?: unknown;
       cardStyle?: string;
       features?: unknown;
+      popular?: boolean;
     },
   ) {
     this.assertAdmin(user);
@@ -168,6 +170,7 @@ export class PlansService {
         ...(dto.yearlyEntitlements !== undefined ? { yearlyEntitlements: this.sanitizeYearly(dto.yearlyEntitlements) } : {}),
         ...(dto.cardStyle !== undefined ? { cardStyle: dto.cardStyle === 'features' ? 'features' : 'entitlements' } : {}),
         ...(dto.features !== undefined ? { features: this.sanitizeFeatures(dto.features) } : {}),
+        ...(dto.popular !== undefined ? { popular: !!dto.popular } : {}),
       },
     });
   }

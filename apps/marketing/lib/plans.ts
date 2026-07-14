@@ -43,6 +43,7 @@ export type PublicPlan = {
   yearlyEntitlements: YearlyEntitlements | null;
   cardStyle: string; // "entitlements" | "features"
   features: string[];
+  popular: boolean;
 };
 
 export async function fetchPublicPlans(): Promise<PublicPlan[] | null> {

@@ -137,11 +137,16 @@ function PlanCard({ plan, period, currency, onSelect, selecting, current }: { pl
   const validDays = period === 'monthly' ? 30 : ent('validityDays', plan.validityDays);
 
   return (
-    <div className="card flex flex-col overflow-hidden p-0">
+    <div className={`card relative flex flex-col overflow-hidden p-0 ${plan.popular ? 'ring-2 ring-brand-500' : ''}`}>
+      {plan.popular && (
+        <div className="absolute right-3 top-3 rounded-full bg-brand-600 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white shadow-sm">
+          ★ Most popular
+        </div>
+      )}
       <div className="p-5" style={{ borderTop: `4px solid ${plan.color}` }}>
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-bold text-slate-800">{plan.name}</h3>
-          <div className="flex gap-1 text-xs">
+          <div className={`flex gap-1 text-xs ${plan.popular ? 'mr-24' : ''}`}>
             {emailOn && <span className="rounded-full bg-slate-100 px-2 py-0.5">📧</span>}
             {linkedInOn && <span className="rounded-full bg-slate-100 px-2 py-0.5">🔗</span>}
           </div>

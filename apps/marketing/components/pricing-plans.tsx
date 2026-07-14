@@ -96,10 +96,24 @@ function PlanCard({ plan, period, currency }: { plan: PublicPlan; period: 'month
   const validDays = period === 'monthly' ? 30 : ent('validityDays', plan.validityDays);
 
   return (
-    <TiltCard max={7} className="flex h-full flex-col overflow-hidden rounded-2xl border border-line bg-paper/85 shadow-soft backdrop-blur-sm transition hover:border-brand/40 hover:shadow-card">
+    <TiltCard
+      max={7}
+      className={`relative flex h-full flex-col overflow-hidden rounded-2xl border backdrop-blur-sm transition ${
+        plan.popular
+          ? 'border-brand/60 bg-brand-50/40 shadow-card md:-translate-y-3'
+          : 'border-line bg-paper/85 shadow-soft hover:border-brand/40 hover:shadow-card'
+      }`}
+    >
       <div className="p-6" style={{ borderTop: `4px solid ${plan.color}` }}>
-        <div className="flex items-center justify-between">
-          <h3 className="text-xl font-extrabold text-ink">{plan.name}</h3>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-xl font-extrabold text-ink">{plan.name}</h3>
+            {plan.popular && (
+              <span className="rounded-full bg-brand px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white shadow-sm">
+                ★ Most popular
+              </span>
+            )}
+          </div>
           {!featuresMode && (
             <div className="flex gap-1.5 text-muted">
               {emailOn && <span className="grid h-7 w-7 place-items-center rounded-full bg-mist"><Mail size={14} /></span>}
