@@ -83,6 +83,8 @@ services:
     environment:
       NODE_ENV: production
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+      # Internal API URL for server-side image proxying (/media/assets/*).
+      API_URL: ${WEB_API_URL:-http://api:4000/api/v1}
     command: sh -c "npm run start --workspace apps/web"
     ports:
       - '${BIND_HOST:-0.0.0.0}:3000:3000'

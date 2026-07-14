@@ -51,5 +51,7 @@ export async function resizeAndUpload(file: File, maxDim = 1600, quality = 0.85)
     mimeType,
     dataBase64: out,
   });
-  return res.url;
+  // Same-origin path (proxied to the API by a Next rewrite), so the image loads
+  // on both the admin and the marketing site without depending on APP_PUBLIC_URL.
+  return `/media/assets/${res.id}`;
 }

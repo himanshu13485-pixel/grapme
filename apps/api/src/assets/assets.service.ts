@@ -38,8 +38,9 @@ export class AssetsService {
       },
       select: { id: true },
     });
-    const base =
-      this.config.get<string>('APP_PUBLIC_URL') ?? 'http://localhost:4000';
+    const base = (this.config.get<string>('APP_PUBLIC_URL') ?? 'http://localhost:4000')
+      .trim()
+      .replace(/\/+$/, '');
     return { id: asset.id, url: `${base}/api/v1/assets/${asset.id}` };
   }
 
