@@ -2,9 +2,9 @@ export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.grapme.
 
 export const SITE = {
   name: 'Grapme',
-  tagline: 'Approval-Gated Outreach Automation for Agencies',
+  tagline: 'Approval-Gated LinkedIn & Email Automation for Agencies',
   description:
-    'Grapme is a multi-tenant outreach automation platform for agencies and managed-service providers — build email and LinkedIn campaigns across every client mailbox, with nothing going out until an admin approves it.',
+    'Grapme is the approval-gated LinkedIn & cold-email automation platform for agencies and managed-service providers — run outreach across every client mailbox, with nothing going out until an admin approves it.',
   phone: '+91-9891797878',
   phoneHref: 'tel:+919891797878',
   whatsappHref: 'https://wa.me/919891797878',

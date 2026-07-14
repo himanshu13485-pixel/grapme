@@ -27,7 +27,9 @@ import { OrbitAvatars } from '@/components/orbit-avatars';
 import { TiltCard } from '@/components/tilt-card';
 import { Sparkle } from '@/components/sparkle';
 import { FloatingDecor } from '@/components/floating-decor';
-import { ProductShowcase } from '@/components/product-showcase';
+import { CostSection } from '@/components/cost-section';
+import { PersonasSection } from '@/components/personas-section';
+import { StickyShowcase } from '@/components/sticky-showcase';
 import { LifecycleFlow } from '@/components/lifecycle-flow';
 import { FunnelChart, TrendChart, ChannelDonut } from '@/components/mini-charts';
 import { MediaVideo, MediaPhoto } from '@/components/media-strip';
@@ -112,7 +114,7 @@ export default function HomePage() {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
 
       {/* ============ HERO ============ */}
-      <section className="relative overflow-hidden pb-28 pt-20 sm:pt-28">
+      <section className="relative overflow-hidden pb-16 pt-12 sm:pt-16">
         {/* animated aurora backdrop (swap for <VideoBackground src="/hero.mp4" />) */}
         <VideoBackground />
 
@@ -134,7 +136,7 @@ export default function HomePage() {
         <Sparkle className="pointer-events-none absolute left-[8%] bottom-[30%] hidden h-6 w-6 text-teal lg:block" delay={1100} />
 
         <Container className="relative">
-          <div className="grid items-center gap-x-12 gap-y-16 lg:grid-cols-[1.05fr,0.95fr]">
+          <div className="grid items-center gap-x-12 gap-y-12 lg:grid-cols-[1.05fr,0.95fr]">
             <div className="relative z-20">
               <Reveal>
                 <div className="mb-5 flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -149,7 +151,7 @@ export default function HomePage() {
 
               <AnimatedHeadline
                 className="mb-6 max-w-2xl font-display text-display1 font-semibold text-ink"
-                lead="LinkedIn & Email Outreach for Every Client,"
+                lead="LinkedIn & Email Automation for Every Client,"
                 accent="Signed Off Before It Sends."
               />
 
@@ -219,11 +221,14 @@ export default function HomePage() {
         </Reveal>
       </Container>
 
+      {/* ============ THE COST ============ */}
+      <CostSection />
+
       {/* ============ CHANNELS ============ */}
       <section className="relative overflow-hidden py-section">
         <FloatingDecor variant="a" />
         <Container className="relative z-10">
-          <Reveal className="mx-auto mb-16 max-w-xl text-center">
+          <Reveal className="mx-auto mb-10 max-w-xl text-center">
             <p className="mb-4 font-grotesk text-eyebrow font-semibold uppercase text-brand">The stack</p>
             <h2 className="font-display text-display2 font-semibold text-ink">
               One dashboard. <span className="italic text-brand">Two channels.</span>
@@ -277,7 +282,7 @@ export default function HomePage() {
       <section className="relative overflow-hidden py-section">
         <FloatingDecor variant="b" />
         <Container className="relative z-10">
-          <Reveal className="mx-auto mb-16 max-w-2xl text-center">
+          <Reveal className="mx-auto mb-10 max-w-2xl text-center">
             <p className="mb-4 font-grotesk text-eyebrow font-semibold uppercase text-brand">Why {SITE.name}</p>
             <h2 className="font-display text-display2 font-semibold text-ink">
               Sending isn&apos;t the risk. <span className="italic text-brand">Unsupervised</span> sending is.
@@ -300,11 +305,15 @@ export default function HomePage() {
         </Container>
       </section>
 
+      {/* ============ WHO IT'S FOR ============ */}
+      <PersonasSection />
+
       {/* ============ PRODUCT SHOWCASE ============ */}
-      <section className="relative overflow-hidden py-section">
+      {/* no overflow-hidden here: it would break the sticky-scroll showcase */}
+      <section className="relative py-section">
         <FloatingDecor variant="d" />
-        <div className="relative z-10 mx-auto w-full max-w-[86rem] px-6 lg:px-10">
-          <Reveal className="mx-auto mb-16 max-w-2xl text-center">
+        <div className="relative z-10 mx-auto w-full max-w-[92rem] px-6 lg:px-10">
+          <Reveal className="mx-auto mb-10 max-w-2xl text-center">
             <p className="mb-4 font-grotesk text-eyebrow font-semibold uppercase text-brand">See it in action</p>
             <h2 className="font-display text-display2 font-semibold text-ink">
               The whole engine, <span className="italic text-brand">visualised</span>
@@ -315,12 +324,12 @@ export default function HomePage() {
           </Reveal>
 
           {/* flowchart */}
-          <Reveal className="mb-14">
+          <Reveal className="mb-10">
             <LifecycleFlow />
           </Reveal>
 
           {/* charts bento — equal-height cards */}
-          <div className="mb-16 grid items-stretch gap-5 lg:grid-cols-3">
+          <div className="mb-12 grid items-stretch gap-5 lg:grid-cols-3">
             <Reveal delay={0} className="h-full">
               <FunnelChart />
             </Reveal>
@@ -332,11 +341,11 @@ export default function HomePage() {
             </Reveal>
           </div>
 
-          {/* screenshots */}
-          <ProductShowcase />
+          {/* screenshots — pinned scroll-through showcase */}
+          <StickyShowcase />
 
-          {/* media — aligned pair, same size */}
-          <div className="mt-16 grid items-stretch gap-6 md:grid-cols-2">
+          {/* media — video leads, photo matches its height */}
+          <div className="mt-14 grid items-stretch gap-6 md:grid-cols-[1.55fr,1fr]">
             <Reveal className="h-full">
               <MediaVideo />
             </Reveal>
@@ -351,7 +360,7 @@ export default function HomePage() {
       <section className="relative overflow-hidden py-section">
         <FloatingDecor variant="c" />
         <Container className="relative z-10">
-          <Reveal className="mx-auto mb-20 max-w-xl text-center">
+          <Reveal className="mx-auto mb-12 max-w-xl text-center">
             <p className="mb-4 font-grotesk text-eyebrow font-semibold uppercase text-brand">The lifecycle</p>
             <h2 className="font-display text-display2 font-semibold text-ink">
               From draft to sent in <span className="italic text-brand">three</span> checkpoints
@@ -386,7 +395,7 @@ export default function HomePage() {
         <section className="relative overflow-hidden py-section">
           <FloatingDecor variant="d" />
           <Container className="relative z-10">
-            <Reveal className="mb-14 flex flex-wrap items-end justify-between gap-4">
+            <Reveal className="mb-10 flex flex-wrap items-end justify-between gap-4">
               <div>
                 <p className="mb-4 font-grotesk text-eyebrow font-semibold uppercase text-brand">Field notes</p>
                 <h2 className="font-display text-display2 font-semibold text-ink">From the blog</h2>
@@ -421,7 +430,7 @@ export default function HomePage() {
       <section className="relative overflow-hidden py-section">
         <FloatingDecor variant="b" />
         <Container className="relative z-10">
-          <Reveal className="mx-auto mb-12 max-w-2xl text-center">
+          <Reveal className="mx-auto mb-9 max-w-2xl text-center">
             <h2 className="font-display text-display2 font-semibold text-ink">
               See it running <span className="italic text-brand">your</span> client&apos;s campaigns
             </h2>

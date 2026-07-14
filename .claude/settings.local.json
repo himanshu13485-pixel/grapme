@@ -84,7 +84,9 @@
       "Bash(git commit -m ' *)",
       "Bash(git pull *)",
       "Bash(git push *)",
-      "Bash(git rev-list *)"
+      "Bash(git rev-list *)",
+      "Bash(sed -i 's/pb-28 pt-20 sm:pt-28/pb-16 pt-12 sm:pt-16/; s/gap-x-12 gap-y-16 lg:grid-cols-\\\\[1.05fr,0.95fr\\\\]/gap-x-12 gap-y-12 lg:grid-cols-[1.05fr,0.95fr]/; s/mx-auto mb-16 max-w-xl text-center/mx-auto mb-10 max-w-xl text-center/; s/mx-auto mb-16 max-w-2xl text-center/mx-auto mb-10 max-w-2xl text-center/g; s/<Reveal className=\"mb-14\">/<Reveal className=\"mb-10\">/; s/mb-16 grid items-stretch/mb-12 grid items-stretch/; s/mt-16 grid items-stretch/mt-12 grid items-stretch/; s/mx-auto mb-20 max-w-xl text-center/mx-auto mb-12 max-w-xl text-center/; s/mb-14 flex flex-wrap items-end/mb-10 flex flex-wrap items-end/; s/mx-auto mb-12 max-w-2xl text-center/mx-auto mb-9 max-w-2xl text-center/' app/page.tsx)",
+      "Bash(sed -i 's/mx-auto mb-14 max-w-2xl text-center/mx-auto mb-10 max-w-2xl text-center/' components/cost-section.tsx components/personas-section.tsx)"
     ]
   }
 }

@@ -1,20 +1,34 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Menu, X, ArrowUpRight } from 'lucide-react';
-import { Container } from './container';
 import { LogoMark } from './logo';
 import { NAV_LINKS, SITE } from '@/lib/site';
 
 export function SiteHeader() {
   const [open, setOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 16);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   return (
-    <header className="sticky top-0 z-50 border-b border-line bg-paper/85 backdrop-blur-md">
-      <Container className="flex h-[70px] items-center justify-between">
-        <Link href="/" className="flex items-center gap-2.5 font-grotesk text-[20px] font-bold tracking-tightest text-ink">
-          <LogoMark size={30} />
+    // transparent & full-width at the top → frosted rounded card that shrinks on scroll (WDC-style)
+    <header className="pointer-events-none sticky top-0 z-50 px-3 pt-4 sm:px-4">
+      <div
+        className={`pointer-events-auto mx-auto flex items-center justify-between gap-5 rounded-3xl border px-5 transition-[max-width,background-color,border-color,box-shadow] duration-300 ease-out sm:px-7 ${
+          scrolled
+            ? 'h-[72px] max-w-5xl border-line bg-paper/85 shadow-card backdrop-blur-xl'
+            : 'h-[80px] max-w-7xl border-transparent bg-transparent'
+        }`}
+      >
+        <Link href="/" className="flex items-center gap-3 font-grotesk text-[23px] font-bold tracking-tightest text-ink">
+          <LogoMark size={38} />
           {SITE.name}
         </Link>
 
@@ -23,42 +37,39 @@ export function SiteHeader() {
             <Link
               key={link.href}
               href={link.href}
-              className="group relative px-3 py-2 text-[14px] font-semibold text-muted transition hover:text-ink"
+              className="group relative px-4 py-2.5 text-[16px] font-semibold text-muted transition hover:text-ink"
             >
               {link.label}
-              <span className="absolute inset-x-3 -bottom-0.5 h-0.5 origin-left scale-x-0 rounded-full bg-brand transition-transform duration-300 ease-out group-hover:scale-x-100" />
+              <span className="absolute inset-x-4 -bottom-0.5 h-0.5 origin-left scale-x-0 rounded-full bg-brand transition-transform duration-300 ease-out group-hover:scale-x-100" />
             </Link>
           ))}
         </nav>
 
         <div className="hidden items-center gap-3 lg:flex">
-          <a
-            href={SITE.appUrl}
-            className="text-[14px] font-bold text-muted transition hover:text-ink"
-          >
+          <a href={SITE.appUrl} className="px-2.5 text-[16px] font-bold text-muted transition hover:text-ink">
             Log in
           </a>
           <Link
             href="/contact"
-            className="btn-shine group inline-flex items-center gap-1.5 rounded-full bg-ink px-5 py-2.5 text-[14px] font-bold text-white transition hover:bg-brand active:scale-[0.97]"
+            className="btn-shine group inline-flex items-center gap-1.5 rounded-full bg-ink px-6 py-3 text-[16px] font-bold text-white transition hover:bg-brand active:scale-[0.97]"
           >
             Book a demo
-            <ArrowUpRight size={16} className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+            <ArrowUpRight size={18} className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
           </Link>
         </div>
 
         <button
           aria-label="Toggle menu"
           onClick={() => setOpen((v) => !v)}
-          className="grid h-10 w-10 place-items-center rounded-full border border-line text-ink lg:hidden"
+          className="grid h-12 w-12 place-items-center rounded-full border border-line bg-paper/70 text-ink backdrop-blur lg:hidden"
         >
-          {open ? <X size={18} /> : <Menu size={18} />}
+          {open ? <X size={22} /> : <Menu size={22} />}
         </button>
-      </Container>
+      </div>
 
       {open && (
-        <div className="border-t border-line bg-paper lg:hidden">
-          <Container className="flex flex-col gap-1 py-5">
+        <div className="pointer-events-auto lg:hidden">
+          <div className="mx-auto mt-2 flex max-w-4xl flex-col gap-1 rounded-2xl border border-line bg-paper p-4 shadow-card">
             {NAV_LINKS.map((link) => (
               <Link
                 key={link.href}
@@ -79,7 +90,7 @@ export function SiteHeader() {
             >
               Book a demo <ArrowUpRight size={16} />
             </Link>
-          </Container>
+          </div>
         </div>
       )}
     </header>

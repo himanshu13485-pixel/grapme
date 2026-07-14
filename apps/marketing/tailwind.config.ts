@@ -45,14 +45,14 @@ const config: Config = {
       // Type scale (guidelines for sizes) — a fixed modular ramp
       fontSize: {
         eyebrow: ['0.8125rem', { lineHeight: '1', letterSpacing: '0.16em' }],
-        display1: ['clamp(2.8rem, 6vw, 5rem)', { lineHeight: '1.02', letterSpacing: '-0.025em' }],
-        display2: ['clamp(2.1rem, 4.4vw, 3.4rem)', { lineHeight: '1.06', letterSpacing: '-0.02em' }],
-        display3: ['clamp(1.7rem, 3vw, 2.3rem)', { lineHeight: '1.1', letterSpacing: '-0.015em' }],
+        display1: ['clamp(2.9rem, 6.2vw, 5.2rem)', { lineHeight: '1.02', letterSpacing: '-0.025em' }],
+        display2: ['clamp(2.2rem, 4.6vw, 3.6rem)', { lineHeight: '1.05', letterSpacing: '-0.02em' }],
+        display3: ['clamp(1.9rem, 3.4vw, 2.7rem)', { lineHeight: '1.08', letterSpacing: '-0.015em' }],
       },
-      // Spacing guidelines — tightened section rhythm
+      // Spacing guidelines — tight section rhythm
       spacing: {
-        section: '5rem',
-        'section-lg': '7rem',
+        section: '4rem',
+        'section-lg': '5.5rem',
       },
       backgroundImage: {
         'brand-gradient': 'linear-gradient(120deg, #5b6bff 0%, #4f46e5 100%)',

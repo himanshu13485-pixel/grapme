@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Play, ImageIcon } from 'lucide-react';
+import { ImageIcon } from 'lucide-react';
+import { DemoMockup } from './demo-mockup';
 
 const VIDEO_SRC = '/media/demo.mp4';
 const VIDEO_POSTER = '/media/demo-poster.jpg';
@@ -28,18 +29,8 @@ export function MediaVideo() {
           <source src={VIDEO_SRC} />
         </video>
       ) : (
-        <div className="relative grid h-full place-items-center overflow-hidden bg-[radial-gradient(circle_at_30%_30%,#2b2f66,#0f1224)] text-center">
-          <div className="bg-glow-brand animate-drift pointer-events-none absolute inset-0 opacity-40 blur-2xl" />
-          <div className="relative">
-            <span className="mx-auto mb-3 grid h-16 w-16 place-items-center rounded-full bg-white/10 text-white backdrop-blur transition group-hover:scale-110">
-              <Play size={26} className="translate-x-0.5 fill-white" />
-            </span>
-            <p className="font-grotesk text-sm font-bold text-white">Watch the 90-second demo</p>
-            <p className="mt-1 text-xs text-white/50">
-              Add <code className="rounded bg-white/10 px-1">public{VIDEO_SRC}</code>
-            </p>
-          </div>
-        </div>
+        // animated code mockup stands in until public/media/demo.mp4 exists
+        <DemoMockup />
       )}
     </div>
   );
@@ -59,7 +50,7 @@ export function MediaPhoto() {
   }, []);
 
   return (
-    <div className="relative aspect-video h-full overflow-hidden rounded-3xl border border-line shadow-card">
+    <div className="relative h-full min-h-[240px] overflow-hidden rounded-3xl border border-line shadow-card">
       {ok ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={PHOTO_SRC} alt="Agency team using Grapme" className="h-full w-full object-cover" />
