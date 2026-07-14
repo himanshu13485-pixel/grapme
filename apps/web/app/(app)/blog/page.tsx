@@ -1,10 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import { resizeAndUpload } from '@/lib/upload';
 import { RichText } from '@/components/RichText';
-import { PageHeader, EmptyState, Modal } from '@/components/ui';
+import { PageHeader, EmptyState, Modal, Tabs, Pagination } from '@/components/ui';
 
 const MARKETING_URL = process.env.NEXT_PUBLIC_MARKETING_URL ?? 'https://www.grapme.com';
 
@@ -27,11 +27,33 @@ export default function BlogAdminPage() {
   const [loaded, setLoaded] = useState(false);
   const [editing, setEditing] = useState<BlogPost | 'new' | null>(null);
   const [error, setError] = useState('');
+  const [q, setQ] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'published' | 'draft'>('all');
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
 
   const load = useCallback(() => {
     api.get<BlogPost[]>('/blog').then(setPosts).catch((e) => setError(e.message)).finally(() => setLoaded(true));
   }, []);
   useEffect(load, [load]);
+
+  const counts = useMemo(() => ({
+    all: posts.length,
+    published: posts.filter((p) => p.status === 'published').length,
+    draft: posts.filter((p) => p.status !== 'published').length,
+  }), [posts]);
+
+  const filtered = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    return posts
+      .filter((p) => statusFilter === 'all' || (statusFilter === 'published' ? p.status === 'published' : p.status !== 'published'))
+      .filter((p) => !s || [p.title, p.authorName, p.slug, p.excerpt].filter(Boolean).some((v) => v!.toLowerCase().includes(s)));
+  }, [posts, q, statusFilter]);
+
+  const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  // Reset to page 1 whenever the filters change.
+  useEffect(() => setPage(1), [q, statusFilter]);
 
   async function remove(p: BlogPost) {
     if (!confirm(`Delete post “${p.title}”? This removes it from the marketing site too.`)) return;
@@ -56,8 +78,28 @@ export default function BlogAdminPage() {
       {loaded && posts.length === 0 ? (
         <EmptyState message="No posts yet. Write your first one to publish it on the marketing blog." />
       ) : (
-        <div className="card divide-y divide-slate-100">
-          {posts.map((p) => (
+        <>
+          <Tabs
+            tabs={[
+              { key: 'all', label: 'All', count: counts.all },
+              { key: 'published', label: 'Published', count: counts.published },
+              { key: 'draft', label: 'Drafts', count: counts.draft },
+            ]}
+            active={statusFilter}
+            onChange={(k) => setStatusFilter(k as 'all' | 'published' | 'draft')}
+          />
+          <div className="mb-4 flex items-center gap-3">
+            <input
+              className="input max-w-xs"
+              placeholder="Search title / author / slug…"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
+            <span className="ml-auto text-sm text-slate-400">{filtered.length} of {posts.length}</span>
+          </div>
+
+          <div className="card divide-y divide-slate-100">
+            {paged.map((p) => (
             <div key={p.id} className="flex items-center gap-4 px-4 py-3">
               {p.coverImage ? (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -85,8 +127,13 @@ export default function BlogAdminPage() {
                 <button className="text-rose-600 hover:underline" onClick={() => remove(p)}>Delete</button>
               </div>
             </div>
-          ))}
-        </div>
+            ))}
+            {filtered.length === 0 && (
+              <div className="px-4 py-10 text-center text-sm text-slate-400">No posts match your search.</div>
+            )}
+          </div>
+          <Pagination page={page} pageSize={PAGE_SIZE} total={filtered.length} onPage={setPage} />
+        </>
       )}
 
       {editing && (
