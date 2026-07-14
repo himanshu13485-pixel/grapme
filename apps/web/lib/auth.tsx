@@ -9,6 +9,9 @@ import {
 } from 'react';
 import { api, setToken, setRefreshToken, clearTokens } from './api';
 
+// Where clients land after signing out (the public marketing site).
+const MARKETING_URL = process.env.NEXT_PUBLIC_MARKETING_URL ?? 'https://www.grapme.com';
+
 export interface AuthUser {
   id: string;
   name: string;
@@ -96,7 +99,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   function logout() {
+    const wasClient = user?.role === 'CLIENT';
     clearTokens();
+    // Clients return to the public marketing site; admins go to the login page.
+    if (wasClient && typeof window !== 'undefined') {
+      window.location.href = MARKETING_URL;
+      return;
+    }
     setUser(null);
   }
 
