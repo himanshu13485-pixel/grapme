@@ -3,8 +3,8 @@ import './globals.css';
 import { AuthProvider } from '@/lib/auth';
 
 export const metadata: Metadata = {
-  title: 'Automated Email Outreach',
-  description: 'Admin-controlled multi-client email outreach platform',
+  title: 'GrapMe',
+  description: 'GrapMe — admin-controlled multi-client email & LinkedIn outreach platform',
 };
 
 export default function RootLayout({

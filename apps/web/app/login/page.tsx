@@ -53,7 +53,7 @@ export default function LoginPage() {
             G
           </div>
           <h1 className="bg-gradient-to-r from-brand-700 to-accent-600 bg-clip-text text-2xl font-extrabold tracking-tight text-transparent">
-            GRAPOUT
+            GrapMe
           </h1>
           <p className="mt-1 text-sm text-slate-500">
             {mode === 'login'

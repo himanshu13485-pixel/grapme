@@ -260,7 +260,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               G
             </div>
             <div className="leading-tight">
-              <div className="text-base font-extrabold tracking-tight text-white">GRAPOUT</div>
+              <div className="text-base font-extrabold tracking-tight text-white">GrapMe</div>
               <div className="text-[10px] font-medium tracking-wide text-white/60">GVC Framework · Client Portal</div>
             </div>
           </div>
@@ -429,7 +429,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             G
           </div>
           <div className="leading-tight">
-            <div className="text-base font-extrabold tracking-tight text-white">GRAPOUT</div>
+            <div className="text-base font-extrabold tracking-tight text-white">GrapMe</div>
             <div className="text-[10px] font-medium tracking-wide text-indigo-300">GVC Framework</div>
           </div>
         </div>
@@ -624,7 +624,7 @@ function MobileTopBar({ onMenu }: { onMenu: () => void }) {
           <line x1="3" y1="18" x2="21" y2="18" />
         </svg>
       </button>
-      <span className="text-sm font-extrabold tracking-tight text-slate-800">GRAPOUT</span>
+      <span className="text-sm font-extrabold tracking-tight text-slate-800">GrapMe</span>
     </header>
   );
 }
