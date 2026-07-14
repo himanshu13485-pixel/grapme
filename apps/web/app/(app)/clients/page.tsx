@@ -162,6 +162,25 @@ export default function ClientsPage() {
     }
   }
 
+  async function logoutClient(c: Client) {
+    if (
+      !confirm(
+        `Sign "${c.name}" out of every device / session?\n\nThey stay signed in for up to 15 minutes (until their current access token expires), then must log in again.`,
+      )
+    )
+      return;
+    try {
+      const r = await api.post<{ revoked: number }>(`/admin/clients/${c.id}/logout`, {});
+      alert(
+        r.revoked > 0
+          ? `Signed out — ${r.revoked} active session${r.revoked === 1 ? '' : 's'} revoked.`
+          : 'This client had no active sessions.',
+      );
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to sign out');
+    }
+  }
+
   return (
     <div>
       <PageHeader
@@ -360,6 +379,18 @@ export default function ClientsPage() {
                       }}
                     >
                       Edit
+                    </button>
+                  )}
+                  {isAdmin && c.owner && (
+                    <button
+                      type="button"
+                      className="text-amber-600 hover:underline"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        logoutClient(c);
+                      }}
+                    >
+                      Log out
                     </button>
                   )}
                   {canDelete && (
@@ -998,29 +1029,6 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
     }
   }
 
-  async function forceLogout() {
-    if (
-      !confirm(
-        'Sign this client out of every device / session?\n\nThey stay signed in for up to 15 minutes (until their current access token expires), then must log in again.',
-      )
-    )
-      return;
-    setOwnerBusy(true);
-    setOwnerNote('');
-    try {
-      const r = await api.post<{ revoked: number }>(`/admin/clients/${client.id}/logout`, {});
-      setOwnerNote(
-        r.revoked > 0
-          ? `Signed out — ${r.revoked} active session${r.revoked === 1 ? '' : 's'} revoked.`
-          : 'This client had no active sessions.',
-      );
-    } catch (e) {
-      setOwnerNote(e instanceof Error ? e.message : 'Failed to sign out');
-    } finally {
-      setOwnerBusy(false);
-    }
-  }
-
   async function resetDefault() {
     if (!confirm('Reset this client to the default password "grapout@123"?')) return;
     setOwnerBusy(true);
@@ -1334,10 +1342,6 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
               <button type="button" className="text-xs font-medium text-amber-700 hover:underline"
                 onClick={resetDefault} disabled={ownerBusy}>
                 Reset to default password (grapout@123)
-              </button>
-              <button type="button" className="text-xs font-medium text-rose-700 hover:underline"
-                onClick={forceLogout} disabled={ownerBusy}>
-                Log out of all sessions
               </button>
               {ownerNote && <span className="text-xs text-slate-500">{ownerNote}</span>}
             </div>
