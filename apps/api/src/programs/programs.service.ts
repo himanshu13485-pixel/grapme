@@ -1660,30 +1660,40 @@ export class ProgramsService {
 
     // ── Email CHANGE: gate it. The current login keeps working until the client
     // confirms via the emailed link OR an admin approves it in the queue. ──
-    const taken = await this.prisma.user.findFirst({ where: { email, id: { not: currentOwner.id } } });
+    await this.gateLoginEmailChange(user, clientId, client.name, currentOwner.id, currentOwner.email, email);
+    return { ok: true, email: currentOwner.email, pending: true, pendingEmail: email };
+  }
+
+  /**
+   * Hold a client login-email change instead of applying it: stash pendingEmail + token,
+   * email the confirmation link to the NEW address, and queue a CLIENT_LOGIN_EMAIL
+   * approval as a fallback. Shared by setClientLogin and updateClientOwner so BOTH
+   * admin paths are gated. The current login keeps working until confirmed/approved.
+   */
+  private async gateLoginEmailChange(user: AuthUser, clientId: string, clientName: string, ownerId: string, currentEmail: string, newEmail: string) {
+    const taken = await this.prisma.user.findFirst({ where: { email: newEmail, id: { not: ownerId } } });
     if (taken) throw new BadRequestException('That email is already used by another account.');
 
     const token = randomBytes(32).toString('hex');
     const tokenHash = createHash('sha256').update(token).digest('hex');
     await this.prisma.user.update({
-      where: { id: currentOwner.id },
-      data: { pendingEmail: email, pendingEmailTokenHash: tokenHash, pendingEmailExpires: new Date(Date.now() + 48 * 3600 * 1000) },
+      where: { id: ownerId },
+      data: { pendingEmail: newEmail, pendingEmailTokenHash: tokenHash, pendingEmailExpires: new Date(Date.now() + 48 * 3600 * 1000) },
     });
 
-    // Confirmation link to the NEW email.
     const link = `${this.webUrlBase()}/verify-email-change?token=${token}`;
-    this.logger.log(`[login-email-change] confirm link for ${email}: ${link}`);
+    this.logger.log(`[login-email-change] confirm link for ${newEmail}: ${link}`);
     try {
       const account = await this.tenantSystemMailbox(user.tenantId);
       if (account) {
         await this.mailer.send({
           account,
-          to: email,
+          to: newEmail,
           subject: 'Confirm your new GrapMe login email',
           html: `
             <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto">
               <h2 style="color:#0f766e">Confirm your new login email</h2>
-              <p>Your account team set this address as the login email for your GrapMe portal (${client.name}).
+              <p>Your account team set this address as the login email for your GrapMe portal (${clientName}).
                  Confirm it to activate — your current login keeps working until you do.</p>
               <p style="margin:22px 0">
                 <a href="${link}" style="background:#0f766e;color:#fff;padding:12px 22px;border-radius:8px;text-decoration:none;font-weight:600">Confirm new login email</a>
@@ -1693,21 +1703,19 @@ export class ProgramsService {
         });
       }
     } catch (e) {
-      this.logger.warn(`login-email-change email to ${email} failed: ${(e as Error).message}`);
+      this.logger.warn(`login-email-change email to ${newEmail} failed: ${(e as Error).message}`);
     }
 
-    // Fallback approval so an admin can apply the change if the email never arrives.
     const pending = await this.prisma.approval.count({
-      where: { entityType: ApprovalEntity.CLIENT_LOGIN_EMAIL, entityId: currentOwner.id, status: ApprovalStatus.PENDING },
+      where: { entityType: ApprovalEntity.CLIENT_LOGIN_EMAIL, entityId: ownerId, status: ApprovalStatus.PENDING },
     });
     if (!pending) {
-      await this.approvals.submit({ tenantId: user.tenantId, entityType: ApprovalEntity.CLIENT_LOGIN_EMAIL, entityId: currentOwner.id, submittedById: user.userId });
+      await this.approvals.submit({ tenantId: user.tenantId, entityType: ApprovalEntity.CLIENT_LOGIN_EMAIL, entityId: ownerId, submittedById: user.userId });
     }
     await this.activity.log({
       tenantId: user.tenantId, actorId: user.userId, action: 'REQUEST_CLIENT_LOGIN_EMAIL_CHANGE',
-      entityType: 'Client', entityId: clientId, after: { from: currentOwner.email, to: email, client: client.name },
+      entityType: 'Client', entityId: clientId, after: { from: currentEmail, to: newEmail, client: clientName },
     });
-    return { ok: true, email: currentOwner.email, pending: true, pendingEmail: email };
   }
 
   /** True once a client's validity window has elapsed. */
@@ -2020,18 +2028,16 @@ export class ProgramsService {
     if (!client.ownerUserId) {
       throw new BadRequestException('Set a client login first.');
     }
-    const email = dto.email?.toLowerCase();
-    if (email) {
-      const clash = await this.prisma.user.findFirst({
-        where: { email, id: { not: client.ownerUserId } },
-      });
-      if (clash) throw new BadRequestException('That email is already in use.');
-    }
+    const current = await this.prisma.user.findUniqueOrThrow({ where: { id: client.ownerUserId }, select: { email: true } });
+    const email = dto.email?.trim().toLowerCase();
+
+    // Name/phone are plain identity fields → apply immediately. But the login EMAIL is
+    // a credential: if it's actually changing, gate it (client link OR admin approval)
+    // exactly like the login form — never change the login email instantly.
     const owner = await this.prisma.user.update({
       where: { id: client.ownerUserId },
       data: {
         ...(dto.name !== undefined ? { name: dto.name } : {}),
-        ...(email ? { email } : {}),
         ...(dto.mobile !== undefined ? { contactMobile: dto.mobile } : {}),
       },
       select: { id: true, name: true, email: true, contactMobile: true },
@@ -2042,9 +2048,14 @@ export class ProgramsService {
       action: 'UPDATE_CLIENT_OWNER',
       entityType: 'Client',
       entityId: clientId,
-      after: { name: owner.name, email: owner.email },
+      after: { name: owner.name },
     });
-    return owner;
+
+    if (email && email !== current.email.toLowerCase()) {
+      await this.gateLoginEmailChange(user, clientId, client.name, client.ownerUserId, current.email, email);
+      return { ...owner, pending: true, pendingEmail: email };
+    }
+    return { ...owner, pending: false };
   }
 
   /** Profiles owned by a client-portal user (for the client panel switcher). */

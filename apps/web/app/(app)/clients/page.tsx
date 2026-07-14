@@ -916,12 +916,16 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
     setOwnerBusy(true);
     setOwnerNote('');
     try {
-      await api.patch(`/clients/${client.id}/owner`, {
-        name: ownerName,
-        email: ownerEmail,
-        mobile: ownerMobile,
-      });
-      setOwnerNote('Client identity updated.');
+      const res = await api.patch<{ email: string; pending?: boolean; pendingEmail?: string }>(
+        `/clients/${client.id}/owner`,
+        { name: ownerName, email: ownerEmail, mobile: ownerMobile },
+      );
+      if (res.pending) {
+        setOwnerNote(`Name/phone saved. Login-email change to ${res.pendingEmail} is pending — a confirmation link was sent, and it's queued in Approvals. The current login (${res.email}) keeps working until confirmed.`);
+        setOwnerEmail(res.email); // the email hasn't changed yet
+      } else {
+        setOwnerNote('Client identity updated.');
+      }
     } catch (e) {
       setOwnerNote(e instanceof Error ? e.message : 'Failed');
     } finally {
