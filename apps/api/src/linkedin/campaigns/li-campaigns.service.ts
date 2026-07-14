@@ -203,12 +203,14 @@ export class LiCampaignsService {
     await this.assertExists(id);
     const campaign = await this.prisma.liCampaign.findUnique({ where: { id }, select: { tenantId: true, clientId: true } });
     if (!campaign) throw new BadRequestException('Campaign not found');
-    // Optional per-client credit metering: 1 credit per import run (same as sourcing).
+    // Optional per-client credit metering: 1 credit PER lead added.
     const client = await this.prisma.client.findUnique({ where: { id: campaign.clientId }, select: { linkedInCreditMetering: true } });
     const metered = !!client?.linkedInCreditMetering;
+    let balance = Infinity;
     if (metered) {
       const sub = await this.subs.getOrCreate(campaign.tenantId, campaign.clientId);
-      if (sub.creditsBalance < 1) throw new BadRequestException('Insufficient LinkedIn credits to import leads.');
+      balance = sub.creditsBalance;
+      if (balance < 1) throw new BadRequestException('Insufficient LinkedIn credits to import leads.');
     }
     const rows: Prisma.LiLeadCreateManyInput[] = dto.leads.map((l) => ({
       campaignId: id,
@@ -225,8 +227,8 @@ export class LiCampaignsService {
     const res = await this.prisma.liLead.createMany({ data: rows, skipDuplicates: true });
     let creditsCharged = 0;
     if (metered && res.count > 0) {
-      await this.subs.debit(campaign.tenantId, campaign.clientId, 1, LiCreditReason.LEAD_SOURCING, { refType: 'LiCampaign', refId: id });
-      creditsCharged = 1;
+      creditsCharged = Math.min(res.count, balance);
+      await this.subs.debit(campaign.tenantId, campaign.clientId, creditsCharged, LiCreditReason.LEAD_SOURCING, { refType: 'LiCampaign', refId: id });
     }
     return { imported: res.count, creditsCharged };
   }

@@ -173,7 +173,7 @@ function Details({ campaignId, base }: { campaignId: string; base: string }) {
     try {
       const r = await api.post<{ imported: number; creditsCharged?: number }>(`${base}/campaigns/${campaignId}/import-connections`, {});
       alert(r.imported > 0
-        ? `Imported ${r.imported} connection${r.imported === 1 ? '' : 's'}.${r.creditsCharged ? ' · 1 credit used.' : ''} Run more anytime — the daily send cap paces outreach.`
+        ? `Imported ${r.imported} connection${r.imported === 1 ? '' : 's'}.${r.creditsCharged ? ` · ${r.creditsCharged} credit${r.creditsCharged === 1 ? '' : 's'} used.` : ''} Run more anytime — the daily send cap paces outreach.`
         : 'No new connections found to import (all are already in this campaign).');
       setTab('all'); setPage(1); setReloadKey((k) => k + 1);
     } catch (e: any) { alert(e.message ?? 'Import failed'); }
@@ -185,7 +185,7 @@ function Details({ campaignId, base }: { campaignId: string; base: string }) {
     try {
       const r = await api.post<{ sourced: number; keywords: string; creditsCharged?: number }>(`${base}/campaigns/${campaignId}/source-leads?limit=25`, {});
       alert(r.sourced > 0
-        ? `Added ${r.sourced} lead${r.sourced === 1 ? '' : 's'} from LinkedIn search (query: "${r.keywords}").${r.creditsCharged ? ' · 1 credit used.' : ''}`
+        ? `Added ${r.sourced} lead${r.sourced === 1 ? '' : 's'} from LinkedIn search (query: "${r.keywords}").${r.creditsCharged ? ` · ${r.creditsCharged} credit${r.creditsCharged === 1 ? '' : 's'} used.` : ''}`
         : `No new leads found for "${r.keywords}". Try broadening the campaign's audience.`);
       setTab('all'); setPage(1); setReloadKey((k) => k + 1);
     } catch (e: any) { alert(e.message ?? 'Sourcing failed'); }

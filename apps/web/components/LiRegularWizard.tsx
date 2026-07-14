@@ -221,7 +221,7 @@ export function LiRegularWizard({
       await api.patch(`${base}/campaigns/${cid}/audience`, audience);
       const r = await api.post<{ sourced: number; keywords: string; creditsCharged?: number }>(`${base}/campaigns/${cid}/source-leads?limit=25`, {});
       setSourceMsg(r.sourced > 0
-        ? `✓ Added ${r.sourced} lead${r.sourced === 1 ? '' : 's'} to the Target Audience (query: “${r.keywords}”).${r.creditsCharged ? ' 1 credit used.' : ''} Pull more anytime on the campaign page.`
+        ? `✓ Added ${r.sourced} lead${r.sourced === 1 ? '' : 's'} to the Target Audience (query: “${r.keywords}”).${r.creditsCharged ? ` ${r.creditsCharged} credit${r.creditsCharged === 1 ? '' : 's'} used.` : ''} Pull more anytime on the campaign page.`
         : `No leads found for “${r.keywords}”. Broaden the audience above, or import leads manually on the campaign page.`);
     } catch (e: any) { setError(e.message ?? 'Sourcing failed'); }
     finally { setSourcing(false); }
@@ -405,7 +405,7 @@ export function LiRegularWizard({
                   <Field label="Source up to (leads/day)"><input type="number" min={1} max={200} className="input" value={sched.dripDailyTarget} onChange={(e) => setSched({ ...sched, dripDailyTarget: Number(e.target.value) })} /></Field>
                   <Field label="Keep pending buffer at"><input type="number" min={1} max={1000} className="input" value={sched.dripBuffer} onChange={(e) => setSched({ ...sched, dripBuffer: Number(e.target.value) })} /></Field>
                   <div className="sm:col-span-2 text-xs text-slate-500">
-                    Refills only when pending leads drop below {sched.dripBuffer}, up to {sched.dripDailyTarget}/day. If credit metering is on, that&apos;s 1 credit/day.
+                    Refills only when pending leads drop below {sched.dripBuffer}, up to {sched.dripDailyTarget}/day. If credit metering is on, sourced leads cost 1 credit each.
                   </div>
                 </div>
               )}
