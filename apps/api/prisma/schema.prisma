@@ -277,6 +277,11 @@ model Plan {
   // Shape: { emailCredits, linkedInCredits, mailboxLimit, seatLimit,
   //          emailCampaignLimit, linkedInCampaignLimit, validityDays }
   yearlyEntitlements    Json?
+  // Pricing-card style on the public + in-app pricing pages:
+  //  "entitlements" (default) = credits / mailboxes / seats / campaigns breakdown
+  //  "features"               = simple price + best price + a free-text feature list
+  cardStyle             String   @default("entitlements")
+  features              Json? // feature bullet list (string[]) for the "features" card
   createdAt             DateTime @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)

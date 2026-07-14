@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { Check, ArrowUpRight, Mail, Linkedin } from 'lucide-react';
 import { Reveal } from './reveal';
 import { TiltCard } from './tilt-card';
+import { PaymentLogos } from './payment-logos';
 import { SITE } from '@/lib/site';
 import type { PublicPlan, YearlyEntitlements } from '@/lib/plans';
 
@@ -77,6 +78,7 @@ function PlanCard({ plan, period, currency }: { plan: PublicPlan; period: 'month
   const showPrice = !!pr && (price > 0 || best > 0);
   const effective = best > 0 ? best : price;
 
+  const featuresMode = plan.cardStyle === 'features';
   const emailOn = plan.emailEnabled !== false;
   const linkedInOn = plan.linkedInEnabled !== false;
 
@@ -98,10 +100,12 @@ function PlanCard({ plan, period, currency }: { plan: PublicPlan; period: 'month
       <div className="p-6" style={{ borderTop: `4px solid ${plan.color}` }}>
         <div className="flex items-center justify-between">
           <h3 className="text-xl font-extrabold text-ink">{plan.name}</h3>
-          <div className="flex gap-1.5 text-muted">
-            {emailOn && <span className="grid h-7 w-7 place-items-center rounded-full bg-mist"><Mail size={14} /></span>}
-            {linkedInOn && <span className="grid h-7 w-7 place-items-center rounded-full bg-mist"><Linkedin size={14} /></span>}
-          </div>
+          {!featuresMode && (
+            <div className="flex gap-1.5 text-muted">
+              {emailOn && <span className="grid h-7 w-7 place-items-center rounded-full bg-mist"><Mail size={14} /></span>}
+              {linkedInOn && <span className="grid h-7 w-7 place-items-center rounded-full bg-mist"><Linkedin size={14} /></span>}
+            </div>
+          )}
         </div>
 
         <div className="mt-4">
@@ -124,29 +128,45 @@ function PlanCard({ plan, period, currency }: { plan: PublicPlan; period: 'month
       </div>
 
       <div className="flex-1 border-t border-line p-6 text-sm">
-        {emailOn && (
-          <div className="mb-4">
-            <div className="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-muted">
-              <Mail size={13} /> Email
-            </div>
-            <ul className="flex flex-col gap-1.5 text-ink/90">
-              <li className="flex items-center gap-2"><Check size={15} className="shrink-0 text-brand" /> {emailCredits.toLocaleString('en-US')} credits</li>
-              <li className="flex items-center gap-2"><Check size={15} className="shrink-0 text-brand" /> {mailboxLimit > 0 ? mailboxLimit : 'Unlimited'} mailboxes</li>
-              <li className="flex items-center gap-2"><Check size={15} className="shrink-0 text-brand" /> {emailCampaignLimit > 0 ? emailCampaignLimit : 'Unlimited'} campaigns</li>
+        {featuresMode ? (
+          <>
+            <div className="mb-3 text-[11px] font-bold uppercase tracking-wide text-muted">What&apos;s included</div>
+            <ul className="flex flex-col gap-2 text-ink/90">
+              {plan.features.map((f, i) => (
+                <li key={i} className="flex items-start gap-2">
+                  <Check size={16} className="mt-0.5 shrink-0 text-brand" /> {f}
+                </li>
+              ))}
             </ul>
-          </div>
-        )}
-        {linkedInOn && (
-          <div>
-            <div className="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-muted">
-              <Linkedin size={13} /> LinkedIn
-            </div>
-            <ul className="flex flex-col gap-1.5 text-ink/90">
-              <li className="flex items-center gap-2"><Check size={15} className="shrink-0 text-brand" /> {linkedInCredits.toLocaleString('en-US')} credits</li>
-              <li className="flex items-center gap-2"><Check size={15} className="shrink-0 text-brand" /> {seatLimit > 0 ? seatLimit : 'Unlimited'} seats</li>
-              <li className="flex items-center gap-2"><Check size={15} className="shrink-0 text-brand" /> {linkedInCampaignLimit > 0 ? linkedInCampaignLimit : 'Unlimited'} campaigns</li>
-            </ul>
-          </div>
+            <PaymentLogos className="mt-5" />
+          </>
+        ) : (
+          <>
+            {emailOn && (
+              <div className="mb-4">
+                <div className="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-muted">
+                  <Mail size={13} /> Email
+                </div>
+                <ul className="flex flex-col gap-1.5 text-ink/90">
+                  <li className="flex items-center gap-2"><Check size={15} className="shrink-0 text-brand" /> {emailCredits.toLocaleString('en-US')} credits</li>
+                  <li className="flex items-center gap-2"><Check size={15} className="shrink-0 text-brand" /> {mailboxLimit > 0 ? mailboxLimit : 'Unlimited'} mailboxes</li>
+                  <li className="flex items-center gap-2"><Check size={15} className="shrink-0 text-brand" /> {emailCampaignLimit > 0 ? emailCampaignLimit : 'Unlimited'} campaigns</li>
+                </ul>
+              </div>
+            )}
+            {linkedInOn && (
+              <div>
+                <div className="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-muted">
+                  <Linkedin size={13} /> LinkedIn
+                </div>
+                <ul className="flex flex-col gap-1.5 text-ink/90">
+                  <li className="flex items-center gap-2"><Check size={15} className="shrink-0 text-brand" /> {linkedInCredits.toLocaleString('en-US')} credits</li>
+                  <li className="flex items-center gap-2"><Check size={15} className="shrink-0 text-brand" /> {seatLimit > 0 ? seatLimit : 'Unlimited'} seats</li>
+                  <li className="flex items-center gap-2"><Check size={15} className="shrink-0 text-brand" /> {linkedInCampaignLimit > 0 ? linkedInCampaignLimit : 'Unlimited'} campaigns</li>
+                </ul>
+              </div>
+            )}
+          </>
         )}
       </div>
 

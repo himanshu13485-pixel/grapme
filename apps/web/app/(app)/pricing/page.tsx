@@ -5,6 +5,7 @@ import { usePlans, Plan } from '@/lib/plans';
 import { useAuth } from '@/lib/auth';
 import { api } from '@/lib/api';
 import { PageHeader, EmptyState } from '@/components/ui';
+import { PaymentLogos } from '@/components/PaymentLogos';
 
 interface Profile { id: string; name: string; plan?: string }
 
@@ -163,25 +164,42 @@ function PlanCard({ plan, period, currency, onSelect, selecting, current }: { pl
       </div>
 
       <div className="flex-1 border-t border-slate-100 p-5 text-sm">
-        {emailOn && (
-          <div className="mb-3">
-            <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">📧 Email</div>
-            <ul className="space-y-1 text-slate-600">
-              <li>✓ {emailCredits} credits</li>
-              <li>✓ {mailboxLimit > 0 ? mailboxLimit : 'Unlimited'} mailboxes</li>
-              <li>✓ {emailCampaignLimit > 0 ? emailCampaignLimit : 'Unlimited'} campaigns</li>
+        {plan.cardStyle === 'features' ? (
+          <>
+            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">What&apos;s included</div>
+            <ul className="space-y-1.5 text-slate-600">
+              {(plan.features ?? []).map((f, i) => (
+                <li key={i} className="flex items-start gap-2">
+                  <span className="mt-0.5 text-emerald-500">✓</span> {f}
+                </li>
+              ))}
+              {(plan.features ?? []).length === 0 && <li className="text-slate-400">Features coming soon.</li>}
             </ul>
-          </div>
-        )}
-        {linkedInOn && (
-          <div>
-            <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">🔗 LinkedIn</div>
-            <ul className="space-y-1 text-slate-600">
-              <li>✓ {linkedInCredits} credits</li>
-              <li>✓ {seatLimit} seats</li>
-              <li>✓ {linkedInCampaignLimit > 0 ? linkedInCampaignLimit : 'Unlimited'} campaigns</li>
-            </ul>
-          </div>
+            <PaymentLogos className="mt-4" />
+          </>
+        ) : (
+          <>
+            {emailOn && (
+              <div className="mb-3">
+                <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">📧 Email</div>
+                <ul className="space-y-1 text-slate-600">
+                  <li>✓ {emailCredits} credits</li>
+                  <li>✓ {mailboxLimit > 0 ? mailboxLimit : 'Unlimited'} mailboxes</li>
+                  <li>✓ {emailCampaignLimit > 0 ? emailCampaignLimit : 'Unlimited'} campaigns</li>
+                </ul>
+              </div>
+            )}
+            {linkedInOn && (
+              <div>
+                <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">🔗 LinkedIn</div>
+                <ul className="space-y-1 text-slate-600">
+                  <li>✓ {linkedInCredits} credits</li>
+                  <li>✓ {seatLimit} seats</li>
+                  <li>✓ {linkedInCampaignLimit > 0 ? linkedInCampaignLimit : 'Unlimited'} campaigns</li>
+                </ul>
+              </div>
+            )}
+          </>
         )}
       </div>
 

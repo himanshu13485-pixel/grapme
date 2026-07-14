@@ -116,6 +116,10 @@ function PlanRow({
     linkedInCampaignLimit: num(plan.linkedInCampaignLimit),
   });
   const [pricing, setPricing] = useState<PlanPrice[]>(() => plan.pricing ?? []);
+  const [cardStyle, setCardStyle] = useState<'entitlements' | 'features'>(
+    plan.cardStyle === 'features' ? 'features' : 'entitlements',
+  );
+  const [features, setFeatures] = useState<string[]>(() => plan.features ?? []);
   const [busy, setBusy] = useState(false);
   const set = (k: keyof typeof form, v: number) => setForm((f) => ({ ...f, [k]: v }));
   // Per-period entitlements: base `form` = monthly; `yearly` holds the yearly overrides.
@@ -151,6 +155,8 @@ function PlanRow({
 
   const dirty =
     JSON.stringify(pricing) !== JSON.stringify(plan.pricing ?? []) ||
+    cardStyle !== (plan.cardStyle === 'features' ? 'features' : 'entitlements') ||
+    JSON.stringify(features) !== JSON.stringify(plan.features ?? []) ||
     color.toLowerCase() !== plan.color.toLowerCase() ||
     emailOn !== (plan.emailEnabled !== false) ||
     linkedInOn !== (plan.linkedInEnabled !== false) ||
@@ -181,6 +187,8 @@ function PlanRow({
         linkedInCampaignLimit: form.linkedInCampaignLimit,
         pricing,
         yearlyEntitlements: yearly,
+        cardStyle,
+        features: features.map((f) => f.trim()).filter(Boolean),
       });
       onSaved();
     } catch {
@@ -225,43 +233,86 @@ function PlanRow({
         </div>
       </div>
 
-      <div className="mb-2">
-        <div className="mb-1 flex flex-wrap items-center gap-2">
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Entitlements</span>
-          <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 text-xs">
-            {(['monthly', 'yearly'] as const).map((p) => (
-              <button key={p} type="button" onClick={() => setPeriod(p)}
-                className={`rounded px-2.5 py-0.5 font-medium capitalize transition ${period === p ? 'bg-brand-600 text-white' : 'text-slate-500'}`}>{p}</button>
-            ))}
-          </div>
-          <span className="text-[11px] text-slate-400">values applied to a {period} subscription</span>
+      {/* Card style: entitlements breakdown vs a simple feature list */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Display as</span>
+        <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 text-xs">
+          {([['entitlements', 'Entitlements'], ['features', 'Feature list']] as const).map(([v, label]) => (
+            <button key={v} type="button" onClick={() => setCardStyle(v)}
+              className={`rounded px-2.5 py-0.5 font-medium transition ${cardStyle === v ? 'bg-brand-600 text-white' : 'text-slate-500'}`}>{label}</button>
+          ))}
         </div>
-        <NumField label="Validity (days)" value={active.validityDays} onChange={(v) => setActive('validityDays', v)} hint="0 = no expiry" />
+        <span className="text-[11px] text-slate-400">
+          {cardStyle === 'features' ? 'shows price + a “what’s included” list' : 'shows credits / mailboxes / seats / campaigns'}
+        </span>
       </div>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className={`rounded-lg border p-3 transition ${emailOn ? 'border-brand-100 bg-brand-50/40' : 'border-slate-100 bg-slate-50/60'}`}>
-          <label className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-            <input type="checkbox" checked={emailOn} onChange={(e) => setEmailOn(e.target.checked)} />
-            📧 Email {emailOn ? '' : '· off'}
-          </label>
-          <div className={`grid grid-cols-3 gap-2 ${emailOn ? '' : 'pointer-events-none opacity-40'}`}>
-            <NumField label="Credits" value={active.emailCredits} onChange={(v) => setActive('emailCredits', v)} />
-            <NumField label="Mailboxes" value={active.mailboxLimit} onChange={(v) => setActive('mailboxLimit', v)} />
-            <NumField label="Campaigns" value={active.emailCampaignLimit} onChange={(v) => setActive('emailCampaignLimit', v)} />
+
+      {cardStyle === 'entitlements' ? (
+        <>
+          <div className="mb-2">
+            <div className="mb-1 flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Entitlements</span>
+              <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 text-xs">
+                {(['monthly', 'yearly'] as const).map((p) => (
+                  <button key={p} type="button" onClick={() => setPeriod(p)}
+                    className={`rounded px-2.5 py-0.5 font-medium capitalize transition ${period === p ? 'bg-brand-600 text-white' : 'text-slate-500'}`}>{p}</button>
+                ))}
+              </div>
+              <span className="text-[11px] text-slate-400">values applied to a {period} subscription</span>
+            </div>
+            <NumField label="Validity (days)" value={active.validityDays} onChange={(v) => setActive('validityDays', v)} hint="0 = no expiry" />
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className={`rounded-lg border p-3 transition ${emailOn ? 'border-brand-100 bg-brand-50/40' : 'border-slate-100 bg-slate-50/60'}`}>
+              <label className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                <input type="checkbox" checked={emailOn} onChange={(e) => setEmailOn(e.target.checked)} />
+                📧 Email {emailOn ? '' : '· off'}
+              </label>
+              <div className={`grid grid-cols-3 gap-2 ${emailOn ? '' : 'pointer-events-none opacity-40'}`}>
+                <NumField label="Credits" value={active.emailCredits} onChange={(v) => setActive('emailCredits', v)} />
+                <NumField label="Mailboxes" value={active.mailboxLimit} onChange={(v) => setActive('mailboxLimit', v)} />
+                <NumField label="Campaigns" value={active.emailCampaignLimit} onChange={(v) => setActive('emailCampaignLimit', v)} />
+              </div>
+            </div>
+            <div className={`rounded-lg border p-3 transition ${linkedInOn ? 'border-brand-100 bg-brand-50/40' : 'border-slate-100 bg-slate-50/60'}`}>
+              <label className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                <input type="checkbox" checked={linkedInOn} onChange={(e) => setLinkedInOn(e.target.checked)} />
+                🔗 LinkedIn {linkedInOn ? '' : '· off'}
+              </label>
+              <div className={`grid grid-cols-3 gap-2 ${linkedInOn ? '' : 'pointer-events-none opacity-40'}`}>
+                <NumField label="Credits" value={active.linkedInCredits} onChange={(v) => setActive('linkedInCredits', v)} />
+                <NumField label="Seats" value={active.seatLimit} onChange={(v) => setActive('seatLimit', v)} />
+                <NumField label="Campaigns" value={active.linkedInCampaignLimit} onChange={(v) => setActive('linkedInCampaignLimit', v)} />
+              </div>
+            </div>
+          </div>
+        </>
+      ) : (
+        <div className="space-y-3">
+          <div className="max-w-xs">
+            <NumField label="Validity (days)" value={form.validityDays} onChange={(v) => set('validityDays', v)} hint="0 = no expiry" />
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-400">What&apos;s included</label>
+            <div className="space-y-2">
+              {features.map((f, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input
+                    className="input py-1.5 text-sm"
+                    placeholder="e.g. AI LinkedIn Outreach Platform"
+                    value={f}
+                    onChange={(e) => setFeatures((rows) => rows.map((r, j) => (j === i ? e.target.value : r)))}
+                  />
+                  <button type="button" className="text-xs text-slate-400 hover:text-rose-600" onClick={() => setFeatures((rows) => rows.filter((_, j) => j !== i))}>✕</button>
+                </div>
+              ))}
+              <button type="button" className="text-xs font-medium text-brand-600 hover:underline" onClick={() => setFeatures((rows) => [...rows, ''])}>
+                + Add feature
+              </button>
+            </div>
           </div>
         </div>
-        <div className={`rounded-lg border p-3 transition ${linkedInOn ? 'border-brand-100 bg-brand-50/40' : 'border-slate-100 bg-slate-50/60'}`}>
-          <label className="mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-            <input type="checkbox" checked={linkedInOn} onChange={(e) => setLinkedInOn(e.target.checked)} />
-            🔗 LinkedIn {linkedInOn ? '' : '· off'}
-          </label>
-          <div className={`grid grid-cols-3 gap-2 ${linkedInOn ? '' : 'pointer-events-none opacity-40'}`}>
-            <NumField label="Credits" value={active.linkedInCredits} onChange={(v) => setActive('linkedInCredits', v)} />
-            <NumField label="Seats" value={active.seatLimit} onChange={(v) => setActive('seatLimit', v)} />
-            <NumField label="Campaigns" value={active.linkedInCampaignLimit} onChange={(v) => setActive('linkedInCampaignLimit', v)} />
-          </div>
-        </div>
-      </div>
+      )}
 
       {/* Multi-currency pricing */}
       <div className="mt-4">

@@ -38,6 +38,10 @@ export interface Plan {
   linkedInCampaignLimit?: number;
   // Optional yearly overrides for the entitlements above (base = monthly).
   yearlyEntitlements?: PlanEntitlements | null;
+  // "entitlements" (default) shows the credits/mailboxes/seats/campaigns breakdown;
+  // "features" shows a simple price + best price + a free-text feature list.
+  cardStyle?: string;
+  features?: string[] | null;
 }
 
 /**

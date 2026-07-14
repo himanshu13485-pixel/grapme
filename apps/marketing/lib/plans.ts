@@ -41,6 +41,8 @@ export type PublicPlan = {
   linkedInCampaignLimit: number;
   pricing: PricingRow[];
   yearlyEntitlements: YearlyEntitlements | null;
+  cardStyle: string; // "entitlements" | "features"
+  features: string[];
 };
 
 export async function fetchPublicPlans(): Promise<PublicPlan[] | null> {

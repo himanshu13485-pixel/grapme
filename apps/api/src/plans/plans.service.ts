@@ -81,6 +81,8 @@ export class PlansService {
       linkedInCampaignLimit: p.linkedInCampaignLimit,
       pricing: Array.isArray(p.pricing) ? p.pricing : [],
       yearlyEntitlements: p.yearlyEntitlements ?? null,
+      cardStyle: p.cardStyle,
+      features: Array.isArray(p.features) ? p.features : [],
     }));
   }
 
@@ -118,6 +120,8 @@ export class PlansService {
       emailCampaignLimit?: number; linkedInCampaignLimit?: number;
       pricing?: unknown;
       yearlyEntitlements?: unknown;
+      cardStyle?: string;
+      features?: unknown;
     },
   ) {
     this.assertAdmin(user);
@@ -162,8 +166,20 @@ export class PlansService {
         ...(n(dto.linkedInCampaignLimit) !== undefined ? { linkedInCampaignLimit: n(dto.linkedInCampaignLimit) } : {}),
         ...(dto.pricing !== undefined ? { pricing: this.sanitizePricing(dto.pricing) } : {}),
         ...(dto.yearlyEntitlements !== undefined ? { yearlyEntitlements: this.sanitizeYearly(dto.yearlyEntitlements) } : {}),
+        ...(dto.cardStyle !== undefined ? { cardStyle: dto.cardStyle === 'features' ? 'features' : 'entitlements' } : {}),
+        ...(dto.features !== undefined ? { features: this.sanitizeFeatures(dto.features) } : {}),
       },
     });
+  }
+
+  /** Feature bullets for the "features" card style — trimmed, de-blanked, capped. */
+  private sanitizeFeatures(input: unknown): string[] {
+    if (!Array.isArray(input)) return [];
+    return input
+      .filter((v): v is string => typeof v === 'string')
+      .map((v) => v.trim().slice(0, 140))
+      .filter(Boolean)
+      .slice(0, 20);
   }
 
   /** Keep only the known numeric entitlement keys for the yearly override set. */
