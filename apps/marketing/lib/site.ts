@@ -8,7 +8,9 @@ export const SITE = {
   phone: '+91-9891797878',
   phoneHref: 'tel:+919891797878',
   whatsappHref: 'https://wa.me/919891797878',
-  appUrl: 'https://app.grapme.com',
+  // Client-side link target — NEXT_PUBLIC_* so it's available in the browser.
+  // Set NEXT_PUBLIC_APP_URL=http://localhost:3000 in .env.local for local dev.
+  appUrl: process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.grapme.com',
   twitter: '@grapme',
 } as const;
 
