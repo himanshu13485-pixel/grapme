@@ -20,6 +20,7 @@ const NAV: NavItem[] = [
   { href: '/updates', label: 'Updates', icon: '🔔', module: 'updates', updatesBadge: true },
   { href: '/registered-clients', label: 'Registered Clients', icon: '👥', admin: true, module: 'registered-clients' },
   { href: '/clients', label: 'Clients Workspace', icon: '🏢', admin: true, module: 'clients' },
+  { href: '/live-clients', label: 'Live Clients', icon: '🟢', admin: true, module: 'live-clients' },
   { href: '/validity', label: 'Subscription Management', icon: '🔁', admin: true, module: 'validity' },
   // ── Email Outreach (collapsed under "More…") ──
   { href: '/cohort-schedule', label: 'Cohort Schedule', icon: '📅', admin: true, module: 'cohort-schedule', group: 'email' },

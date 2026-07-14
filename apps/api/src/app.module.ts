@@ -30,6 +30,7 @@ import { LinkedinModule } from './linkedin/linkedin.module';
 import { LiPortalModule } from './linkedin/portal/li-portal.module';
 import { UpdatesModule } from './updates/updates.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
+import { SessionsModule } from './sessions/sessions.module';
 import { HealthController } from './health.controller';
 
 // The sending engine needs Redis. Set QUEUE_ENABLED=false to run the rest of
@@ -72,6 +73,7 @@ const engineModules = queueEnabled
     LiPortalModule,
     UpdatesModule,
     SubscriptionsModule,
+    SessionsModule,
     ...engineModules,
   ],
   controllers: [HealthController],

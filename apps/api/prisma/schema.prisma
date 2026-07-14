@@ -347,11 +347,14 @@ model RefreshToken {
   tokenHash String
   expiresAt DateTime
   revokedAt DateTime?
-  createdAt DateTime  @default(now())
+  ip        String? // client IP at login/refresh (carried across rotations)
+  userAgent String?
+  createdAt DateTime  @default(now()) // also the last-activity time (refresh rotates)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([userId, revokedAt])
 }
 
 model PasswordReset {
@@ -872,6 +875,9 @@ model Client {
   lastAutoCohortAt        DateTime? // guards once-per-month creation
   validityDays            Int? // plan validity window in days (30/180/360)
   validityStartAt         DateTime? // when the validity window began
+  // Postgres-generated: validityStartAt + validityDays. Read-only (never written by
+  // the app) — Postgres keeps it in sync so subscription date/expiry filters can query it.
+  validityEndAt           DateTime? // when the validity window ends (generated column)
   validityNotifyStage     Int       @default(0) // last expiry-reminder milestone emailed (0..4)
   createdAt               DateTime  @default(now())
   updatedAt               DateTime  @updatedAt

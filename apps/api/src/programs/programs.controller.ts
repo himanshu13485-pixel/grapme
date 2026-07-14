@@ -50,6 +50,8 @@ export class ProgramsController {
     @Query('plan') plan?: string,
     @Query('linkedInEnabled') linkedInEnabled?: string,
     @Query('channel') channel?: string,
+    @Query('expiryFrom') expiryFrom?: string,
+    @Query('expiryTo') expiryTo?: string,
   ) {
     return this.programs.listClientsPaged(user, {
       page,
@@ -61,6 +63,8 @@ export class ProgramsController {
       plan,
       linkedInEnabled,
       channel,
+      expiryFrom,
+      expiryTo,
     });
   }
 

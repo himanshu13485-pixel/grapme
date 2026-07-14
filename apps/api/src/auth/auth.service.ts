@@ -23,6 +23,12 @@ import {
 } from './dto/auth.dto';
 import { JwtPayload } from './jwt.strategy';
 
+/** Request context captured with a session (for the admin Live Clients view). */
+export type SessionCtx = { ip?: string; userAgent?: string };
+
+/** A session with no refresh within this many minutes is considered idle/offline. */
+export const SESSION_IDLE_MINUTES = 60;
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -51,10 +57,20 @@ export class AuthService {
     return { accessToken, refreshToken };
   }
 
-  private async persistRefreshToken(userId: string, token: string) {
+  private async persistRefreshToken(
+    userId: string,
+    token: string,
+    ctx?: SessionCtx,
+  ) {
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
     await this.prisma.refreshToken.create({
-      data: { userId, tokenHash: this.sha256(token), expiresAt },
+      data: {
+        userId,
+        tokenHash: this.sha256(token),
+        expiresAt,
+        ip: ctx?.ip ?? null,
+        userAgent: ctx?.userAgent ?? null,
+      },
     });
   }
 
@@ -131,7 +147,7 @@ export class AuthService {
     return this.issueSession(user);
   }
 
-  async login(dto: LoginDto) {
+  async login(dto: LoginDto, ctx?: SessionCtx) {
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });
@@ -153,10 +169,11 @@ export class AuthService {
       data: { lastLoginAt: new Date() },
     });
 
-    return this.issueSession(user);
+    return this.issueSession(user, ctx);
   }
 
-  private async issueSession(user: {
+  private async issueSession(
+    user: {
     id: string;
     tenantId: string;
     role: Role;
@@ -166,7 +183,9 @@ export class AuthService {
     accessModules?: unknown;
     canDelete?: boolean;
     canEdit?: boolean;
-  }) {
+    },
+    ctx?: SessionCtx,
+  ) {
     const payload: JwtPayload = {
       sub: user.id,
       tenantId: user.tenantId,
@@ -174,7 +193,7 @@ export class AuthService {
       email: user.email,
     };
     const tokens = await this.signTokens(payload);
-    await this.persistRefreshToken(user.id, tokens.refreshToken);
+    await this.persistRefreshToken(user.id, tokens.refreshToken, ctx);
     return {
       user: {
         id: user.id,
@@ -191,7 +210,7 @@ export class AuthService {
     };
   }
 
-  async refresh(refreshToken: string) {
+  async refresh(refreshToken: string, ctx?: SessionCtx) {
     let payload: JwtPayload;
     try {
       payload = await this.jwt.verifyAsync(refreshToken, {
@@ -211,7 +230,20 @@ export class AuthService {
     });
     if (!stored) throw new UnauthorizedException('Refresh token revoked');
 
-    // Rotate: revoke the old token, issue a fresh pair.
+    // Idle timeout: the app refreshes every ~15 min while a tab is open, so a
+    // token older than the idle window means the session went quiet (tab closed).
+    // Reject and revoke so the user must sign in again.
+    const idleMs = SESSION_IDLE_MINUTES * 60 * 1000;
+    if (Date.now() - stored.createdAt.getTime() > idleMs) {
+      await this.prisma.refreshToken.update({
+        where: { id: stored.id },
+        data: { revokedAt: new Date() },
+      });
+      throw new UnauthorizedException('Session timed out — please sign in again');
+    }
+
+    // Rotate: revoke the old token, issue a fresh pair. Carry the original
+    // login IP / user-agent forward so a session keeps its identity.
     await this.prisma.refreshToken.update({
       where: { id: stored.id },
       data: { revokedAt: new Date() },
@@ -224,8 +256,25 @@ export class AuthService {
       email: payload.email,
     };
     const tokens = await this.signTokens(newPayload);
-    await this.persistRefreshToken(payload.sub, tokens.refreshToken);
+    await this.persistRefreshToken(payload.sub, tokens.refreshToken, {
+      ip: ctx?.ip ?? stored.ip ?? undefined,
+      userAgent: ctx?.userAgent ?? stored.userAgent ?? undefined,
+    });
     return tokens;
+  }
+
+  /**
+   * Force-logout every active session for a user (admin "log this client out").
+   * Revokes all their refresh tokens, so within one access-token lifetime
+   * (≤15 min) they can no longer refresh and are signed out everywhere.
+   * Returns the number of sessions revoked.
+   */
+  async revokeAllSessions(userId: string): Promise<number> {
+    const res = await this.prisma.refreshToken.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    return res.count;
   }
 
   async logout(userId: string) {

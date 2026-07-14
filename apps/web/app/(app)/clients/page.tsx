@@ -40,6 +40,7 @@ interface Client {
   stageIntervalJitterDays: number;
   validityDays?: number | null;
   validityStartAt?: string | null;
+  validityEndAt?: string | null;
   _count?: { mailboxes: number; cohorts: number; enrollments: number; contacts: number };
   stats?: { emailSent: number; emailOpens: number; contacts: number; liInvites: number; liConnected: number; liLeads: number };
   owner?: { id: string; name: string; email: string; contactMobile?: string | null; emailVerified?: boolean | null; pendingEmail?: string | null } | null;
@@ -58,6 +59,8 @@ export default function ClientsPage() {
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [planFilter, setPlanFilter] = useState('ALL');
   const [channelFilter, setChannelFilter] = useState('ALL');
+  const [expiryFrom, setExpiryFrom] = useState('');
+  const [expiryTo, setExpiryTo] = useState('');
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 12;
   const canDelete = useCanDelete();
@@ -87,7 +90,8 @@ export default function ClientsPage() {
   }, [invoiceQ]);
 
   const hasFilters =
-    !!dq || !!dEmail || !!dInvoice || statusFilter !== 'ALL' || planFilter !== 'ALL' || channelFilter !== 'ALL';
+    !!dq || !!dEmail || !!dInvoice || statusFilter !== 'ALL' || planFilter !== 'ALL' ||
+    channelFilter !== 'ALL' || !!expiryFrom || !!expiryTo;
 
   const load = useCallback(() => {
     const params = new URLSearchParams();
@@ -99,6 +103,8 @@ export default function ClientsPage() {
     if (statusFilter !== 'ALL') params.set('status', statusFilter.toLowerCase());
     if (planFilter !== 'ALL') params.set('plan', planFilter);
     if (channelFilter !== 'ALL') params.set('channel', channelFilter);
+    if (expiryFrom && !isClient) params.set('expiryFrom', expiryFrom);
+    if (expiryTo && !isClient) params.set('expiryTo', expiryTo);
     api
       .get<{ items: Client[]; total: number }>(`/clients/paged?${params.toString()}`)
       .then((r) => {
@@ -107,10 +113,10 @@ export default function ClientsPage() {
       })
       .catch(() => {})
       .finally(() => setLoaded(true));
-  }, [page, dq, dEmail, dInvoice, statusFilter, planFilter, channelFilter, isClient]);
+  }, [page, dq, dEmail, dInvoice, statusFilter, planFilter, channelFilter, expiryFrom, expiryTo, isClient]);
 
   // Reset to page 1 whenever the filters change, then (re)fetch.
-  useEffect(() => setPage(1), [dq, dEmail, dInvoice, statusFilter, planFilter, channelFilter]);
+  useEffect(() => setPage(1), [dq, dEmail, dInvoice, statusFilter, planFilter, channelFilter, expiryFrom, expiryTo]);
   useEffect(() => {
     load();
   }, [load]);
@@ -201,7 +207,8 @@ export default function ClientsPage() {
             >
               <option value="ALL">All statuses</option>
               <option value="ACTIVE">Active</option>
-              <option value="INACTIVE">Inactive</option>
+              <option value="INACTIVE">Inactive (Deactivated)</option>
+              <option value="EXPIRED">Expired</option>
             </select>
           )}
           {!isClient && (
@@ -230,6 +237,38 @@ export default function ClientsPage() {
               <option value="BOTH">📧 + 🔗 Both</option>
             </select>
           )}
+          {!isClient && (
+            <div className="flex items-center gap-1.5 text-xs text-slate-500">
+              <span className="whitespace-nowrap">Expiry</span>
+              <input
+                type="date"
+                className="input w-[9.5rem]"
+                value={expiryFrom}
+                max={expiryTo || undefined}
+                onChange={(e) => setExpiryFrom(e.target.value)}
+                title="Subscription expires on / after"
+              />
+              <span>–</span>
+              <input
+                type="date"
+                className="input w-[9.5rem]"
+                value={expiryTo}
+                min={expiryFrom || undefined}
+                onChange={(e) => setExpiryTo(e.target.value)}
+                title="Subscription expires on / before"
+              />
+              {(expiryFrom || expiryTo) && (
+                <button
+                  type="button"
+                  className="text-slate-400 hover:text-slate-600"
+                  onClick={() => { setExpiryFrom(''); setExpiryTo(''); }}
+                  title="Clear expiry filter"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          )}
           <span className="ml-auto text-sm text-slate-400">{total} total</span>
         </div>
         {loaded && total === 0 ? (
@@ -249,7 +288,12 @@ export default function ClientsPage() {
             <Link key={c.id} href={`/clients/${c.id}`} className="card p-5 transition hover:border-brand-300 hover:shadow-sm">
               <div className="flex items-center justify-between">
                 <div className="font-medium text-slate-800">{c.name}</div>
-                <StatusBadge status={(c.status ?? 'active').toLowerCase() === 'active' ? 'ACTIVE' : 'INACTIVE'} />
+                <div className="flex items-center gap-1.5">
+                  {c.validityEndAt && new Date(c.validityEndAt) < new Date() && (
+                    <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-medium text-rose-700">Expired</span>
+                  )}
+                  <StatusBadge status={(c.status ?? 'active').toLowerCase() === 'active' ? 'ACTIVE' : 'INACTIVE'} />
+                </div>
               </div>
               {(c.email || c.owner?.email) && (
                 <div className="mt-0.5 truncate text-xs text-slate-500">
@@ -940,6 +984,29 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
     }
   }
 
+  async function forceLogout() {
+    if (
+      !confirm(
+        'Sign this client out of every device / session?\n\nThey stay signed in for up to 15 minutes (until their current access token expires), then must log in again.',
+      )
+    )
+      return;
+    setOwnerBusy(true);
+    setOwnerNote('');
+    try {
+      const r = await api.post<{ revoked: number }>(`/admin/clients/${client.id}/logout`, {});
+      setOwnerNote(
+        r.revoked > 0
+          ? `Signed out — ${r.revoked} active session${r.revoked === 1 ? '' : 's'} revoked.`
+          : 'This client had no active sessions.',
+      );
+    } catch (e) {
+      setOwnerNote(e instanceof Error ? e.message : 'Failed to sign out');
+    } finally {
+      setOwnerBusy(false);
+    }
+  }
+
   async function resetDefault() {
     if (!confirm('Reset this client to the default password "grapout@123"?')) return;
     setOwnerBusy(true);
@@ -1253,6 +1320,10 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
               <button type="button" className="text-xs font-medium text-amber-700 hover:underline"
                 onClick={resetDefault} disabled={ownerBusy}>
                 Reset to default password (grapout@123)
+              </button>
+              <button type="button" className="text-xs font-medium text-rose-700 hover:underline"
+                onClick={forceLogout} disabled={ownerBusy}>
+                Log out of all sessions
               </button>
               {ownerNote && <span className="text-xs text-slate-500">{ownerNote}</span>}
             </div>

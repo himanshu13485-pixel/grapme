@@ -237,6 +237,8 @@ export class ProgramsService {
       plan?: string;
       linkedInEnabled?: string;
       channel?: string;
+      expiryFrom?: string;
+      expiryTo?: string;
     },
   ) {
     const page = Math.max(1, parseInt(query.page ?? '1', 10) || 1);
@@ -256,6 +258,23 @@ export class ProgramsService {
     const status = (query.status ?? '').toLowerCase();
     if (status === 'active' || status === 'inactive') {
       and.push({ status: { equals: status, mode: 'insensitive' } });
+    } else if (status === 'expired') {
+      // Subscription window has elapsed (validityEndAt is a generated column).
+      and.push({ validityEndAt: { not: null, lt: new Date() } });
+    }
+    // Date-wise subscription filter: clients whose validity window ends within the range.
+    const expiryRange: Prisma.DateTimeNullableFilter = {};
+    if (query.expiryFrom) {
+      const d = new Date(query.expiryFrom);
+      if (!isNaN(d.getTime())) expiryRange.gte = d;
+    }
+    if (query.expiryTo) {
+      const d = new Date(query.expiryTo);
+      // Inclusive end-of-day so a single day picked as "to" includes that whole day.
+      if (!isNaN(d.getTime())) expiryRange.lte = new Date(d.getTime() + 86_400_000 - 1);
+    }
+    if (expiryRange.gte || expiryRange.lte) {
+      and.push({ validityEndAt: { not: null, ...expiryRange } });
     }
     if (query.plan) and.push({ plan: query.plan });
     if (query.linkedInEnabled === 'true') and.push({ linkedInEnabled: true });
