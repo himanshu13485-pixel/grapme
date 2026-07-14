@@ -21,7 +21,6 @@ const NAV: NavItem[] = [
   { href: '/registered-clients', label: 'Registered Clients', icon: '👥', admin: true, module: 'registered-clients' },
   { href: '/clients', label: 'Clients Workspace', icon: '🏢', admin: true, module: 'clients' },
   { href: '/live-clients', label: 'Live Clients', icon: '🟢', admin: true, module: 'live-clients' },
-  { href: '/validity', label: 'Subscription Management', icon: '🔁', admin: true, module: 'validity' },
   // ── Email Outreach (collapsed under "More…") ──
   { href: '/cohort-schedule', label: 'Cohort Schedule', icon: '📅', admin: true, module: 'cohort-schedule', group: 'email' },
   { href: '/campaigns', label: 'Campaigns', icon: '✈', module: 'campaigns', group: 'email' },
@@ -36,6 +35,7 @@ const NAV: NavItem[] = [
   { href: '/linkedin-inbox', label: 'LinkedIn Inbox', icon: '📨', admin: true, module: 'linkedin-inbox', group: 'linkedin' },
   { href: '/linkedin-leads', label: 'LinkedIn Leads', icon: '🧲', admin: true, module: 'linkedin-leads', group: 'linkedin' },
   // ── Main Menu (collapsed folder: Approvals → WhatsApp) ──
+  { href: '/validity', label: 'Subscription Management', icon: '🔁', admin: true, module: 'validity', group: 'main' },
   { href: '/approvals', label: 'Approvals', icon: '✓', admin: true, module: 'approvals', group: 'main' },
   { href: '/compliance', label: 'Compliance', icon: '⚖', admin: true, module: 'compliance', group: 'main' },
   { href: '/greetings', label: 'Greetings', icon: '👋', admin: true, module: 'greetings', group: 'main' },
