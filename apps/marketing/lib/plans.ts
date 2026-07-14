@@ -16,6 +16,16 @@ export type PricingRow = {
   yearlyBest: number;
 };
 
+export type YearlyEntitlements = Partial<{
+  emailCredits: number;
+  linkedInCredits: number;
+  mailboxLimit: number;
+  seatLimit: number;
+  emailCampaignLimit: number;
+  linkedInCampaignLimit: number;
+  validityDays: number;
+}>;
+
 export type PublicPlan = {
   id: string;
   name: string;
@@ -30,6 +40,7 @@ export type PublicPlan = {
   emailCampaignLimit: number;
   linkedInCampaignLimit: number;
   pricing: PricingRow[];
+  yearlyEntitlements: YearlyEntitlements | null;
 };
 
 export async function fetchPublicPlans(): Promise<PublicPlan[] | null> {
@@ -46,41 +57,3 @@ export async function fetchPublicPlans(): Promise<PublicPlan[] | null> {
   }
 }
 
-/** Pick the pricing row to display, preferring a stable order of common currencies. */
-export function preferredPricing(plan: PublicPlan): PricingRow | null {
-  if (plan.pricing.length === 0) return null;
-  const order = ['INR', 'USD', 'EUR', 'GBP', 'AED'];
-  for (const c of order) {
-    const row = plan.pricing.find((p) => p.currency === c);
-    if (row) return row;
-  }
-  return plan.pricing[0];
-}
-
-const CURRENCY_SYMBOL: Record<string, string> = {
-  INR: '₹', USD: '$', EUR: '€', GBP: '£', AED: 'AED ',
-};
-
-export function formatMoney(amount: number, currency: string): string {
-  const sym = CURRENCY_SYMBOL[currency] ?? `${currency} `;
-  return `${sym}${amount.toLocaleString('en-US')}`;
-}
-
-/** Human feature bullets for a plan card. */
-export function planFeatures(plan: PublicPlan): string[] {
-  const f: string[] = [];
-  const channels = [
-    plan.emailEnabled ? 'Email' : null,
-    plan.linkedInEnabled ? 'LinkedIn' : null,
-  ].filter(Boolean);
-  if (channels.length) f.push(`${channels.join(' + ')} outreach`);
-  if (plan.validityDays) f.push(`${plan.validityDays}-day validity`);
-  const credits = plan.emailCredits + plan.linkedInCredits;
-  if (credits > 0) f.push(`${credits.toLocaleString('en-US')} send credits`);
-  if (plan.mailboxLimit > 0) f.push(`${plan.mailboxLimit} mailbox${plan.mailboxLimit === 1 ? '' : 'es'}`);
-  if (plan.seatLimit > 0) f.push(`${plan.seatLimit} LinkedIn seat${plan.seatLimit === 1 ? '' : 's'}`);
-  const campaigns = plan.emailCampaignLimit + plan.linkedInCampaignLimit;
-  if (campaigns > 0) f.push(`${campaigns} concurrent campaign${campaigns === 1 ? '' : 's'}`);
-  f.push('Approval-gated sending');
-  return f;
-}
