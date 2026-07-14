@@ -29,6 +29,8 @@ export default function BlogAdminPage() {
   const [error, setError] = useState('');
   const [q, setQ] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'published' | 'draft'>('all');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 10;
 
@@ -45,15 +47,24 @@ export default function BlogAdminPage() {
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
+    const from = fromDate ? new Date(fromDate).getTime() : null;
+    // Inclusive end-of-day so a single "to" day covers that whole day.
+    const to = toDate ? new Date(toDate).getTime() + 86_400_000 - 1 : null;
     return posts
       .filter((p) => statusFilter === 'all' || (statusFilter === 'published' ? p.status === 'published' : p.status !== 'published'))
-      .filter((p) => !s || [p.title, p.authorName, p.slug, p.excerpt].filter(Boolean).some((v) => v!.toLowerCase().includes(s)));
-  }, [posts, q, statusFilter]);
+      .filter((p) => !s || [p.title, p.authorName, p.slug, p.excerpt].filter(Boolean).some((v) => v!.toLowerCase().includes(s)))
+      .filter((p) => {
+        if (!from && !to) return true;
+        if (!p.publishedAt) return false; // drafts have no publish date
+        const t = new Date(p.publishedAt).getTime();
+        return (from === null || t >= from) && (to === null || t <= to);
+      });
+  }, [posts, q, statusFilter, fromDate, toDate]);
 
   const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   // Reset to page 1 whenever the filters change.
-  useEffect(() => setPage(1), [q, statusFilter]);
+  useEffect(() => setPage(1), [q, statusFilter, fromDate, toDate]);
 
   async function remove(p: BlogPost) {
     if (!confirm(`Delete post “${p.title}”? This removes it from the marketing site too.`)) return;
@@ -88,13 +99,43 @@ export default function BlogAdminPage() {
             active={statusFilter}
             onChange={(k) => setStatusFilter(k as 'all' | 'published' | 'draft')}
           />
-          <div className="mb-4 flex items-center gap-3">
+          <div className="mb-4 flex flex-wrap items-center gap-3">
             <input
               className="input max-w-xs"
               placeholder="Search title / author / slug…"
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
+            <div className="flex items-center gap-1.5 text-xs text-slate-500">
+              <span className="whitespace-nowrap">Published</span>
+              <input
+                type="date"
+                className="input w-[9.5rem]"
+                value={fromDate}
+                max={toDate || undefined}
+                onChange={(e) => setFromDate(e.target.value)}
+                title="Published on / after"
+              />
+              <span>–</span>
+              <input
+                type="date"
+                className="input w-[9.5rem]"
+                value={toDate}
+                min={fromDate || undefined}
+                onChange={(e) => setToDate(e.target.value)}
+                title="Published on / before"
+              />
+              {(fromDate || toDate) && (
+                <button
+                  type="button"
+                  className="text-slate-400 hover:text-slate-600"
+                  onClick={() => { setFromDate(''); setToDate(''); }}
+                  title="Clear date filter"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
             <span className="ml-auto text-sm text-slate-400">{filtered.length} of {posts.length}</span>
           </div>
 
