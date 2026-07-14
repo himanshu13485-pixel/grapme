@@ -226,6 +226,28 @@ model PlanUpgradeRequest {
   @@index([clientId])
 }
 
+// One subscription period per client — the renewal history log. The client's live
+// window still lives on Client (validityDays/validityStartAt); the latest period
+// mirrors it. Replacing a plan/validity early closes the open period (endedReason).
+model SubscriptionPeriod {
+  id           String   @id @default(uuid())
+  tenantId     String
+  clientId     String
+  plan         String
+  validityDays Int
+  startAt      DateTime @default(now())
+  endAt        DateTime
+  amount       Int? // price paid (whole currency units), if known
+  currency     String?
+  source       String   @default("admin") // admin | billing | plan_request | registration | backfill
+  endedReason  String? // null = ran to natural expiry; SUPERSEDED = replaced early; CANCELLED
+  createdAt    DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([clientId, startAt])
+  @@index([endAt])
+}
+
 // Tenant-defined plan names shown in every plan picker/filter.
 model Plan {
   id                    String   @id @default(uuid())

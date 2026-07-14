@@ -8,6 +8,7 @@ import { useCanDelete, useAuth } from '@/lib/auth';
 import { downloadCsv } from '@/lib/csv';
 import { PageHeader, EmptyState, StatusBadge, Tabs, Modal } from '@/components/ui';
 import { ClientLinkedIn } from '@/components/ClientLinkedIn';
+import { SubscriptionHistory } from '@/components/SubscriptionHistory';
 import { ContactsManager } from '@/components/ContactsManager';
 import { TemplatesManager } from '@/components/TemplatesManager';
 import { CampaignsManager } from '@/components/CampaignsManager';
@@ -1881,6 +1882,10 @@ function ClientDetails({ client }: { client: Client }) {
       <DetailSection title="Client details" rows={clientRows} />
       {emailRows.length > 0 && <DetailSection title="📧 Email business requirements" rows={emailRows} />}
       {linkedinRows.length > 0 && <DetailSection title="🔗 LinkedIn business requirements" rows={linkedinRows} />}
+      <div className="card p-5">
+        <h4 className="mb-3 text-sm font-semibold text-slate-800">🔁 Subscription history</h4>
+        <SubscriptionHistory clientId={client.id} />
+      </div>
     </div>
   );
 }

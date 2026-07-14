@@ -20,6 +20,7 @@ const NAV: NavItem[] = [
   { href: '/updates', label: 'Updates', icon: '🔔', module: 'updates', updatesBadge: true },
   { href: '/registered-clients', label: 'Registered Clients', icon: '👥', admin: true, module: 'registered-clients' },
   { href: '/clients', label: 'Clients Workspace', icon: '🏢', admin: true, module: 'clients' },
+  { href: '/validity', label: 'Subscription Management', icon: '🔁', admin: true, module: 'validity' },
   // ── Email Outreach (collapsed under "More…") ──
   { href: '/cohort-schedule', label: 'Cohort Schedule', icon: '📅', admin: true, module: 'cohort-schedule', group: 'email' },
   { href: '/campaigns', label: 'Campaigns', icon: '✈', module: 'campaigns', group: 'email' },
@@ -109,7 +110,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           pathname !== '/my-profile' &&
           pathname !== '/client-home' &&
           pathname !== '/updates' &&
-          pathname !== '/pricing'
+          pathname !== '/pricing' &&
+          pathname !== '/subscription'
         ) {
           router.replace('/client-home');
         }
@@ -351,6 +353,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               active={pathname === '/pricing'}
               icon="🪙"
               label="Membership"
+              color={themeColor}
+            />
+            <ClientNavItem
+              href="/subscription"
+              active={pathname === '/subscription'}
+              icon="🔁"
+              label="Subscription"
               color={themeColor}
             />
           </nav>

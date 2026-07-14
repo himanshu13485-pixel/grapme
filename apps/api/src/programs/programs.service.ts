@@ -33,6 +33,7 @@ import { GeoService } from '../common/services/geo.service';
 import { LiCampaignsService } from '../linkedin/campaigns/li-campaigns.service';
 import { LinkedInSubscriptionService } from '../linkedin/subscription/linkedin-subscription.service';
 import { BounceService } from '../bounce/bounce.service';
+import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import {
   AssignMailboxDto,
   CreateClientDto,
@@ -82,6 +83,7 @@ export class ProgramsService {
     private liCampaigns: LiCampaignsService,
     private liSubs: LinkedInSubscriptionService,
     private bounce: BounceService,
+    private subscriptions: SubscriptionsService,
   ) {}
 
   /**
@@ -174,6 +176,11 @@ export class ProgramsService {
     const client = await this.prisma.client.create({
       data: { tenantId: user.tenantId, ...clientData, ...validity, ...ownerData },
     });
+
+    // Seed the subscription history if the client starts with a validity window.
+    if (client.validityDays && client.validityStartAt) {
+      await this.subscriptions.record(user.tenantId, client.id, { plan: client.plan, validityDays: client.validityDays, source: 'registration' });
+    }
 
     if (clientRequestsLinkedIn) {
       // Seed the subscription with the send window the client asked for, then queue
@@ -1971,6 +1978,10 @@ export class ProgramsService {
       },
       select: { id: true, validityDays: true, validityStartAt: true },
     });
+    // Log a new subscription period for the history (closes any open one early).
+    if (validityDays) {
+      await this.subscriptions.record(user.tenantId, clientId, { plan: client.plan, validityDays, source: 'admin' });
+    }
     await this.activity.log({
       tenantId: user.tenantId,
       actorId: user.userId,
@@ -2063,7 +2074,7 @@ export class ProgramsService {
     if (user.role !== Role.CLIENT) return [];
     return this.prisma.client.findMany({
       where: { tenantId: user.tenantId, ownerUserId: user.userId },
-      select: { id: true, name: true, serviceType: true, plan: true },
+      select: { id: true, name: true, serviceType: true, plan: true, validityDays: true, validityStartAt: true },
       orderBy: { createdAt: 'asc' },
     });
   }
