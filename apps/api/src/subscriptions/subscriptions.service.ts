@@ -34,6 +34,9 @@ export class SubscriptionsService {
     if (open) {
       await this.prisma.subscriptionPeriod.update({ where: { id: open.id }, data: { endAt: now, endedReason: 'SUPERSEDED' } });
     }
+    // Snapshot what this plan includes, so the history shows features even if the plan
+    // definition changes later.
+    const entitlements = await this.planEntitlements(tenantId, opts.plan);
     return this.prisma.subscriptionPeriod.create({
       data: {
         tenantId, clientId,
@@ -43,8 +46,18 @@ export class SubscriptionsService {
         amount: opts.amount ?? null,
         currency: opts.currency ?? null,
         source: opts.source ?? 'admin',
+        ...(entitlements ? { entitlements } : {}),
       },
     });
+  }
+
+  private async planEntitlements(tenantId: string, planName?: string | null) {
+    if (!planName) return null;
+    const p = await this.prisma.plan.findFirst({
+      where: { tenantId, name: planName },
+      select: { emailCredits: true, linkedInCredits: true, mailboxLimit: true, seatLimit: true, emailCampaignLimit: true, linkedInCampaignLimit: true },
+    });
+    return p ?? null;
   }
 
   private status(endAt: Date, endedReason: string | null, now: number): SubStatus {
@@ -64,6 +77,17 @@ export class SubscriptionsService {
     if (!ok) throw new ForbiddenException('You do not have access to this client');
 
     const rows = await this.prisma.subscriptionPeriod.findMany({ where: { clientId }, orderBy: { startAt: 'desc' } });
+    // Fallback entitlements for older/backfilled periods with no snapshot: the plan's
+    // current definition (looked up by name).
+    const planNames = [...new Set(rows.filter((r) => !r.entitlements).map((r) => r.plan))];
+    const plans = planNames.length
+      ? await this.prisma.plan.findMany({
+          where: { tenantId: user.tenantId, name: { in: planNames } },
+          select: { name: true, emailCredits: true, linkedInCredits: true, mailboxLimit: true, seatLimit: true, emailCampaignLimit: true, linkedInCampaignLimit: true },
+        })
+      : [];
+    const planMap = new Map(plans.map((p) => [p.name, { emailCredits: p.emailCredits, linkedInCredits: p.linkedInCredits, mailboxLimit: p.mailboxLimit, seatLimit: p.seatLimit, emailCampaignLimit: p.emailCampaignLimit, linkedInCampaignLimit: p.linkedInCampaignLimit }]));
+
     const now = Date.now();
     const items = rows.map((r, i) => ({
       id: r.id,
@@ -75,6 +99,7 @@ export class SubscriptionsService {
       currency: r.currency,
       source: r.source,
       endedReason: r.endedReason,
+      entitlements: (r.entitlements as Record<string, number> | null) ?? planMap.get(r.plan) ?? null,
       current: i === 0 && r.endedReason == null,
       status: this.status(r.endAt, r.endedReason, now),
       daysLeft: Math.ceil((new Date(r.endAt).getTime() - now) / 86_400_000),

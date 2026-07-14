@@ -241,6 +241,9 @@ model SubscriptionPeriod {
   currency     String?
   source       String   @default("admin") // admin | billing | plan_request | registration | backfill
   endedReason  String? // null = ran to natural expiry; SUPERSEDED = replaced early; CANCELLED
+  // Snapshot of what the plan included at activation: { emailCredits, linkedInCredits,
+  // mailboxLimit, seatLimit, emailCampaignLimit, linkedInCampaignLimit }.
+  entitlements Json?
   createdAt    DateTime @default(now())
 
   @@index([tenantId])

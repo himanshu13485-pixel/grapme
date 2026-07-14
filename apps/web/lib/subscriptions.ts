@@ -2,6 +2,15 @@
 
 export type SubStatus = 'ACTIVE' | 'EXPIRING' | 'EXPIRED' | 'SUPERSEDED' | 'CANCELLED';
 
+export interface PlanEntitlements {
+  emailCredits?: number;
+  linkedInCredits?: number;
+  mailboxLimit?: number;
+  seatLimit?: number;
+  emailCampaignLimit?: number;
+  linkedInCampaignLimit?: number;
+}
+
 export interface SubPeriod {
   id: string;
   plan: string;
@@ -12,9 +21,24 @@ export interface SubPeriod {
   currency?: string | null;
   source: string;
   endedReason?: string | null;
+  entitlements?: PlanEntitlements | null;
   current: boolean;
   status: SubStatus;
   daysLeft: number;
+}
+
+/** Compact chips of what a plan includes (skips undefined fields). */
+export function entitlementChips(e?: PlanEntitlements | null): { icon: string; label: string; value: number }[] {
+  if (!e) return [];
+  const rows: { icon: string; label: string; value: number | undefined }[] = [
+    { icon: '✉', label: 'Email credits', value: e.emailCredits },
+    { icon: '📥', label: 'Mailboxes', value: e.mailboxLimit },
+    { icon: '✈', label: 'Email campaigns', value: e.emailCampaignLimit },
+    { icon: '🔗', label: 'LinkedIn credits', value: e.linkedInCredits },
+    { icon: '🪑', label: 'Seats', value: e.seatLimit },
+    { icon: '🧲', label: 'LinkedIn campaigns', value: e.linkedInCampaignLimit },
+  ];
+  return rows.filter((r) => r.value != null) as { icon: string; label: string; value: number }[];
 }
 
 export interface SubHistory {

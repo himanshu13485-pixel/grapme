@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
-import { SubHistory, SubPeriod, subStatusMeta, fmtDate, fmtMoney } from '@/lib/subscriptions';
+import { SubHistory, SubPeriod, subStatusMeta, fmtDate, fmtMoney, entitlementChips } from '@/lib/subscriptions';
 
 /** Renewal-history table for one client. Works for admin (any client) and the client
  *  portal (own client) — the API scopes access by role. */
@@ -41,11 +41,19 @@ export function SubscriptionHistory({ clientId, compact }: { clientId: string; c
 function Row({ p, compact }: { p: SubPeriod; compact?: boolean }) {
   const m = subStatusMeta(p.status);
   const live = p.status === 'ACTIVE' || p.status === 'EXPIRING';
+  const chips = entitlementChips(p.entitlements);
   return (
-    <tr className="border-t border-slate-100">
+    <tr className="border-t border-slate-100 align-top">
       <td className="px-3 py-2 font-medium text-slate-800">
-        {p.plan}
-        {p.current && <span className="ml-2 rounded-full bg-brand-50 px-1.5 py-0.5 text-[10px] font-medium text-brand-700">current</span>}
+        <div className="flex items-center">
+          {p.plan}
+          {p.current && <span className="ml-2 rounded-full bg-brand-50 px-1.5 py-0.5 text-[10px] font-medium text-brand-700">current</span>}
+        </div>
+        {chips.length > 0 && (
+          <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] font-normal text-slate-500">
+            {chips.map((c) => <span key={c.label} title={c.label}>{c.icon} {c.value}</span>)}
+          </div>
+        )}
       </td>
       <td className="px-3 py-2 text-slate-600">{fmtDate(p.startAt)} → {fmtDate(p.endAt)}</td>
       <td className="px-3 py-2 text-slate-500">{p.validityDays}d{live ? ` · ${p.daysLeft} left` : ''}</td>
