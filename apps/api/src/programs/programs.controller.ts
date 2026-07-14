@@ -52,6 +52,8 @@ export class ProgramsController {
     @Query('channel') channel?: string,
     @Query('expiryFrom') expiryFrom?: string,
     @Query('expiryTo') expiryTo?: string,
+    @Query('createdFrom') createdFrom?: string,
+    @Query('createdTo') createdTo?: string,
   ) {
     return this.programs.listClientsPaged(user, {
       page,
@@ -65,6 +67,8 @@ export class ProgramsController {
       channel,
       expiryFrom,
       expiryTo,
+      createdFrom,
+      createdTo,
     });
   }
 

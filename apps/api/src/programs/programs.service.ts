@@ -239,6 +239,8 @@ export class ProgramsService {
       channel?: string;
       expiryFrom?: string;
       expiryTo?: string;
+      createdFrom?: string;
+      createdTo?: string;
     },
   ) {
     const page = Math.max(1, parseInt(query.page ?? '1', 10) || 1);
@@ -255,27 +257,38 @@ export class ProgramsService {
         ...(user.role === Role.CLIENT ? { ownerUserId: user.userId } : {}),
       },
     ];
+    // Subscription state (validityEndAt is a generated column: start + validity days):
+    //  current     → active login window, not expired
+    //  expired     → validity window elapsed
+    //  deactivated → account switched off by an admin
+    // ('active'/'inactive' kept as aliases for older links.)
+    const now = new Date();
     const status = (query.status ?? '').toLowerCase();
-    if (status === 'active' || status === 'inactive') {
-      and.push({ status: { equals: status, mode: 'insensitive' } });
+    if (status === 'current' || status === 'active') {
+      and.push({ status: { equals: 'active', mode: 'insensitive' } });
+      if (status === 'current') {
+        and.push({ OR: [{ validityEndAt: null }, { validityEndAt: { gte: now } }] });
+      }
+    } else if (status === 'deactivated' || status === 'inactive') {
+      and.push({ status: { equals: 'inactive', mode: 'insensitive' } });
     } else if (status === 'expired') {
-      // Subscription window has elapsed (validityEndAt is a generated column).
-      and.push({ validityEndAt: { not: null, lt: new Date() } });
+      and.push({ validityEndAt: { not: null, lt: now } });
     }
-    // Date-wise subscription filter: clients whose validity window ends within the range.
-    const expiryRange: Prisma.DateTimeNullableFilter = {};
-    if (query.expiryFrom) {
-      const d = new Date(query.expiryFrom);
-      if (!isNaN(d.getTime())) expiryRange.gte = d;
-    }
-    if (query.expiryTo) {
-      const d = new Date(query.expiryTo);
-      // Inclusive end-of-day so a single day picked as "to" includes that whole day.
-      if (!isNaN(d.getTime())) expiryRange.lte = new Date(d.getTime() + 86_400_000 - 1);
-    }
-    if (expiryRange.gte || expiryRange.lte) {
-      and.push({ validityEndAt: { not: null, ...expiryRange } });
-    }
+
+    // Date-wise range — filters either the subscription expiry date or the client
+    // creation date, depending on which field the caller supplies.
+    const dateRange = (from?: string, to?: string): Prisma.DateTimeFilter | null => {
+      const r: Prisma.DateTimeFilter = {};
+      if (from) { const d = new Date(from); if (!isNaN(d.getTime())) r.gte = d; }
+      // Inclusive end-of-day so a single day picked as "to" covers that whole day.
+      if (to) { const d = new Date(to); if (!isNaN(d.getTime())) r.lte = new Date(d.getTime() + 86_400_000 - 1); }
+      return r.gte || r.lte ? r : null;
+    };
+    const expiryRange = dateRange(query.expiryFrom, query.expiryTo);
+    if (expiryRange) and.push({ validityEndAt: { not: null, ...expiryRange } });
+    const createdRange = dateRange(query.createdFrom, query.createdTo);
+    if (createdRange) and.push({ createdAt: createdRange });
+
     if (query.plan) and.push({ plan: query.plan });
     if (query.linkedInEnabled === 'true') and.push({ linkedInEnabled: true });
     // Channel filter — matches the card's label logic (email is on unless explicitly off).

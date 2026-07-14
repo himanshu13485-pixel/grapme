@@ -59,8 +59,9 @@ export default function ClientsPage() {
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [planFilter, setPlanFilter] = useState('ALL');
   const [channelFilter, setChannelFilter] = useState('ALL');
-  const [expiryFrom, setExpiryFrom] = useState('');
-  const [expiryTo, setExpiryTo] = useState('');
+  const [dateField, setDateField] = useState<'expiry' | 'created'>('expiry');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 12;
   const canDelete = useCanDelete();
@@ -91,7 +92,7 @@ export default function ClientsPage() {
 
   const hasFilters =
     !!dq || !!dEmail || !!dInvoice || statusFilter !== 'ALL' || planFilter !== 'ALL' ||
-    channelFilter !== 'ALL' || !!expiryFrom || !!expiryTo;
+    channelFilter !== 'ALL' || !!dateFrom || !!dateTo;
 
   const load = useCallback(() => {
     const params = new URLSearchParams();
@@ -103,8 +104,13 @@ export default function ClientsPage() {
     if (statusFilter !== 'ALL') params.set('status', statusFilter.toLowerCase());
     if (planFilter !== 'ALL') params.set('plan', planFilter);
     if (channelFilter !== 'ALL') params.set('channel', channelFilter);
-    if (expiryFrom && !isClient) params.set('expiryFrom', expiryFrom);
-    if (expiryTo && !isClient) params.set('expiryTo', expiryTo);
+    // Date range applies to either the subscription expiry or the created date.
+    if (!isClient && (dateFrom || dateTo)) {
+      const fromKey = dateField === 'created' ? 'createdFrom' : 'expiryFrom';
+      const toKey = dateField === 'created' ? 'createdTo' : 'expiryTo';
+      if (dateFrom) params.set(fromKey, dateFrom);
+      if (dateTo) params.set(toKey, dateTo);
+    }
     api
       .get<{ items: Client[]; total: number }>(`/clients/paged?${params.toString()}`)
       .then((r) => {
@@ -113,10 +119,10 @@ export default function ClientsPage() {
       })
       .catch(() => {})
       .finally(() => setLoaded(true));
-  }, [page, dq, dEmail, dInvoice, statusFilter, planFilter, channelFilter, expiryFrom, expiryTo, isClient]);
+  }, [page, dq, dEmail, dInvoice, statusFilter, planFilter, channelFilter, dateField, dateFrom, dateTo, isClient]);
 
   // Reset to page 1 whenever the filters change, then (re)fetch.
-  useEffect(() => setPage(1), [dq, dEmail, dInvoice, statusFilter, planFilter, channelFilter, expiryFrom, expiryTo]);
+  useEffect(() => setPage(1), [dq, dEmail, dInvoice, statusFilter, planFilter, channelFilter, dateField, dateFrom, dateTo]);
   useEffect(() => {
     load();
   }, [load]);
@@ -205,10 +211,10 @@ export default function ClientsPage() {
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
             >
-              <option value="ALL">All statuses</option>
-              <option value="ACTIVE">Active</option>
-              <option value="INACTIVE">Inactive (Deactivated)</option>
-              <option value="EXPIRED">Expired</option>
+              <option value="ALL">All subscriptions</option>
+              <option value="CURRENT">Current subscription</option>
+              <option value="EXPIRED">Subscription expired</option>
+              <option value="DEACTIVATED">Deactivated</option>
             </select>
           )}
           {!isClient && (
@@ -239,30 +245,38 @@ export default function ClientsPage() {
           )}
           {!isClient && (
             <div className="flex items-center gap-1.5 text-xs text-slate-500">
-              <span className="whitespace-nowrap">Expiry</span>
+              <select
+                className="input w-[7.5rem]"
+                value={dateField}
+                onChange={(e) => setDateField(e.target.value as 'expiry' | 'created')}
+                title="Which date to search by"
+              >
+                <option value="expiry">Expiry date</option>
+                <option value="created">Created date</option>
+              </select>
               <input
                 type="date"
                 className="input w-[9.5rem]"
-                value={expiryFrom}
-                max={expiryTo || undefined}
-                onChange={(e) => setExpiryFrom(e.target.value)}
-                title="Subscription expires on / after"
+                value={dateFrom}
+                max={dateTo || undefined}
+                onChange={(e) => setDateFrom(e.target.value)}
+                title={dateField === 'created' ? 'Created on / after' : 'Subscription expires on / after'}
               />
               <span>–</span>
               <input
                 type="date"
                 className="input w-[9.5rem]"
-                value={expiryTo}
-                min={expiryFrom || undefined}
-                onChange={(e) => setExpiryTo(e.target.value)}
-                title="Subscription expires on / before"
+                value={dateTo}
+                min={dateFrom || undefined}
+                onChange={(e) => setDateTo(e.target.value)}
+                title={dateField === 'created' ? 'Created on / before' : 'Subscription expires on / before'}
               />
-              {(expiryFrom || expiryTo) && (
+              {(dateFrom || dateTo) && (
                 <button
                   type="button"
                   className="text-slate-400 hover:text-slate-600"
-                  onClick={() => { setExpiryFrom(''); setExpiryTo(''); }}
-                  title="Clear expiry filter"
+                  onClick={() => { setDateFrom(''); setDateTo(''); }}
+                  title="Clear date filter"
                 >
                   ✕
                 </button>
