@@ -116,11 +116,18 @@ export default function ClientsPage() {
   }, [load]);
 
   // The sidebar "Set up my workspace" links here with ?new=1 to open the form.
+  // Subscription Management links here with ?edit=<id> to open that client's edit form.
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if (new URLSearchParams(window.location.search).get('new') === '1') {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('new') === '1') {
       setShow(true);
       window.history.replaceState(null, '', '/clients');
+    }
+    const editId = params.get('edit');
+    if (editId) {
+      window.history.replaceState(null, '', '/clients');
+      api.get<Client>(`/clients/${editId}`).then((c) => setEditing(c)).catch(() => {});
     }
   }, []);
 

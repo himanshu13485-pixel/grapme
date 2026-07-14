@@ -34,9 +34,12 @@ export class SubscriptionsService {
     if (open) {
       await this.prisma.subscriptionPeriod.update({ where: { id: open.id }, data: { endAt: now, endedReason: 'SUPERSEDED' } });
     }
-    // Snapshot what this plan includes, so the history shows features even if the plan
-    // definition changes later.
-    const entitlements = await this.planEntitlements(tenantId, opts.plan);
+    // Snapshot what this plan includes + the client's invoice number, so the history
+    // stays accurate even if the plan definition or invoice changes later.
+    const [entitlements, client] = await Promise.all([
+      this.planEntitlements(tenantId, opts.plan),
+      this.prisma.client.findUnique({ where: { id: clientId }, select: { invoiceNo: true } }),
+    ]);
     return this.prisma.subscriptionPeriod.create({
       data: {
         tenantId, clientId,
@@ -45,6 +48,7 @@ export class SubscriptionsService {
         startAt: now, endAt,
         amount: opts.amount ?? null,
         currency: opts.currency ?? null,
+        invoiceNo: client?.invoiceNo ?? null,
         source: opts.source ?? 'admin',
         ...(entitlements ? { entitlements } : {}),
       },
@@ -77,6 +81,8 @@ export class SubscriptionsService {
     if (!ok) throw new ForbiddenException('You do not have access to this client');
 
     const rows = await this.prisma.subscriptionPeriod.findMany({ where: { clientId }, orderBy: { startAt: 'desc' } });
+    // Current invoice for periods that predate the snapshot column.
+    const clientRow = await this.prisma.client.findUnique({ where: { id: clientId }, select: { invoiceNo: true } });
     // Fallback entitlements for older/backfilled periods with no snapshot: the plan's
     // current definition (looked up by name).
     const planNames = [...new Set(rows.filter((r) => !r.entitlements).map((r) => r.plan))];
@@ -97,6 +103,7 @@ export class SubscriptionsService {
       endAt: r.endAt,
       amount: r.amount,
       currency: r.currency,
+      invoiceNo: r.invoiceNo ?? clientRow?.invoiceNo ?? null,
       source: r.source,
       endedReason: r.endedReason,
       entitlements: (r.entitlements as Record<string, number> | null) ?? planMap.get(r.plan) ?? null,

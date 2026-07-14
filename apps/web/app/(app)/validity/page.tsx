@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { api } from '@/lib/api';
 import { PageHeader, EmptyState, Tabs } from '@/components/ui';
 import { validityInfo } from '@/components/Validity';
@@ -18,7 +19,6 @@ interface Client {
   owner?: { email: string } | null;
 }
 
-const PRESETS = [30, 180, 360];
 const STATE_META: Record<ClientSubState, { label: string; cls: string }> = {
   active: { label: 'Active', cls: 'bg-emerald-50 text-emerald-700' },
   expiring: { label: 'Expiring soon', cls: 'bg-amber-50 text-amber-700' },
@@ -67,7 +67,7 @@ export default function SubscriptionManagementPage() {
     <div>
       <PageHeader
         title="Subscription Management"
-        subtitle="Every client's plan, validity window and status — set/extend validity and view renewal history."
+        subtitle="Every client's plan, validity and status — renew/edit in the workspace, deactivate or expire, and view renewal history."
       />
 
       {error && <p className="mb-4 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-600">{error}</p>}
@@ -90,7 +90,7 @@ export default function SubscriptionManagementPage() {
                   <th className="px-4 py-3">Plan</th>
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3">Current validity</th>
-                  <th className="px-4 py-3">Set validity (days)</th>
+                  <th className="px-4 py-3">Manage</th>
                 </tr>
               </thead>
               <tbody>
@@ -106,7 +106,6 @@ export default function SubscriptionManagementPage() {
 }
 
 function ClientRows({ client, onSaved }: { client: Client; onSaved: () => void }) {
-  const [days, setDays] = useState<string>(client.validityDays ? String(client.validityDays) : '');
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState('');
   const [open, setOpen] = useState(false);
@@ -115,15 +114,6 @@ function ClientRows({ client, onSaved }: { client: Client; onSaved: () => void }
   const m = STATE_META[state];
 
   const active = (client.status ?? 'active').toLowerCase() === 'active';
-
-  async function save(value: number | null) {
-    setBusy(true); setNote('');
-    try {
-      await api.patch(`/clients/${client.id}/validity`, { days: value });
-      setNote('Saved'); onSaved();
-    } catch (e) { setNote(e instanceof Error ? e.message : 'Failed'); }
-    finally { setBusy(false); }
-  }
 
   async function toggleActive(next: boolean) {
     setBusy(true); setNote('');
@@ -159,15 +149,9 @@ function ClientRows({ client, onSaved }: { client: Client; onSaved: () => void }
           )}
         </td>
         <td className="px-4 py-3">
-          <div className="flex flex-wrap items-center gap-2">
-            {PRESETS.map((p) => (
-              <button key={p} type="button" className="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50" onClick={() => { setDays(String(p)); save(p); }} disabled={busy}>{p}</button>
-            ))}
-            <input type="number" min={0} className="input w-20 py-1 text-sm" placeholder="Days" value={days} onChange={(e) => setDays(e.target.value)} />
-            <button type="button" className="btn-primary px-3 py-1 text-xs" onClick={() => save(days ? Number(days) : null)} disabled={busy}>{busy ? '…' : 'Renew'}</button>
-            {note && <span className="text-xs text-slate-400">{note}</span>}
-          </div>
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            {/* Renewal is done in the client's Edit form (plan + validity), then submitted. */}
+            <Link href={`/clients?edit=${client.id}`} className="btn-primary px-3 py-1 text-xs">Renew / Edit →</Link>
             <span className={`rounded-full px-2 py-0.5 font-medium ${active ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-200 text-slate-600'}`}>{active ? 'Active client' : 'Deactivated'}</span>
             {active ? (
               <button type="button" className="rounded-md border border-slate-200 px-2 py-1 text-slate-600 hover:bg-slate-50" onClick={() => toggleActive(false)} disabled={busy}>Deactivate</button>
@@ -177,6 +161,7 @@ function ClientRows({ client, onSaved }: { client: Client; onSaved: () => void }
             {!v.none && !v.expired && (
               <button type="button" className="rounded-md border border-rose-200 px-2 py-1 text-rose-600 hover:bg-rose-50" onClick={forceExpire} disabled={busy}>Expire now</button>
             )}
+            {note && <span className="text-slate-400">{note}</span>}
           </div>
         </td>
       </tr>

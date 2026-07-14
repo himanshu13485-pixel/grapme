@@ -26,6 +26,7 @@ export function SubscriptionHistory({ clientId, compact }: { clientId: string; c
             <th className="px-3 py-2">Plan</th>
             <th className="px-3 py-2">Period</th>
             <th className="px-3 py-2">Days</th>
+            {!compact && <th className="px-3 py-2">Invoice</th>}
             {!compact && <th className="px-3 py-2">Amount</th>}
             <th className="px-3 py-2">Status</th>
           </tr>
@@ -57,6 +58,7 @@ function Row({ p, compact }: { p: SubPeriod; compact?: boolean }) {
       </td>
       <td className="px-3 py-2 text-slate-600">{fmtDate(p.startAt)} → {fmtDate(p.endAt)}</td>
       <td className="px-3 py-2 text-slate-500">{p.validityDays}d{live ? ` · ${p.daysLeft} left` : ''}</td>
+      {!compact && <td className="px-3 py-2 text-slate-500">{p.invoiceNo || '—'}</td>}
       {!compact && <td className="px-3 py-2 text-slate-500">{fmtMoney(p.amount, p.currency)}</td>}
       <td className="px-3 py-2"><span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${m.cls}`}>{m.label}</span></td>
     </tr>

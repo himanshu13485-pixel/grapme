@@ -19,6 +19,7 @@ export interface SubPeriod {
   endAt: string;
   amount?: number | null;
   currency?: string | null;
+  invoiceNo?: string | null;
   source: string;
   endedReason?: string | null;
   entitlements?: PlanEntitlements | null;
