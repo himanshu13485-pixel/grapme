@@ -142,6 +142,18 @@ export function LiClientPlanFields({
         <div><label className="label">Start invites / day</label><input className="input" type="number" min={1} value={d.warmupStartLimit} onChange={(e) => setD({ warmupStartLimit: Number(e.target.value) })} /></div>
         <div><label className="label">Days to reach full cap</label><input className="input" type="number" min={1} max={60} value={d.warmupDays} onChange={(e) => setD({ warmupDays: Number(e.target.value) })} /></div>
       </div>
+      {(() => {
+        const full = Math.max(1, d.dailyConnectionLimit);
+        const start = Math.min(Math.max(1, d.warmupStartLimit), full);
+        const days = Math.max(1, d.warmupDays);
+        const mid = Math.max(1, Math.round(days / 2));
+        const capOn = (day: number) => Math.max(start, Math.min(full, Math.round(start + (full - start) * (day / days))));
+        return (
+          <div className="mt-1 rounded-lg bg-white/70 px-3 py-2 text-xs text-slate-500">
+            📈 Warm-up climbs gradually (not flat): <strong>Day 1 ≈ {start}/day</strong> → Day {mid} ≈ {capOn(mid)}/day → <strong>Day {days} = {full}/day</strong>, then holds. The wobble still spaces each day’s invites.
+          </div>
+        );
+      })()}
 
       {/* Drip (admin-only) */}
       <div className="mt-4 rounded-lg border border-slate-200 bg-white p-3">
