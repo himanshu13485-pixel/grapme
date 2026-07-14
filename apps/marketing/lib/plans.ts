@@ -2,7 +2,11 @@
 // Fetched server-side (no CORS needed). Falls back gracefully to null so the
 // pricing page can show its illustrative tiers if the API is unreachable.
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
+// Server-side only. Prefer a runtime var (API_URL) over NEXT_PUBLIC_* — the
+// latter is inlined at build time and can't be set per-deploy. In prod this
+// points at the internal API service (e.g. http://api:4000/api/v1).
+const API_URL =
+  process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
 
 export type PricingRow = {
   currency: string;

@@ -83,6 +83,24 @@ services:
     ports:
       - '${BIND_HOST:-0.0.0.0}:3000:3000'
 
+  # Marketing site (grapme.com). Serves the public landing + live pricing page.
+  # Reaches the API over the internal docker network (API_URL), so no public
+  # API exposure is needed for the server-side plan fetch.
+  marketing:
+    image: ${APP_IMAGE:-ghcr.io/himanshu13485-pixel/grapme:latest}
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      NODE_ENV: production
+      # Internal service URL for server-side fetch (grapme.com/pricing → plans).
+      API_URL: ${MARKETING_API_URL:-http://api:4000/api/v1}
+      # Public site origin (used for canonical URLs / metadata).
+      NEXT_PUBLIC_SITE_URL: ${MARKETING_SITE_URL:-https://www.grapme.com}
+    command: sh -c "npm run start --workspace apps/marketing"
+    ports:
+      - '${BIND_HOST:-0.0.0.0}:3200:3200'
+
 volumes:
   aeo_pgdata:
   aeo_redisdata:
