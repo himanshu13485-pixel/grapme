@@ -71,7 +71,7 @@ Check it: `cat apps/api/.env` — the first line must be `DATABASE_URL=...`.
    (leave the black windows open; first run takes 1–2 min).
 2. Once it's running, back in Git Bash: `npm run db:seed`
 3. Open **http://localhost:3000** and sign in:
-   - **Email:** `admin@aeo.test`
+   - **Email:** `admin@grapme.local` (or your `SEED_ADMIN_EMAIL`)
    - **Password:** `Password123!`
 
 Done — this laptop now has a full working local copy.
