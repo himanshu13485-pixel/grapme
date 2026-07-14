@@ -62,6 +62,10 @@ services:
       UNIPILE_WEBHOOK_SECRET: ${UNIPILE_WEBHOOK_SECRET:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       AI_MODEL: ${AI_MODEL:-}
+      # On plan changes, ping the marketing site to refresh its live pricing page
+      # (internal docker network). REVALIDATE_SECRET guards the endpoint.
+      MARKETING_REVALIDATE_URL: ${MARKETING_REVALIDATE_URL:-http://marketing:3200/api/revalidate}
+      REVALIDATE_SECRET: ${REVALIDATE_SECRET:-}
     # Apply DB migrations on boot, then start the API.
     command: >
       sh -c "npx prisma migrate deploy --schema=/app/apps/api/prisma/schema.prisma &&
@@ -97,6 +101,8 @@ services:
       API_URL: ${MARKETING_API_URL:-http://api:4000/api/v1}
       # Public site origin (used for canonical URLs / metadata).
       NEXT_PUBLIC_SITE_URL: ${MARKETING_SITE_URL:-https://www.grapme.com}
+      # Must match the API's REVALIDATE_SECRET to accept on-demand refresh calls.
+      REVALIDATE_SECRET: ${REVALIDATE_SECRET:-}
     command: sh -c "npm run start --workspace apps/marketing"
     ports:
       - '${BIND_HOST:-0.0.0.0}:3200:3200'

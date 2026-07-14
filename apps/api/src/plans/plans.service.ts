@@ -26,6 +26,21 @@ export class PlansService {
     }
   }
 
+  /**
+   * Tell the marketing site (grapme.com) to refresh its live pricing page after a
+   * plan changes. Fire-and-forget — never blocks or fails the admin action; if the
+   * webhook is unset or unreachable, the page still refreshes on its ISR window.
+   */
+  private notifyMarketing() {
+    const url = process.env.MARKETING_REVALIDATE_URL;
+    if (!url) return;
+    const secret = process.env.REVALIDATE_SECRET;
+    void fetch(url, {
+      method: 'POST',
+      headers: secret ? { 'x-revalidate-secret': secret } : {},
+    }).catch(() => {});
+  }
+
   /** List the tenant's plans, self-seeding the defaults on first use. */
   async list(user: AuthUser) {
     let plans = await this.prisma.plan.findMany({
@@ -99,7 +114,7 @@ export class PlansService {
       where: { tenantId: user.tenantId },
       _max: { sortOrder: true },
     });
-    return this.prisma.plan.create({
+    const created = await this.prisma.plan.create({
       data: {
         tenantId: user.tenantId,
         name: clean,
@@ -107,6 +122,8 @@ export class PlansService {
         sortOrder: (max._max.sortOrder ?? -1) + 1,
       },
     });
+    this.notifyMarketing();
+    return created;
   }
 
   async update(
@@ -151,7 +168,7 @@ export class PlansService {
     }
     // Non-negative integer, or undefined to leave the column unchanged.
     const n = (v?: number) => (typeof v === 'number' && v >= 0 ? Math.floor(v) : undefined);
-    return this.prisma.plan.update({
+    const updated = await this.prisma.plan.update({
       where: { id },
       data: {
         ...(dto.name && dto.name.trim() ? { name: dto.name.trim() } : {}),
@@ -173,6 +190,8 @@ export class PlansService {
         ...(dto.popular !== undefined ? { popular: !!dto.popular } : {}),
       },
     });
+    this.notifyMarketing();
+    return updated;
   }
 
   /** Feature bullets for the "features" card style — trimmed, de-blanked, capped. */
@@ -226,6 +245,7 @@ export class PlansService {
       );
     }
     await this.prisma.plan.delete({ where: { id } });
+    this.notifyMarketing();
     return { ok: true };
   }
 }

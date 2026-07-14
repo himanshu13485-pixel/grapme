@@ -49,8 +49,9 @@ export type PublicPlan = {
 export async function fetchPublicPlans(): Promise<PublicPlan[] | null> {
   try {
     const res = await fetch(`${API_URL}/plans/public`, {
-      // Refresh at most every 5 minutes so plan edits show without a redeploy.
-      next: { revalidate: 300 },
+      // Tagged so an admin plan change can revalidate on demand (see /api/revalidate);
+      // the 2-min window is just a fallback if the webhook is missed.
+      next: { revalidate: 120, tags: ['public-plans'] },
     });
     if (!res.ok) return null;
     const data = (await res.json()) as PublicPlan[];
