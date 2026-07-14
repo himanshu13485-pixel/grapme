@@ -49,6 +49,9 @@ export function SiteHeader() {
           <a href={SITE.appUrl} className="px-2.5 text-[16px] font-bold text-muted transition hover:text-ink">
             Log in
           </a>
+          <a href={`${SITE.appUrl}/client`} className="px-2.5 text-[16px] font-bold text-ink transition hover:text-brand">
+            Sign up
+          </a>
           <Link
             href="/contact"
             className="btn-shine group inline-flex items-center gap-1.5 rounded-full bg-ink px-6 py-3 text-[16px] font-bold text-white transition hover:bg-brand active:scale-[0.97]"
@@ -82,6 +85,9 @@ export function SiteHeader() {
             ))}
             <a href={SITE.appUrl} className="px-3 py-2.5 text-base font-bold text-ink/80 hover:text-ink">
               Log in
+            </a>
+            <a href={`${SITE.appUrl}/client`} className="px-3 py-2.5 text-base font-bold text-ink/80 hover:text-ink">
+              Sign up
             </a>
             <Link
               href="/contact"

@@ -170,17 +170,23 @@ export default function HomePage() {
               <Reveal delay={260}>
                 <div className="flex flex-wrap items-center gap-4">
                   <Magnetic>
-                    <Link
-                      href="/contact"
+                    <a
+                      href={`${SITE.appUrl}/client`}
                       className="btn-shine group inline-flex items-center gap-2 rounded-full bg-ink px-8 py-4 text-[15px] font-bold text-white shadow-glow transition hover:bg-brand active:scale-[0.97]"
                     >
-                      Book a demo
+                      Get started
                       <ArrowUpRight size={17} className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-                    </Link>
+                    </a>
                   </Magnetic>
                   <Link
-                    href="/how-it-works"
+                    href="/contact"
                     className="inline-flex items-center gap-2 rounded-full border border-line bg-paper/70 px-8 py-4 text-[15px] font-bold text-ink backdrop-blur transition hover:border-ink/25"
+                  >
+                    Book a demo
+                  </Link>
+                  <Link
+                    href="/how-it-works"
+                    className="inline-flex items-center gap-2 rounded-full px-4 py-4 text-[15px] font-bold text-muted transition hover:text-ink"
                   >
                     See how it works
                   </Link>
