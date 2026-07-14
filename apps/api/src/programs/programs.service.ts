@@ -1789,7 +1789,7 @@ export class ProgramsService {
               Open your portal
             </a>
           </p>
-          <p style="color:#94a3b8;font-size:12px">GRAPOUT · GVC Framework</p>
+          <p style="color:#94a3b8;font-size:12px">GrapMe · GVC Framework</p>
         </div>`,
     });
     this.logger.log(

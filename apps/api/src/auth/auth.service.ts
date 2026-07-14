@@ -275,12 +275,12 @@ export class AuthService {
       await this.mailer.send({
         account,
         to: email,
-        subject: 'Reset your GRAPOUT password',
+        subject: 'Reset your GrapMe password',
         html: `
           <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto">
             <h2 style="color:#0f766e">Password reset</h2>
             <p>Hi${name ? ` ${name}` : ''}, we received a request to reset your
-            GRAPOUT password. Click below to choose a new one.</p>
+            GrapMe password. Click below to choose a new one.</p>
             <p style="margin:24px 0">
               <a href="${link}"
                  style="background:#0f766e;color:#fff;padding:12px 22px;border-radius:8px;text-decoration:none;font-weight:600">
@@ -400,10 +400,10 @@ export class AuthService {
       await this.mailer.send({
         account,
         to: email,
-        subject: 'Confirm your GRAPOUT client account',
+        subject: 'Confirm your GrapMe client account',
         html: `
           <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto">
-            <h2 style="color:#0f766e">Welcome to GRAPOUT${name ? `, ${name}` : ''}!</h2>
+            <h2 style="color:#0f766e">Welcome to GrapMe${name ? `, ${name}` : ''}!</h2>
             <p>Please confirm your email address to activate your client account.</p>
             <p style="margin:24px 0">
               <a href="${link}"

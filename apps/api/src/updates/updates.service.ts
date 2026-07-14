@@ -203,14 +203,16 @@ export class UpdatesService {
     if (targets.length === 0) return;
     const account = await this.systemMailbox(tenantId);
     if (!account) { this.logger.warn(`No sending mailbox for tenant ${tenantId}; skipped update email.`); return; }
-    const webUrl = (process.env.WEB_URL ?? process.env.APP_URL ?? '').replace(/\/$/, '');
-    const href = webUrl ? `${webUrl}${link}` : link;
+    // Same public web URL the auth emails use (verify/reset links), so the button is
+    // an absolute link that opens the app (→ client login if not signed in).
+    const webUrl = (process.env.WEB_PUBLIC_URL || process.env.CORS_ORIGIN || 'http://localhost:3000').replace(/\/$/, '');
+    const href = `${webUrl}${link}`;
     const html = `
       <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto">
         <h2 style="color:#0f766e;font-size:18px">${escapeHtml(subject)}</h2>
         <p style="color:#334155;white-space:pre-wrap">${escapeHtml(preview).slice(0, 600)}</p>
         <p style="margin:22px 0">
-          <a href="${href}" style="background:#0f766e;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:600">Open in GRAPOUT</a>
+          <a href="${href}" style="background:#0f766e;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:600">Open in GrapMe</a>
         </p>
         <p style="color:#94a3b8;font-size:12px">You're receiving this because notifications are enabled for this update.</p>
       </div>`;
