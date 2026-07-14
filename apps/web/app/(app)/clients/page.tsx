@@ -42,7 +42,7 @@ interface Client {
   validityStartAt?: string | null;
   _count?: { mailboxes: number; cohorts: number; enrollments: number; contacts: number };
   stats?: { emailSent: number; emailOpens: number; contacts: number; liInvites: number; liConnected: number; liLeads: number };
-  owner?: { id: string; name: string; email: string; contactMobile?: string | null } | null;
+  owner?: { id: string; name: string; email: string; contactMobile?: string | null; emailVerified?: boolean | null; pendingEmail?: string | null } | null;
 }
 
 export default function ClientsPage() {
@@ -419,6 +419,7 @@ function ClientDetailView({ client }: { client: Client }) {
     { label: 'Invoice no.', value: client.invoiceNo || '—' },
     { label: 'Contact person', value: client.contactPerson || '—' },
     { label: 'Contact email', value: client.email || '—' },
+    { label: 'Login email', value: client.owner?.email ? `${client.owner.email}${client.owner.emailVerified === false ? ' · unverified' : ''}${client.owner.pendingEmail ? ` · change to ${client.owner.pendingEmail} pending confirmation` : ''}` : '— (no portal login)' },
     { label: 'Mobile no.', value: client.mobile || '—' },
     ...(linkedInOn ? [{ label: 'WhatsApp notifications', value: sub?.whatsappEnabled ? (sub?.whatsappNumber || 'Enabled') : 'Off' }] : []),
     { label: 'Product / Category', value: client.productCategory || '—' },

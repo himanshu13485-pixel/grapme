@@ -202,7 +202,7 @@ export class ProgramsService {
 
   private readonly clientListInclude = {
     _count: { select: { mailboxes: true, cohorts: true, enrollments: true, contacts: true } },
-    owner: { select: { id: true, name: true, email: true, contactMobile: true } },
+    owner: { select: { id: true, name: true, email: true, contactMobile: true, emailVerified: true, pendingEmail: true } },
   } as const;
 
   listClients(user: AuthUser) {
