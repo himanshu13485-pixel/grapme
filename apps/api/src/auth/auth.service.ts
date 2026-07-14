@@ -270,10 +270,19 @@ export class AuthService {
    * Returns the number of sessions revoked.
    */
   async revokeAllSessions(userId: string): Promise<number> {
-    const res = await this.prisma.refreshToken.updateMany({
-      where: { userId, revokedAt: null },
-      data: { revokedAt: new Date() },
-    });
+    const now = new Date();
+    const [res] = await this.prisma.$transaction([
+      this.prisma.refreshToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: now },
+      }),
+      // Invalidate any access token already in the client's hands: the JWT strategy
+      // rejects tokens issued (iat) before this cutoff, so logout is immediate.
+      this.prisma.user.update({
+        where: { id: userId },
+        data: { sessionsRevokedAt: now },
+      }),
+    ]);
     return res.count;
   }
 
