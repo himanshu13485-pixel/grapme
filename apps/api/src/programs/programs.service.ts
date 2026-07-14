@@ -7,8 +7,10 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as argon2 from 'argon2';
+import { randomBytes, createHash } from 'crypto';
 import {
   ApprovalEntity,
+  ApprovalStatus,
   Client,
   Prisma,
   EmailAccount,
@@ -31,6 +33,7 @@ import { GeoService } from '../common/services/geo.service';
 import { LiCampaignsService } from '../linkedin/campaigns/li-campaigns.service';
 import { LinkedInSubscriptionService } from '../linkedin/subscription/linkedin-subscription.service';
 import { BounceService } from '../bounce/bounce.service';
+import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import {
   AssignMailboxDto,
   CreateClientDto,
@@ -80,6 +83,7 @@ export class ProgramsService {
     private liCampaigns: LiCampaignsService,
     private liSubs: LinkedInSubscriptionService,
     private bounce: BounceService,
+    private subscriptions: SubscriptionsService,
   ) {}
 
   /**
@@ -173,6 +177,11 @@ export class ProgramsService {
       data: { tenantId: user.tenantId, ...clientData, ...validity, ...ownerData },
     });
 
+    // Seed the subscription history if the client starts with a validity window.
+    if (client.validityDays && client.validityStartAt) {
+      await this.subscriptions.record(user.tenantId, client.id, { plan: client.plan, validityDays: client.validityDays, source: 'registration' });
+    }
+
     if (clientRequestsLinkedIn) {
       // Seed the subscription with the send window the client asked for, then queue
       // an approval; the admin approves to actually switch LinkedIn on.
@@ -200,7 +209,7 @@ export class ProgramsService {
 
   private readonly clientListInclude = {
     _count: { select: { mailboxes: true, cohorts: true, enrollments: true, contacts: true } },
-    owner: { select: { id: true, name: true, email: true, contactMobile: true } },
+    owner: { select: { id: true, name: true, email: true, contactMobile: true, emailVerified: true, pendingEmail: true } },
   } as const;
 
   listClients(user: AuthUser) {
@@ -228,6 +237,10 @@ export class ProgramsService {
       plan?: string;
       linkedInEnabled?: string;
       channel?: string;
+      expiryFrom?: string;
+      expiryTo?: string;
+      createdFrom?: string;
+      createdTo?: string;
     },
   ) {
     const page = Math.max(1, parseInt(query.page ?? '1', 10) || 1);
@@ -244,10 +257,38 @@ export class ProgramsService {
         ...(user.role === Role.CLIENT ? { ownerUserId: user.userId } : {}),
       },
     ];
+    // Subscription state (validityEndAt is a generated column: start + validity days):
+    //  current     → active login window, not expired
+    //  expired     → validity window elapsed
+    //  deactivated → account switched off by an admin
+    // ('active'/'inactive' kept as aliases for older links.)
+    const now = new Date();
     const status = (query.status ?? '').toLowerCase();
-    if (status === 'active' || status === 'inactive') {
-      and.push({ status: { equals: status, mode: 'insensitive' } });
+    if (status === 'current' || status === 'active') {
+      and.push({ status: { equals: 'active', mode: 'insensitive' } });
+      if (status === 'current') {
+        and.push({ OR: [{ validityEndAt: null }, { validityEndAt: { gte: now } }] });
+      }
+    } else if (status === 'deactivated' || status === 'inactive') {
+      and.push({ status: { equals: 'inactive', mode: 'insensitive' } });
+    } else if (status === 'expired') {
+      and.push({ validityEndAt: { not: null, lt: now } });
     }
+
+    // Date-wise range — filters either the subscription expiry date or the client
+    // creation date, depending on which field the caller supplies.
+    const dateRange = (from?: string, to?: string): Prisma.DateTimeFilter | null => {
+      const r: Prisma.DateTimeFilter = {};
+      if (from) { const d = new Date(from); if (!isNaN(d.getTime())) r.gte = d; }
+      // Inclusive end-of-day so a single day picked as "to" covers that whole day.
+      if (to) { const d = new Date(to); if (!isNaN(d.getTime())) r.lte = new Date(d.getTime() + 86_400_000 - 1); }
+      return r.gte || r.lte ? r : null;
+    };
+    const expiryRange = dateRange(query.expiryFrom, query.expiryTo);
+    if (expiryRange) and.push({ validityEndAt: { not: null, ...expiryRange } });
+    const createdRange = dateRange(query.createdFrom, query.createdTo);
+    if (createdRange) and.push({ createdAt: createdRange });
+
     if (query.plan) and.push({ plan: query.plan });
     if (query.linkedInEnabled === 'true') and.push({ linkedInEnabled: true });
     // Channel filter — matches the card's label logic (email is on unless explicitly off).
@@ -406,6 +447,7 @@ export class ProgramsService {
         ...(user.role === Role.CLIENT ? { ownerUserId: user.userId } : {}),
       },
       include: {
+        owner: { select: { id: true, email: true, name: true, emailVerified: true, pendingEmail: true } },
         mailboxes: {
           select: { id: true, label: true, emailAddress: true, status: true, rotationOrder: true },
           orderBy: { rotationOrder: 'asc' },
@@ -444,6 +486,14 @@ export class ProgramsService {
       }
     }
     const updated = await this.prisma.client.update({ where: { id }, data });
+    // Log a subscription period when the plan or validity window changes via the edit
+    // form, so plan upgrades/downgrades show in the renewal history (not just Renew).
+    const planChanged = updated.plan !== before.plan;
+    const validityChanged = validityDays !== undefined && validityDays !== (before.validityDays ?? 0);
+    if ((planChanged || validityChanged) && updated.validityDays && updated.validityStartAt) {
+      const endAt = new Date(new Date(updated.validityStartAt).getTime() + updated.validityDays * 86_400_000);
+      await this.subscriptions.record(user.tenantId, id, { plan: updated.plan, validityDays: updated.validityDays, source: 'admin', endAt });
+    }
     // Record only the fields that actually changed, so the audit trail is clear.
     const changedBefore: Record<string, unknown> = { name: before.name };
     const changedAfter: Record<string, unknown> = { name: updated.name };
@@ -1617,43 +1667,102 @@ export class ProgramsService {
   async setClientLogin(
     user: AuthUser,
     clientId: string,
-    dto: { email: string; password: string },
+    dto: { email: string; password?: string },
   ) {
     const client = await this.assertClient(user, clientId);
-    const email = dto.email.toLowerCase();
-    const passwordHash = await argon2.hash(dto.password, { type: argon2.argon2id });
+    const email = dto.email.trim().toLowerCase();
+    if (!email) throw new BadRequestException('Enter a login email.');
+    const password = dto.password?.trim();
+    const currentOwner = client.ownerUserId
+      ? await this.prisma.user.findUnique({ where: { id: client.ownerUserId } })
+      : null;
 
-    // Reuse an existing login for this email, else create a CLIENT user.
-    let owner = await this.prisma.user.findUnique({ where: { email } });
-    if (owner) {
-      owner = await this.prisma.user.update({
-        where: { id: owner.id },
-        data: { passwordHash, role: Role.CLIENT },
-      });
-    } else {
-      owner = await this.prisma.user.create({
-        data: {
-          tenantId: user.tenantId,
-          name: client.contactPerson || client.name,
-          email,
-          passwordHash,
-          role: Role.CLIENT,
-        },
-      });
+    // ── First-time login (no owner yet): create/link immediately (needs a password). ──
+    if (!currentOwner) {
+      if (!password || password.length < 6) throw new BadRequestException('Set a password (min 6 characters) to create the login.');
+      const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
+      let owner = await this.prisma.user.findUnique({ where: { email } });
+      if (owner) {
+        owner = await this.prisma.user.update({ where: { id: owner.id }, data: { passwordHash, role: Role.CLIENT } });
+      } else {
+        owner = await this.prisma.user.create({
+          data: { tenantId: user.tenantId, name: client.contactPerson || client.name, email, passwordHash, role: Role.CLIENT },
+        });
+      }
+      await this.prisma.client.update({ where: { id: clientId }, data: { ownerUserId: owner.id } });
+      await this.activity.log({ tenantId: user.tenantId, actorId: user.userId, action: 'SET_CLIENT_LOGIN', entityType: 'Client', entityId: clientId, after: { email, client: client.name } });
+      return { ok: true, email, pending: false };
     }
-    await this.prisma.client.update({
-      where: { id: clientId },
-      data: { ownerUserId: owner.id },
+
+    // ── Password reset applies immediately (if provided). ──
+    if (password) {
+      if (password.length < 6) throw new BadRequestException('Password must be at least 6 characters.');
+      await this.prisma.user.update({ where: { id: currentOwner.id }, data: { passwordHash: await argon2.hash(password, { type: argon2.argon2id }) } });
+    }
+
+    // ── Email unchanged: nothing to gate. ──
+    if (email === currentOwner.email.toLowerCase()) {
+      return { ok: true, email, pending: false };
+    }
+
+    // ── Email CHANGE: gate it. The current login keeps working until the client
+    // confirms via the emailed link OR an admin approves it in the queue. ──
+    await this.gateLoginEmailChange(user, clientId, client.name, currentOwner.id, currentOwner.email, email);
+    return { ok: true, email: currentOwner.email, pending: true, pendingEmail: email };
+  }
+
+  /**
+   * Hold a client login-email change instead of applying it: stash pendingEmail + token,
+   * email the confirmation link to the NEW address, and queue a CLIENT_LOGIN_EMAIL
+   * approval as a fallback. Shared by setClientLogin and updateClientOwner so BOTH
+   * admin paths are gated. The current login keeps working until confirmed/approved.
+   */
+  private async gateLoginEmailChange(user: AuthUser, clientId: string, clientName: string, ownerId: string, currentEmail: string, newEmail: string) {
+    const taken = await this.prisma.user.findFirst({ where: { email: newEmail, id: { not: ownerId } } });
+    if (taken) throw new BadRequestException('That email is already used by another account.');
+
+    const token = randomBytes(32).toString('hex');
+    const tokenHash = createHash('sha256').update(token).digest('hex');
+    await this.prisma.user.update({
+      where: { id: ownerId },
+      data: { pendingEmail: newEmail, pendingEmailTokenHash: tokenHash, pendingEmailExpires: new Date(Date.now() + 48 * 3600 * 1000) },
     });
+
+    const link = `${this.webUrlBase()}/verify-email-change?token=${token}`;
+    this.logger.log(`[login-email-change] confirm link for ${newEmail}: ${link}`);
+    try {
+      const account = await this.tenantSystemMailbox(user.tenantId);
+      if (account) {
+        await this.mailer.send({
+          account,
+          to: newEmail,
+          subject: 'Confirm your new GrapMe login email',
+          html: `
+            <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto">
+              <h2 style="color:#0f766e">Confirm your new login email</h2>
+              <p>Your account team set this address as the login email for your GrapMe portal (${clientName}).
+                 Confirm it to activate — your current login keeps working until you do.</p>
+              <p style="margin:22px 0">
+                <a href="${link}" style="background:#0f766e;color:#fff;padding:12px 22px;border-radius:8px;text-decoration:none;font-weight:600">Confirm new login email</a>
+              </p>
+              <p style="color:#94a3b8;font-size:12px">This link expires in 48 hours. If you didn't expect this, you can ignore this email.</p>
+            </div>`,
+        });
+      }
+    } catch (e) {
+      this.logger.warn(`login-email-change email to ${newEmail} failed: ${(e as Error).message}`);
+    }
+
+    const pending = await this.prisma.approval.count({
+      where: { entityType: ApprovalEntity.CLIENT_LOGIN_EMAIL, entityId: ownerId, status: ApprovalStatus.PENDING },
+    });
+    if (!pending) {
+      await this.approvals.submit({ tenantId: user.tenantId, entityType: ApprovalEntity.CLIENT_LOGIN_EMAIL, entityId: ownerId, submittedById: user.userId });
+    }
     await this.activity.log({
-      tenantId: user.tenantId,
-      actorId: user.userId,
-      action: 'SET_CLIENT_LOGIN',
-      entityType: 'Client',
-      entityId: clientId,
-      after: { email, client: client.name },
+      tenantId: user.tenantId, actorId: user.userId, action: 'REQUEST_CLIENT_LOGIN_EMAIL_CHANGE',
+      entityType: 'Client', entityId: clientId, after: { from: currentEmail, to: newEmail, client: clientName },
     });
-    return { ok: true, email };
   }
 
   /** True once a client's validity window has elapsed. */
@@ -1789,7 +1898,7 @@ export class ProgramsService {
               Open your portal
             </a>
           </p>
-          <p style="color:#94a3b8;font-size:12px">GRAPOUT · GVC Framework</p>
+          <p style="color:#94a3b8;font-size:12px">GrapMe · GVC Framework</p>
         </div>`,
     });
     this.logger.log(
@@ -1909,6 +2018,10 @@ export class ProgramsService {
       },
       select: { id: true, validityDays: true, validityStartAt: true },
     });
+    // Log a new subscription period for the history (closes any open one early).
+    if (validityDays) {
+      await this.subscriptions.record(user.tenantId, clientId, { plan: client.plan, validityDays, source: 'admin' });
+    }
     await this.activity.log({
       tenantId: user.tenantId,
       actorId: user.userId,
@@ -1918,6 +2031,34 @@ export class ProgramsService {
       after: { validityDays, client: client.name },
     });
     return updated;
+  }
+
+  /**
+   * Force-expire a client's active plan right now: move the validity window into the
+   * past (so it reads Expired but keeps the plan/day count) and close the open
+   * subscription period as CANCELLED. Outreach halts immediately (the engine gates on
+   * validity). Re-set a validity to renew.
+   */
+  async forceExpireSubscription(user: AuthUser, clientId: string) {
+    this.assertAdmin(user);
+    const client = await this.assertClient(user, clientId);
+    if (!client.validityDays || client.validityDays <= 0) {
+      throw new BadRequestException('This client has no active plan window to expire.');
+    }
+    const now = new Date();
+    await this.prisma.client.update({
+      where: { id: clientId },
+      data: { validityStartAt: new Date(now.getTime() - client.validityDays * 86_400_000), validityNotifyStage: 0 },
+    });
+    await this.prisma.subscriptionPeriod.updateMany({
+      where: { clientId, endedReason: null, endAt: { gt: now } },
+      data: { endAt: now, endedReason: 'CANCELLED' },
+    });
+    await this.activity.log({
+      tenantId: user.tenantId, actorId: user.userId, action: 'FORCE_EXPIRE_SUBSCRIPTION',
+      entityType: 'Client', entityId: clientId, after: { client: client.name },
+    });
+    return { ok: true };
   }
 
   private assertAdmin(user: AuthUser) {
@@ -1966,18 +2107,16 @@ export class ProgramsService {
     if (!client.ownerUserId) {
       throw new BadRequestException('Set a client login first.');
     }
-    const email = dto.email?.toLowerCase();
-    if (email) {
-      const clash = await this.prisma.user.findFirst({
-        where: { email, id: { not: client.ownerUserId } },
-      });
-      if (clash) throw new BadRequestException('That email is already in use.');
-    }
+    const current = await this.prisma.user.findUniqueOrThrow({ where: { id: client.ownerUserId }, select: { email: true } });
+    const email = dto.email?.trim().toLowerCase();
+
+    // Name/phone are plain identity fields → apply immediately. But the login EMAIL is
+    // a credential: if it's actually changing, gate it (client link OR admin approval)
+    // exactly like the login form — never change the login email instantly.
     const owner = await this.prisma.user.update({
       where: { id: client.ownerUserId },
       data: {
         ...(dto.name !== undefined ? { name: dto.name } : {}),
-        ...(email ? { email } : {}),
         ...(dto.mobile !== undefined ? { contactMobile: dto.mobile } : {}),
       },
       select: { id: true, name: true, email: true, contactMobile: true },
@@ -1988,9 +2127,14 @@ export class ProgramsService {
       action: 'UPDATE_CLIENT_OWNER',
       entityType: 'Client',
       entityId: clientId,
-      after: { name: owner.name, email: owner.email },
+      after: { name: owner.name },
     });
-    return owner;
+
+    if (email && email !== current.email.toLowerCase()) {
+      await this.gateLoginEmailChange(user, clientId, client.name, client.ownerUserId, current.email, email);
+      return { ...owner, pending: true, pendingEmail: email };
+    }
+    return { ...owner, pending: false };
   }
 
   /** Profiles owned by a client-portal user (for the client panel switcher). */
@@ -1998,7 +2142,7 @@ export class ProgramsService {
     if (user.role !== Role.CLIENT) return [];
     return this.prisma.client.findMany({
       where: { tenantId: user.tenantId, ownerUserId: user.userId },
-      select: { id: true, name: true, serviceType: true, plan: true },
+      select: { id: true, name: true, serviceType: true, plan: true, validityDays: true, validityStartAt: true },
       orderBy: { createdAt: 'asc' },
     });
   }

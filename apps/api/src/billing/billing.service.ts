@@ -4,6 +4,7 @@ import { Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { LinkedInSubscriptionService } from '../linkedin/subscription/linkedin-subscription.service';
+import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { CashfreeProvider } from './cashfree.provider';
 
 interface PricingRow { currency: string; monthlyPrice: number; monthlyBest: number; yearlyPrice: number; yearlyBest: number }
@@ -15,6 +16,7 @@ export class BillingService {
     private readonly config: ConfigService,
     private readonly liSubs: LinkedInSubscriptionService,
     private readonly cashfree: CashfreeProvider,
+    private readonly subscriptions: SubscriptionsService,
   ) {}
 
   private assertAdmin(user: AuthUser) {
@@ -161,6 +163,15 @@ export class BillingService {
       await this.liSubs.update(tenantId, clientId, {
         planName: plan.name, seats: seatLimit || 1,
         creditsBalance: linkedInCredits, campaignLimit: linkedInCampaignLimit,
+      });
+    }
+    // Log the subscription period for the renewal history.
+    if (validity > 0) {
+      const pricing = (plan.pricing ?? []) as unknown as PricingRow[];
+      const row = pricing[0];
+      const amount = row ? (period === 'yearly' ? row.yearlyPrice : row.monthlyPrice) : undefined;
+      await this.subscriptions.record(tenantId, clientId, {
+        plan: plan.name, validityDays: validity, amount: amount ?? null, currency: row?.currency ?? null, source: 'billing',
       });
     }
   }

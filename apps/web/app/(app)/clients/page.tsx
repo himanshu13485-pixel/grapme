@@ -40,9 +40,10 @@ interface Client {
   stageIntervalJitterDays: number;
   validityDays?: number | null;
   validityStartAt?: string | null;
+  validityEndAt?: string | null;
   _count?: { mailboxes: number; cohorts: number; enrollments: number; contacts: number };
   stats?: { emailSent: number; emailOpens: number; contacts: number; liInvites: number; liConnected: number; liLeads: number };
-  owner?: { id: string; name: string; email: string; contactMobile?: string | null } | null;
+  owner?: { id: string; name: string; email: string; contactMobile?: string | null; emailVerified?: boolean | null; pendingEmail?: string | null } | null;
 }
 
 export default function ClientsPage() {
@@ -58,6 +59,9 @@ export default function ClientsPage() {
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [planFilter, setPlanFilter] = useState('ALL');
   const [channelFilter, setChannelFilter] = useState('ALL');
+  const [dateField, setDateField] = useState<'expiry' | 'created'>('expiry');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 12;
   const canDelete = useCanDelete();
@@ -87,7 +91,8 @@ export default function ClientsPage() {
   }, [invoiceQ]);
 
   const hasFilters =
-    !!dq || !!dEmail || !!dInvoice || statusFilter !== 'ALL' || planFilter !== 'ALL' || channelFilter !== 'ALL';
+    !!dq || !!dEmail || !!dInvoice || statusFilter !== 'ALL' || planFilter !== 'ALL' ||
+    channelFilter !== 'ALL' || !!dateFrom || !!dateTo;
 
   const load = useCallback(() => {
     const params = new URLSearchParams();
@@ -99,6 +104,13 @@ export default function ClientsPage() {
     if (statusFilter !== 'ALL') params.set('status', statusFilter.toLowerCase());
     if (planFilter !== 'ALL') params.set('plan', planFilter);
     if (channelFilter !== 'ALL') params.set('channel', channelFilter);
+    // Date range applies to either the subscription expiry or the created date.
+    if (!isClient && (dateFrom || dateTo)) {
+      const fromKey = dateField === 'created' ? 'createdFrom' : 'expiryFrom';
+      const toKey = dateField === 'created' ? 'createdTo' : 'expiryTo';
+      if (dateFrom) params.set(fromKey, dateFrom);
+      if (dateTo) params.set(toKey, dateTo);
+    }
     api
       .get<{ items: Client[]; total: number }>(`/clients/paged?${params.toString()}`)
       .then((r) => {
@@ -107,20 +119,27 @@ export default function ClientsPage() {
       })
       .catch(() => {})
       .finally(() => setLoaded(true));
-  }, [page, dq, dEmail, dInvoice, statusFilter, planFilter, channelFilter, isClient]);
+  }, [page, dq, dEmail, dInvoice, statusFilter, planFilter, channelFilter, dateField, dateFrom, dateTo, isClient]);
 
   // Reset to page 1 whenever the filters change, then (re)fetch.
-  useEffect(() => setPage(1), [dq, dEmail, dInvoice, statusFilter, planFilter, channelFilter]);
+  useEffect(() => setPage(1), [dq, dEmail, dInvoice, statusFilter, planFilter, channelFilter, dateField, dateFrom, dateTo]);
   useEffect(() => {
     load();
   }, [load]);
 
   // The sidebar "Set up my workspace" links here with ?new=1 to open the form.
+  // Subscription Management links here with ?edit=<id> to open that client's edit form.
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if (new URLSearchParams(window.location.search).get('new') === '1') {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('new') === '1') {
       setShow(true);
       window.history.replaceState(null, '', '/clients');
+    }
+    const editId = params.get('edit');
+    if (editId) {
+      window.history.replaceState(null, '', '/clients');
+      api.get<Client>(`/clients/${editId}`).then((c) => setEditing(c)).catch(() => {});
     }
   }, []);
 
@@ -192,9 +211,10 @@ export default function ClientsPage() {
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
             >
-              <option value="ALL">All statuses</option>
-              <option value="ACTIVE">Active</option>
-              <option value="INACTIVE">Inactive</option>
+              <option value="ALL">All subscriptions</option>
+              <option value="CURRENT">Current subscription</option>
+              <option value="EXPIRED">Subscription expired</option>
+              <option value="DEACTIVATED">Deactivated</option>
             </select>
           )}
           {!isClient && (
@@ -223,6 +243,46 @@ export default function ClientsPage() {
               <option value="BOTH">📧 + 🔗 Both</option>
             </select>
           )}
+          {!isClient && (
+            <div className="flex items-center gap-1.5 text-xs text-slate-500">
+              <select
+                className="input w-[7.5rem]"
+                value={dateField}
+                onChange={(e) => setDateField(e.target.value as 'expiry' | 'created')}
+                title="Which date to search by"
+              >
+                <option value="expiry">Expiry date</option>
+                <option value="created">Created date</option>
+              </select>
+              <input
+                type="date"
+                className="input w-[9.5rem]"
+                value={dateFrom}
+                max={dateTo || undefined}
+                onChange={(e) => setDateFrom(e.target.value)}
+                title={dateField === 'created' ? 'Created on / after' : 'Subscription expires on / after'}
+              />
+              <span>–</span>
+              <input
+                type="date"
+                className="input w-[9.5rem]"
+                value={dateTo}
+                min={dateFrom || undefined}
+                onChange={(e) => setDateTo(e.target.value)}
+                title={dateField === 'created' ? 'Created on / before' : 'Subscription expires on / before'}
+              />
+              {(dateFrom || dateTo) && (
+                <button
+                  type="button"
+                  className="text-slate-400 hover:text-slate-600"
+                  onClick={() => { setDateFrom(''); setDateTo(''); }}
+                  title="Clear date filter"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          )}
           <span className="ml-auto text-sm text-slate-400">{total} total</span>
         </div>
         {loaded && total === 0 ? (
@@ -242,7 +302,12 @@ export default function ClientsPage() {
             <Link key={c.id} href={`/clients/${c.id}`} className="card p-5 transition hover:border-brand-300 hover:shadow-sm">
               <div className="flex items-center justify-between">
                 <div className="font-medium text-slate-800">{c.name}</div>
-                <StatusBadge status={(c.status ?? 'active').toLowerCase() === 'active' ? 'ACTIVE' : 'INACTIVE'} />
+                <div className="flex items-center gap-1.5">
+                  {c.validityEndAt && new Date(c.validityEndAt) < new Date() && (
+                    <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-medium text-rose-700">Expired</span>
+                  )}
+                  <StatusBadge status={(c.status ?? 'active').toLowerCase() === 'active' ? 'ACTIVE' : 'INACTIVE'} />
+                </div>
               </div>
               {(c.email || c.owner?.email) && (
                 <div className="mt-0.5 truncate text-xs text-slate-500">
@@ -419,6 +484,7 @@ function ClientDetailView({ client }: { client: Client }) {
     { label: 'Invoice no.', value: client.invoiceNo || '—' },
     { label: 'Contact person', value: client.contactPerson || '—' },
     { label: 'Contact email', value: client.email || '—' },
+    { label: 'Login email', value: client.owner?.email ? `${client.owner.email}${client.owner.emailVerified === false ? ' · unverified' : ''}${client.owner.pendingEmail ? ` · change to ${client.owner.pendingEmail} pending confirmation` : ''}` : '— (no portal login)' },
     { label: 'Mobile no.', value: client.mobile || '—' },
     ...(linkedInOn ? [{ label: 'WhatsApp notifications', value: sub?.whatsappEnabled ? (sub?.whatsappNumber || 'Enabled') : 'Off' }] : []),
     { label: 'Product / Category', value: client.productCategory || '—' },
@@ -915,14 +981,41 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
     setOwnerBusy(true);
     setOwnerNote('');
     try {
-      await api.patch(`/clients/${client.id}/owner`, {
-        name: ownerName,
-        email: ownerEmail,
-        mobile: ownerMobile,
-      });
-      setOwnerNote('Client identity updated.');
+      const res = await api.patch<{ email: string; pending?: boolean; pendingEmail?: string }>(
+        `/clients/${client.id}/owner`,
+        { name: ownerName, email: ownerEmail, mobile: ownerMobile },
+      );
+      if (res.pending) {
+        setOwnerNote(`Name/phone saved. Login-email change to ${res.pendingEmail} is pending — a confirmation link was sent, and it's queued in Approvals. The current login (${res.email}) keeps working until confirmed.`);
+        setOwnerEmail(res.email); // the email hasn't changed yet
+      } else {
+        setOwnerNote('Client identity updated.');
+      }
     } catch (e) {
       setOwnerNote(e instanceof Error ? e.message : 'Failed');
+    } finally {
+      setOwnerBusy(false);
+    }
+  }
+
+  async function forceLogout() {
+    if (
+      !confirm(
+        'Sign this client out of every device / session?\n\nThey stay signed in for up to 15 minutes (until their current access token expires), then must log in again.',
+      )
+    )
+      return;
+    setOwnerBusy(true);
+    setOwnerNote('');
+    try {
+      const r = await api.post<{ revoked: number }>(`/admin/clients/${client.id}/logout`, {});
+      setOwnerNote(
+        r.revoked > 0
+          ? `Signed out — ${r.revoked} active session${r.revoked === 1 ? '' : 's'} revoked.`
+          : 'This client had no active sessions.',
+      );
+    } catch (e) {
+      setOwnerNote(e instanceof Error ? e.message : 'Failed to sign out');
     } finally {
       setOwnerBusy(false);
     }
@@ -943,18 +1036,21 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
   }
 
   async function saveLogin() {
-    if (!loginEmail || !loginPassword) {
-      setLoginNote('Enter an email and password.');
-      return;
-    }
+    if (!loginEmail) { setLoginNote('Enter a login email.'); return; }
+    if (!hasOwner && !loginPassword) { setLoginNote('Set a password to create the login.'); return; }
     setLoginBusy(true);
     setLoginNote('');
     try {
-      await api.post(`/clients/${client.id}/login`, {
-        email: loginEmail,
-        password: loginPassword,
-      });
-      setLoginNote(`Client login set: ${loginEmail}`);
+      const res = await api.post<{ ok: boolean; pending?: boolean; pendingEmail?: string; email: string }>(
+        `/clients/${client.id}/login`,
+        { email: loginEmail, ...(loginPassword ? { password: loginPassword } : {}) },
+      );
+      if (res.pending) {
+        setLoginNote(`Login-email change pending. A confirmation link was sent to ${res.pendingEmail}, and it's queued in Approvals (approve there if the client doesn't get the email). The current login (${res.email}) keeps working until it's confirmed.`);
+        setLoginEmail(res.email); // reflect that the change hasn't applied yet
+      } else {
+        setLoginNote(`Client login saved: ${res.email}`);
+      }
       setLoginPassword('');
     } catch (e) {
       setLoginNote(e instanceof Error ? e.message : 'Failed');
@@ -1238,6 +1334,10 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
               <button type="button" className="text-xs font-medium text-amber-700 hover:underline"
                 onClick={resetDefault} disabled={ownerBusy}>
                 Reset to default password (grapout@123)
+              </button>
+              <button type="button" className="text-xs font-medium text-rose-700 hover:underline"
+                onClick={forceLogout} disabled={ownerBusy}>
+                Log out of all sessions
               </button>
               {ownerNote && <span className="text-xs text-slate-500">{ownerNote}</span>}
             </div>

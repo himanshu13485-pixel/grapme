@@ -50,6 +50,10 @@ export class ProgramsController {
     @Query('plan') plan?: string,
     @Query('linkedInEnabled') linkedInEnabled?: string,
     @Query('channel') channel?: string,
+    @Query('expiryFrom') expiryFrom?: string,
+    @Query('expiryTo') expiryTo?: string,
+    @Query('createdFrom') createdFrom?: string,
+    @Query('createdTo') createdTo?: string,
   ) {
     return this.programs.listClientsPaged(user, {
       page,
@@ -61,6 +65,10 @@ export class ProgramsController {
       plan,
       linkedInEnabled,
       channel,
+      expiryFrom,
+      expiryTo,
+      createdFrom,
+      createdTo,
     });
   }
 
@@ -88,7 +96,7 @@ export class ProgramsController {
   setClientLogin(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
-    @Body() dto: { email: string; password: string },
+    @Body() dto: { email: string; password?: string },
   ) {
     return this.programs.setClientLogin(user, id, dto);
   }
@@ -101,6 +109,12 @@ export class ProgramsController {
     @Body() dto: { active: boolean },
   ) {
     return this.programs.setClientStatus(user, id, dto.active);
+  }
+
+  /** Admin: force-expire a client's active plan immediately. */
+  @Post('clients/:id/subscription/expire')
+  forceExpire(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.programs.forceExpireSubscription(user, id);
   }
 
   /** Admin: set a client's plan validity window (days). */

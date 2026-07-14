@@ -30,6 +30,7 @@ const TYPE_LABEL: Record<string, string> = {
   CLIENT_ACTIVATION: 'Client activation',
   LI_CAMPAIGN: 'LinkedIn campaign',
   LI_CHANNEL_REQUEST: 'LinkedIn channel request',
+  CLIENT_LOGIN_EMAIL: 'Client login email change',
 };
 function typeLabel(t: string) {
   return TYPE_LABEL[t] ?? t;

@@ -113,6 +113,7 @@ enum ApprovalEntity {
   CLIENT_ACTIVATION
   LI_CAMPAIGN
   LI_CHANNEL_REQUEST
+  CLIENT_LOGIN_EMAIL // admin changed a client's login email; awaiting confirm/approval
 }
 
 enum ApprovalStatus {
@@ -225,6 +226,32 @@ model PlanUpgradeRequest {
   @@index([clientId])
 }
 
+// One subscription period per client — the renewal history log. The client's live
+// window still lives on Client (validityDays/validityStartAt); the latest period
+// mirrors it. Replacing a plan/validity early closes the open period (endedReason).
+model SubscriptionPeriod {
+  id           String   @id @default(uuid())
+  tenantId     String
+  clientId     String
+  plan         String
+  validityDays Int
+  startAt      DateTime @default(now())
+  endAt        DateTime
+  amount       Int? // price paid (whole currency units), if known
+  currency     String?
+  invoiceNo    String? // client's invoice number at activation (snapshot)
+  source       String   @default("admin") // admin | billing | plan_request | registration | backfill
+  endedReason  String? // null = ran to natural expiry; SUPERSEDED = replaced early; CANCELLED
+  // Snapshot of what the plan included at activation: { emailCredits, linkedInCredits,
+  // mailboxLimit, seatLimit, emailCampaignLimit, linkedInCampaignLimit }.
+  entitlements Json?
+  createdAt    DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([clientId, startAt])
+  @@index([endAt])
+}
+
 // Tenant-defined plan names shown in every plan picker/filter.
 model Plan {
   id                    String   @id @default(uuid())
@@ -259,29 +286,34 @@ model Plan {
 }
 
 model User {
-  id              String     @id @default(uuid())
-  tenantId        String
-  name            String
-  email           String     @unique
-  passwordHash    String
-  role            Role       @default(USER)
-  status          UserStatus @default(ACTIVE)
-  fullAccess      Boolean    @default(false) // sub-admin: access to everything
-  accessModules   Json       @default("[]") // sub-admin: allowed module keys
-  canDelete       Boolean    @default(false) // sub-admin: allowed to use delete actions
-  canEdit         Boolean    @default(true) // sub-admin: allowed to use edit actions
-  profileLimit    Int        @default(1) // client-portal: how many profiles they may self-create (billable)
-  companyName     String? // client self-registration: their company (prefills New Client form)
-  contactMobile   String? // client self-registration: contact phone (prefills New Client form)
-  emailVerified   Boolean    @default(true) // client self-registration must confirm email before login
-  verifyTokenHash String? // sha256 of the email-confirmation token
-  verifyExpires   DateTime? // confirmation-link expiry
-  timezone        String     @default("UTC")
-  twoFactorSecret String?
-  avatarUrl       String?
-  lastLoginAt     DateTime?
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
+  id                    String     @id @default(uuid())
+  tenantId              String
+  name                  String
+  email                 String     @unique
+  passwordHash          String
+  role                  Role       @default(USER)
+  status                UserStatus @default(ACTIVE)
+  fullAccess            Boolean    @default(false) // sub-admin: access to everything
+  accessModules         Json       @default("[]") // sub-admin: allowed module keys
+  canDelete             Boolean    @default(false) // sub-admin: allowed to use delete actions
+  canEdit               Boolean    @default(true) // sub-admin: allowed to use edit actions
+  profileLimit          Int        @default(1) // client-portal: how many profiles they may self-create (billable)
+  companyName           String? // client self-registration: their company (prefills New Client form)
+  contactMobile         String? // client self-registration: contact phone (prefills New Client form)
+  emailVerified         Boolean    @default(true) // client self-registration must confirm email before login
+  verifyTokenHash       String? // sha256 of the email-confirmation token
+  verifyExpires         DateTime? // confirmation-link expiry
+  // Admin-initiated login-email change, held until the client confirms via the emailed
+  // link OR an admin approves it in the queue. Current email keeps working until then.
+  pendingEmail          String?
+  pendingEmailTokenHash String? // sha256 of the change-confirmation token
+  pendingEmailExpires   DateTime?
+  timezone              String     @default("UTC")
+  twoFactorSecret       String?
+  avatarUrl             String?
+  lastLoginAt           DateTime?
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -315,11 +347,14 @@ model RefreshToken {
   tokenHash String
   expiresAt DateTime
   revokedAt DateTime?
-  createdAt DateTime  @default(now())
+  ip        String? // client IP at login/refresh (carried across rotations)
+  userAgent String?
+  createdAt DateTime  @default(now()) // also the last-activity time (refresh rotates)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([userId, revokedAt])
 }
 
 model PasswordReset {
@@ -840,6 +875,9 @@ model Client {
   lastAutoCohortAt        DateTime? // guards once-per-month creation
   validityDays            Int? // plan validity window in days (30/180/360)
   validityStartAt         DateTime? // when the validity window began
+  // Postgres-generated: validityStartAt + validityDays. Read-only (never written by
+  // the app) — Postgres keeps it in sync so subscription date/expiry filters can query it.
+  validityEndAt           DateTime? // when the validity window ends (generated column)
   validityNotifyStage     Int       @default(0) // last expiry-reminder milestone emailed (0..4)
   createdAt               DateTime  @default(now())
   updatedAt               DateTime  @updatedAt
@@ -1249,6 +1287,9 @@ model LiLead {
   aiFetches    LiAiFetch[]
   scheduled    LiScheduledAction[]
 
+  // A profile can't appear twice in the same campaign's audience. (Postgres treats
+  // NULLs as distinct, so leads without a profileUrl aren't blocked.)
+  @@unique([campaignId, profileUrl])
   @@index([campaignId, status])
   @@index([status])
 }

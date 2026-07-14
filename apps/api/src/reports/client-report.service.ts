@@ -184,7 +184,7 @@ export class ClientReportService {
     return `
   <div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:640px;margin:0 auto;color:#334155">
     <div style="background:#4f46e5;color:#fff;padding:22px 24px;border-radius:12px 12px 0 0">
-      <div style="font-size:18px;font-weight:700">GRAPOUT — ${PERIOD_LABEL[period]} Outreach Report</div>
+      <div style="font-size:18px;font-weight:700">GrapMe — ${PERIOD_LABEL[period]} Outreach Report</div>
       <div style="font-size:13px;opacity:.9;margin-top:2px">${clientName} · ${today}</div>
     </div>
     <div style="border:1px solid #e2e8f0;border-top:none;padding:24px;border-radius:0 0 12px 12px">
@@ -218,12 +218,12 @@ export class ClientReportService {
       </table>
 
       <p style="margin:24px 0 0;font-size:13px;color:#64748b">
-        This is an automated performance report from your GRAPOUT outreach program.
+        This is an automated performance report from your GrapMe outreach program.
         Reply to this email if you'd like to discuss the results.
       </p>
     </div>
     <div style="text-align:center;color:#94a3b8;font-size:11px;margin:14px 0">
-      Sent by GRAPOUT on behalf of your outreach program.
+      Sent by GrapMe on behalf of your outreach program.
     </div>
   </div>`;
   }

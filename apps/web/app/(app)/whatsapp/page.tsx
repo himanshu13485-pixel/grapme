@@ -59,7 +59,7 @@ export default function WhatsappSettingsPage() {
           </div>
           <div>
             <label className="label">Business / display name</label>
-            <input className="input" value={w.businessName} onChange={(e) => set({ businessName: e.target.value })} placeholder="GrapOut" />
+            <input className="input" value={w.businessName} onChange={(e) => set({ businessName: e.target.value })} placeholder="GrapMe" />
           </div>
           <div>
             <label className="label">Note (internal)</label>

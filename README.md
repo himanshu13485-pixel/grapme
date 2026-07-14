@@ -69,7 +69,7 @@ npm run db:migrate && npm run db:seed
 
 # 5. Run API + web (each in its own terminal)
 npm run dev:api              # http://localhost:4000/api/v1
-npm run dev:web              # http://localhost:3000  (admin@aeo.test / Password123!)
+npm run dev:web              # http://localhost:3000  (admin@grapme.local / Password123! — override via SEED_ADMIN_EMAIL)
 ```
 
 ### Option A+ — No Docker, WITH the sending engine (portable Redis)

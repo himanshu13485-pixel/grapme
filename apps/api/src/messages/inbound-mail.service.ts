@@ -444,7 +444,7 @@ export class InboundMailService {
             </a>
           </p>
           <p style="color:#94a3b8;font-size:12px">
-            You're receiving this because a reply arrived in your GRAPOUT mailbox.
+            You're receiving this because a reply arrived in your GrapMe mailbox.
           </p>
         </div>`,
     });

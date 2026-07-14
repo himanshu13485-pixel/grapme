@@ -19,6 +19,7 @@ interface SubAdmin {
 // Modules a sub-admin can be granted access to (keys match the left-menu routes).
 const MODULES: { key: string; label: string }[] = [
   { key: 'clients', label: 'Clients Workspace' },
+  { key: 'live-clients', label: 'Live Clients' },
   { key: 'registered-clients', label: 'Registered Clients' },
   { key: 'plan-requests', label: 'Plan Upgrade Request' },
   { key: 'billing', label: 'Payment / Billing' },

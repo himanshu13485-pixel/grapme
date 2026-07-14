@@ -8,6 +8,7 @@ import { useCanDelete, useAuth } from '@/lib/auth';
 import { downloadCsv } from '@/lib/csv';
 import { PageHeader, EmptyState, StatusBadge, Tabs, Modal } from '@/components/ui';
 import { ClientLinkedIn } from '@/components/ClientLinkedIn';
+import { SubscriptionHistory } from '@/components/SubscriptionHistory';
 import { ContactsManager } from '@/components/ContactsManager';
 import { TemplatesManager } from '@/components/TemplatesManager';
 import { CampaignsManager } from '@/components/CampaignsManager';
@@ -63,6 +64,7 @@ interface Client {
   autoCohortDay: number;
   contactPerson?: string;
   email?: string;
+  owner?: { id: string; email: string; name?: string | null; emailVerified?: boolean | null; pendingEmail?: string | null } | null;
   invoiceNo?: string;
   mobile?: string;
   productCategory?: string;
@@ -1835,6 +1837,7 @@ function ClientDetails({ client }: { client: Client }) {
     { label: 'Invoice no.', value: client.invoiceNo || '—' },
     { label: 'Contact person', value: client.contactPerson || '—' },
     { label: 'Contact email', value: client.email || '—' },
+    { label: 'Login email', value: client.owner?.email ? `${client.owner.email}${client.owner.emailVerified === false ? ' · unverified' : ''}${client.owner.pendingEmail ? ` · change to ${client.owner.pendingEmail} pending confirmation` : ''}` : '— (no portal login)' },
     { label: 'Mobile no.', value: client.mobile || '—' },
     ...(linkedInOn ? [{ label: 'WhatsApp notifications', value: sub?.whatsappEnabled ? (sub?.whatsappNumber || 'Enabled') : 'Off' }] : []),
     { label: 'Product / Category', value: client.productCategory || '—' },
@@ -1879,6 +1882,10 @@ function ClientDetails({ client }: { client: Client }) {
       <DetailSection title="Client details" rows={clientRows} />
       {emailRows.length > 0 && <DetailSection title="📧 Email business requirements" rows={emailRows} />}
       {linkedinRows.length > 0 && <DetailSection title="🔗 LinkedIn business requirements" rows={linkedinRows} />}
+      <div className="card p-5">
+        <h4 className="mb-3 text-sm font-semibold text-slate-800">🔁 Subscription history</h4>
+        <SubscriptionHistory clientId={client.id} />
+      </div>
     </div>
   );
 }

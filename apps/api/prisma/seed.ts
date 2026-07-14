@@ -15,12 +15,18 @@ async function main() {
     },
   });
 
-  const password = await argon2.hash('Password123!', { type: argon2.argon2id });
+  // Seed accounts are configurable via env so no test address is hardcoded.
+  const seedPassword = process.env.SEED_PASSWORD || 'Password123!';
+  const password = await argon2.hash(seedPassword, { type: argon2.argon2id });
+
+  const adminEmail = (process.env.SEED_ADMIN_EMAIL || 'admin@grapme.local').toLowerCase();
+  const subAdminEmail = (process.env.SEED_SUBADMIN_EMAIL || 'subadmin@grapme.local').toLowerCase();
+  const demoUserEmail = (process.env.SEED_USER_EMAIL || 'user@grapme.local').toLowerCase();
 
   const accounts: Array<{ name: string; email: string; role: Role }> = [
-    { name: 'Super Admin', email: 'admin@aeo.test', role: Role.SUPER_ADMIN },
-    { name: 'Sub Admin', email: 'subadmin@aeo.test', role: Role.SUB_ADMIN },
-    { name: 'Demo User', email: 'user@aeo.test', role: Role.USER },
+    { name: 'Super Admin', email: adminEmail, role: Role.SUPER_ADMIN },
+    { name: 'Sub Admin', email: subAdminEmail, role: Role.SUB_ADMIN },
+    { name: 'Demo User', email: demoUserEmail, role: Role.USER },
   ];
 
   for (const a of accounts) {
@@ -55,7 +61,7 @@ async function main() {
   }
 
   // eslint-disable-next-line no-console
-  console.log('Seed complete. Login with admin@aeo.test / Password123!');
+  console.log(`Seed complete. Login with ${adminEmail} / ${seedPassword}`);
 }
 
 main()

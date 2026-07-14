@@ -1,6 +1,15 @@
-import { Body, Controller, Get, Patch, Post, HttpCode } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Patch,
+  Post,
+  HttpCode,
+  Req,
+} from '@nestjs/common';
+import { Request } from 'express';
 import { Throttle } from '@nestjs/throttler';
-import { AuthService } from './auth.service';
+import { AuthService, SessionCtx } from './auth.service';
 import {
   LoginDto,
   RegisterDto,
@@ -22,6 +31,19 @@ import {
 export class AuthController {
   constructor(private readonly auth: AuthService) {}
 
+  /** Best-effort client IP + user-agent, honouring a reverse proxy's forwarded header. */
+  private sessionCtx(req: Request): SessionCtx {
+    const xff = req.headers['x-forwarded-for'];
+    const fwd = Array.isArray(xff) ? xff[0] : xff;
+    const ip =
+      fwd?.split(',')[0]?.trim() ||
+      req.ip ||
+      req.socket?.remoteAddress ||
+      undefined;
+    const ua = req.headers['user-agent'] || undefined;
+    return { ip: ip ?? undefined, userAgent: ua };
+  }
+
   /** Public feature flags the login page needs (e.g. whether signup is open). */
   @Public()
   @Get('config')
@@ -40,15 +62,15 @@ export class AuthController {
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @HttpCode(200)
   @Post('login')
-  login(@Body() dto: LoginDto) {
-    return this.auth.login(dto);
+  login(@Body() dto: LoginDto, @Req() req: Request) {
+    return this.auth.login(dto, this.sessionCtx(req));
   }
 
   @Public()
   @HttpCode(200)
   @Post('refresh')
-  refresh(@Body() dto: RefreshDto) {
-    return this.auth.refresh(dto.refreshToken);
+  refresh(@Body() dto: RefreshDto, @Req() req: Request) {
+    return this.auth.refresh(dto.refreshToken, this.sessionCtx(req));
   }
 
   @HttpCode(200)
@@ -94,6 +116,15 @@ export class AuthController {
   @Post('client/verify')
   clientVerify(@Body() dto: ClientVerifyDto) {
     return this.auth.verifyClientEmail(dto.token);
+  }
+
+  /** Client confirms an admin-initiated change to their portal login email. */
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @HttpCode(200)
+  @Post('confirm-email-change')
+  confirmEmailChange(@Body() dto: ClientVerifyDto) {
+    return this.auth.confirmEmailChange(dto.token);
   }
 
   @Throttle({ default: { limit: 10, ttl: 60_000 } })

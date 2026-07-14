@@ -47,7 +47,7 @@ echo ==================================================
 echo   All services launching. Give them ~20-30s, then:
 echo.
 echo     Web:    http://localhost:3000
-echo     Login:  admin@aeo.test  /  Password123!
+echo     Login:  admin@grapme.local  /  Password123!
 echo     API:    http://localhost:4000/api/v1
 echo.
 echo   SMTP sink catches test emails - point a test mailbox at:

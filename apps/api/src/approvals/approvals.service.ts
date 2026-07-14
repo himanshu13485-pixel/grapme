@@ -150,6 +150,12 @@ export class ApprovalsService {
       }),
     ]);
 
+    // Login-email-change approvals reference the owner user; show the pending email.
+    const loginEmailUsers = await this.prisma.user.findMany({
+      where: { id: { in: idsOf(ApprovalEntity.CLIENT_LOGIN_EMAIL) } },
+      select: { id: true, name: true, email: true, pendingEmail: true, companyName: true },
+    });
+
     // Resolve every referenced clientId to a name in one query.
     const clientIds = new Set<string>([...idsOf(ApprovalEntity.CLIENT_DELETE), ...idsOf(ApprovalEntity.LI_CHANNEL_REQUEST)]);
     mailboxes.forEach((m) => m.clientId && clientIds.add(m.clientId));
@@ -221,6 +227,15 @@ export class ApprovalsService {
         { name: c.name, clientName: c.clientId ? clientName.get(c.clientId) : undefined },
       ]),
     );
+    const le = new Map(
+      loginEmailUsers.map((u) => [
+        u.id,
+        {
+          target: `Change login email → ${u.pendingEmail ?? '(pending)'} (was ${u.email})`,
+          clientName: u.companyName ?? u.name,
+        },
+      ]),
+    );
 
     for (const a of approvals) {
       switch (a.entityType) {
@@ -255,6 +270,9 @@ export class ApprovalsService {
         }
         case ApprovalEntity.CLIENT_ACTIVATION:
           if (ac.has(a.entityId)) out.set(a.id, ac.get(a.entityId)!);
+          break;
+        case ApprovalEntity.CLIENT_LOGIN_EMAIL:
+          if (le.has(a.entityId)) out.set(a.id, le.get(a.entityId)!);
           break;
         case ApprovalEntity.LI_CAMPAIGN: {
           const c = lc.get(a.entityId);
@@ -412,6 +430,26 @@ export class ApprovalsService {
             : { status: 'SUSPENDED' },
         });
         break;
+      case ApprovalEntity.CLIENT_LOGIN_EMAIL: {
+        // Fallback path (email not received): approve = apply the pending login email;
+        // reject = discard it (current login stays unchanged).
+        const u = await this.prisma.user.findFirst({ where: { id: entityId } });
+        if (u?.pendingEmail && approved) {
+          const clash = await this.prisma.user.findFirst({ where: { email: u.pendingEmail, id: { not: u.id } } });
+          await this.prisma.user.update({
+            where: { id: u.id },
+            data: clash
+              ? { pendingEmail: null, pendingEmailTokenHash: null, pendingEmailExpires: null }
+              : { email: u.pendingEmail, emailVerified: true, pendingEmail: null, pendingEmailTokenHash: null, pendingEmailExpires: null },
+          });
+        } else if (!approved) {
+          await this.prisma.user.updateMany({
+            where: { id: entityId },
+            data: { pendingEmail: null, pendingEmailTokenHash: null, pendingEmailExpires: null },
+          });
+        }
+        break;
+      }
     }
   }
 

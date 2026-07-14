@@ -55,7 +55,7 @@ export function LiImportLeadsModal({
     setBusy(true); setError('');
     try {
       const res = await api.post<{ imported: number; creditsCharged?: number }>(`${base}/campaigns/${campaignId}/leads`, { leads: parsed });
-      alert(`Imported ${res.imported} lead${res.imported === 1 ? '' : 's'}.${res.creditsCharged ? ' · 1 credit used.' : ''}`);
+      alert(`Imported ${res.imported} lead${res.imported === 1 ? '' : 's'}.${res.creditsCharged ? ` · ${res.creditsCharged} credit${res.creditsCharged === 1 ? '' : 's'} used.` : ''}`);
       onImported();
     } catch (e: any) {
       setError(e.message ?? 'Import failed');

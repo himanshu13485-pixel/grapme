@@ -55,15 +55,18 @@ export class LiGenerationService {
     const keywords = this.audienceKeywords(campaign.audienceSpec);
     if (!keywords) throw new BadRequestException('Add audience criteria (job titles, industries, or keywords) before sourcing leads.');
 
-    // Optional per-client credit metering: each sourcing run costs 1 credit.
+    // Optional per-client credit metering: 1 credit PER lead added. Cap sourcing to
+    // the affordable count so we never source more than the client can pay for.
     const client = await this.prisma.client.findUnique({ where: { id: campaign.clientId }, select: { linkedInCreditMetering: true } });
     const metered = !!client?.linkedInCreditMetering;
+    let balance = Infinity;
     if (metered) {
       const sub = await this.subs.getOrCreate(campaign.tenantId, campaign.clientId);
-      if (sub.creditsBalance < 1) throw new BadRequestException('Insufficient LinkedIn credits to source leads.');
+      balance = sub.creditsBalance;
+      if (balance < 1) throw new BadRequestException('Insufficient LinkedIn credits to source leads.');
     }
 
-    const cap = Math.min(100, Math.max(1, limit));
+    const cap = Math.min(100, Math.max(1, Math.min(limit, balance)));
     const existing = await this.prisma.liLead.findMany({ where: { campaignId }, select: { profileUrl: true } });
     const seen = new Set(existing.map((l) => this.leadSlug(l.profileUrl)).filter(Boolean) as string[]);
 
@@ -87,12 +90,12 @@ export class LiGenerationService {
       cursor = res.cursor;
     }
     if (rows.length === 0) return { sourced: 0, keywords, creditsCharged: 0 };
-    const r = await this.prisma.liLead.createMany({ data: rows });
+    const r = await this.prisma.liLead.createMany({ data: rows, skipDuplicates: true });
 
     let creditsCharged = 0;
-    if (metered) {
-      await this.subs.debit(campaign.tenantId, campaign.clientId, 1, LiCreditReason.LEAD_SOURCING, { refType: 'LiCampaign', refId: campaignId });
-      creditsCharged = 1;
+    if (metered && r.count > 0) {
+      creditsCharged = Math.min(r.count, balance);
+      await this.subs.debit(campaign.tenantId, campaign.clientId, creditsCharged, LiCreditReason.LEAD_SOURCING, { refType: 'LiCampaign', refId: campaignId });
     }
     return { sourced: r.count, keywords, creditsCharged };
   }
@@ -113,14 +116,16 @@ export class LiGenerationService {
 
     const client = await this.prisma.client.findUnique({ where: { id: campaign.clientId }, select: { linkedInCreditMetering: true } });
     const metered = !!client?.linkedInCreditMetering;
+    let balance = Infinity;
     if (metered) {
       const sub = await this.subs.getOrCreate(campaign.tenantId, campaign.clientId);
-      if (sub.creditsBalance < 1) throw new BadRequestException('Insufficient LinkedIn credits to import connections.');
+      balance = sub.creditsBalance;
+      if (balance < 1) throw new BadRequestException('Insufficient LinkedIn credits to import connections.');
     }
 
-    // Import up to `limit` new connections per run (default 500) — the daily send cap
-    // governs actual outreach pace, so a big list just drips out safely over time.
-    const cap = Math.min(2000, Math.max(1, limit ?? 500));
+    // Import up to `limit` new connections per run (default 500), capped to the credit
+    // balance when metered — the daily send cap governs actual outreach pace.
+    const cap = Math.min(2000, Math.max(1, Math.min(limit ?? 500, balance)));
     const existing = await this.prisma.liLead.findMany({ where: { campaignId }, select: { profileUrl: true, unipileMemberId: true } });
     const seenSlugs = new Set(existing.map((l) => this.leadSlug(l.profileUrl)).filter(Boolean) as string[]);
     const seenMembers = new Set(existing.map((l) => l.unipileMemberId).filter(Boolean) as string[]);
@@ -151,12 +156,12 @@ export class LiGenerationService {
       cursor = res.cursor;
     }
     if (rows.length === 0) return { imported: 0, creditsCharged: 0 };
-    const r = await this.prisma.liLead.createMany({ data: rows });
+    const r = await this.prisma.liLead.createMany({ data: rows, skipDuplicates: true });
 
     let creditsCharged = 0;
-    if (metered) {
-      await this.subs.debit(campaign.tenantId, campaign.clientId, 1, LiCreditReason.LEAD_SOURCING, { refType: 'LiCampaign', refId: campaignId });
-      creditsCharged = 1;
+    if (metered && r.count > 0) {
+      creditsCharged = Math.min(r.count, balance);
+      await this.subs.debit(campaign.tenantId, campaign.clientId, creditsCharged, LiCreditReason.LEAD_SOURCING, { refType: 'LiCampaign', refId: campaignId });
     }
     return { imported: r.count, creditsCharged };
   }
