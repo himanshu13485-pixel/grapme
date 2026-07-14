@@ -82,7 +82,9 @@
       "Bash(git status *)",
       "Bash(git fetch *)",
       "Bash(git commit -m ' *)",
-      "Bash(git pull *)"
+      "Bash(git pull *)",
+      "Bash(git push *)",
+      "Bash(git rev-list *)"
     ]
   }
 }
