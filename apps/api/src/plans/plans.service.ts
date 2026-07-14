@@ -50,6 +50,40 @@ export class PlansService {
     return plans;
   }
 
+  /**
+   * Public plan list for the marketing site (grapme.com/pricing) — no auth.
+   * Returns the primary (oldest) tenant's plans with only presentation-safe
+   * fields. Plans with no pricing configured are still returned so the site can
+   * show them as "Custom / contact us".
+   */
+  async publicList() {
+    const tenant = await this.prisma.tenant.findFirst({
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+    if (!tenant) return [];
+    const plans = await this.prisma.plan.findMany({
+      where: { tenantId: tenant.id },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+    });
+    return plans.map((p) => ({
+      id: p.id,
+      name: p.name,
+      color: p.color,
+      emailEnabled: p.emailEnabled,
+      linkedInEnabled: p.linkedInEnabled,
+      validityDays: p.validityDays,
+      emailCredits: p.emailCredits,
+      linkedInCredits: p.linkedInCredits,
+      mailboxLimit: p.mailboxLimit,
+      seatLimit: p.seatLimit,
+      emailCampaignLimit: p.emailCampaignLimit,
+      linkedInCampaignLimit: p.linkedInCampaignLimit,
+      pricing: Array.isArray(p.pricing) ? p.pricing : [],
+      yearlyEntitlements: p.yearlyEntitlements ?? null,
+    }));
+  }
+
   async create(user: AuthUser, name: string, color?: string) {
     this.assertAdmin(user);
     const clean = (name ?? '').trim();

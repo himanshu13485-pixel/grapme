@@ -8,6 +8,7 @@ import {
   Post,
 } from '@nestjs/common';
 import { PlansService } from './plans.service';
+import { Public } from '../common/decorators/public.decorator';
 import {
   CurrentUser,
   AuthUser,
@@ -16,6 +17,13 @@ import {
 @Controller('plans')
 export class PlansController {
   constructor(private readonly plans: PlansService) {}
+
+  /** Public plan list for the marketing site (grapme.com/pricing). No auth. */
+  @Public()
+  @Get('public')
+  publicList() {
+    return this.plans.publicList();
+  }
 
   /** All roles can read plans (they drive pickers/filters everywhere). */
   @Get()
