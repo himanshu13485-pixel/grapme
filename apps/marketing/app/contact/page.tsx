@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { MessageCircle, Phone } from 'lucide-react';
+import { MessageCircle, Phone, MapPin } from 'lucide-react';
 import { Container } from '@/components/container';
 import { LeadForm } from '@/components/lead-form';
 import { Reveal } from '@/components/reveal';
@@ -42,6 +42,20 @@ export default function ContactPage() {
 
         <Reveal delay={180}>
           <LeadForm />
+        </Reveal>
+
+        <Reveal delay={260} className="mt-12">
+          <div className="mx-auto max-w-md rounded-2xl border border-line bg-paper/70 p-6 text-center backdrop-blur-sm">
+            <div className="mb-2 inline-flex items-center gap-2 font-bold text-ink">
+              <MapPin size={16} className="text-brand" /> Registered office
+            </div>
+            <p className="font-semibold text-ink">GrapOut Strategic Partners Private Limited</p>
+            <p className="mt-1 text-sm leading-relaxed text-muted">
+              Unit No. 121, F.F., Tower-B, Vatika Mindscapes,<br />
+              Sector 27D, Faridabad, Haryana, 121003.<br />
+              India.
+            </p>
+          </div>
         </Reveal>
       </Container>
     </section>

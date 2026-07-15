@@ -32,6 +32,11 @@ export function SiteFooter() {
               {SITE.name}
             </Link>
             <p className="text-sm text-white/55">{SITE.description}</p>
+            <address className="mt-5 text-sm not-italic leading-relaxed text-white/50">
+              <span className="font-semibold text-white/70">GrapOut Strategic Partners Private Limited</span><br />
+              Unit No. 121, F.F., Tower-B, Vatika Mindscapes,<br />
+              Sector 27D, Faridabad, Haryana, 121003, India.
+            </address>
           </div>
 
           <div className="flex flex-col gap-2.5 text-sm">
