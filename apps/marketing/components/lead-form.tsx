@@ -1,9 +1,9 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { ArrowUpRight, Check } from 'lucide-react';
 
-type FieldErrors = { name?: string; phone?: string; email?: string };
+type FieldErrors = { name?: string; phone?: string; email?: string; captcha?: string };
 
 function isValidEmail(v: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
@@ -26,6 +26,19 @@ export function LeadForm({
   const [email, setEmail] = useState('');
   const [errors, setErrors] = useState<FieldErrors>({});
   const [status, setStatus] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
+  const [captcha, setCaptcha] = useState<{ token: string; question: string } | null>(null);
+  const [captchaAnswer, setCaptchaAnswer] = useState('');
+
+  const loadCaptcha = useCallback(async () => {
+    setCaptchaAnswer('');
+    try {
+      const res = await fetch('/api/captcha', { cache: 'no-store' });
+      setCaptcha(res.ok ? await res.json() : null);
+    } catch {
+      setCaptcha(null);
+    }
+  }, []);
+  useEffect(() => { loadCaptcha(); }, [loadCaptcha]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -34,6 +47,7 @@ export function LeadForm({
     if (name.trim().length < 2) nextErrors.name = 'Please enter your name.';
     if (!isValidPhone(phone)) nextErrors.phone = 'Please enter a valid contact number.';
     if (!isValidEmail(email)) nextErrors.email = 'Please enter a valid email address.';
+    if (!captchaAnswer.trim()) nextErrors.captcha = 'Please answer the question.';
 
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return;
@@ -43,9 +57,21 @@ export function LeadForm({
       const res = await fetch('/api/leads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: name.trim(), phone: phone.trim(), email: email.trim() }),
+        body: JSON.stringify({
+          name: name.trim(), phone: phone.trim(), email: email.trim(),
+          captchaToken: captcha?.token ?? '', captchaAnswer: captchaAnswer.trim(),
+        }),
       });
-      if (!res.ok) throw new Error('Request failed');
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        if (data?.errors?.captcha) {
+          setErrors({ captcha: data.errors.captcha });
+          setStatus('idle');
+          loadCaptcha(); // fresh challenge after a wrong answer
+          return;
+        }
+        throw new Error('Request failed');
+      }
       setStatus('success');
     } catch {
       setStatus('error');
@@ -119,9 +145,26 @@ export function LeadForm({
           {errors.email && <p className="mt-1.5 text-xs font-semibold text-danger">{errors.email}</p>}
         </div>
 
+        <div className="w-full md:w-auto">
+          <label htmlFor="lead-captcha" className="mb-1.5 block text-[13px] font-bold text-ink">
+            {captcha ? `What is ${captcha.question}?` : 'Verify'}
+          </label>
+          <input
+            id="lead-captcha"
+            value={captchaAnswer}
+            onChange={(e) => setCaptchaAnswer(e.target.value)}
+            placeholder="Answer"
+            inputMode="numeric"
+            autoComplete="off"
+            aria-label={captcha ? `What is ${captcha.question}?` : 'Captcha answer'}
+            className={`${field} md:w-28 ${errors.captcha ? 'border-danger' : 'border-line'}`}
+          />
+          {errors.captcha && <p className="mt-1.5 text-xs font-semibold text-danger">{errors.captcha}</p>}
+        </div>
+
         <button
           type="submit"
-          disabled={status === 'submitting'}
+          disabled={status === 'submitting' || !captcha}
           className="inline-flex h-[52px] items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-ink px-7 text-[15px] font-extrabold text-white transition hover:bg-brand disabled:opacity-60"
         >
           {status === 'submitting' ? 'Sending…' : 'Get in touch'}

@@ -1,5 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailerService } from '../sending/mailer.service';
 
@@ -8,6 +9,8 @@ export interface LeadInput {
   phone: string;
   email: string;
   message?: string;
+  captchaToken: string;
+  captchaAnswer: string;
 }
 
 @Injectable()
@@ -18,7 +21,30 @@ export class MarketingService {
     private readonly prisma: PrismaService,
     private readonly mailer: MailerService,
     private readonly config: ConfigService,
+    private readonly jwt: JwtService,
   ) {}
+
+  /** A tamper-proof arithmetic captcha: the answer is signed into the token. */
+  async getCaptcha() {
+    const a = 1 + Math.floor(Math.random() * 9);
+    const b = 1 + Math.floor(Math.random() * 9);
+    const token = await this.jwt.signAsync(
+      { sum: a + b, kind: 'captcha' },
+      { secret: this.config.get('JWT_ACCESS_SECRET'), expiresIn: '10m' },
+    );
+    return { token, question: `${a} + ${b}` };
+  }
+
+  private async assertCaptcha(token: string, answer: string) {
+    try {
+      const payload = await this.jwt.verifyAsync(token, { secret: this.config.get('JWT_ACCESS_SECRET') });
+      if (payload.kind !== 'captcha' || Number(answer) !== payload.sum) {
+        throw new Error('bad');
+      }
+    } catch {
+      throw new BadRequestException('Incorrect captcha answer — please try again.');
+    }
+  }
 
   /** Sending mailbox for system mail on a tenant (report mailbox, else the first). */
   private async systemMailbox(tenantId: string) {
@@ -32,6 +58,7 @@ export class MarketingService {
 
   /** A grapme.com "Book a demo" / "Get in touch" submission → email the sales inbox. */
   async lead(dto: LeadInput) {
+    await this.assertCaptcha(dto.captchaToken, dto.captchaAnswer);
     const to = (this.config.get<string>('LEADS_NOTIFY_EMAIL') || 'harsh@grapmail.com').trim();
     const esc = (s: string) => (s ?? '').replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c] as string));
     // Always log so leads survive even if SMTP isn't configured.
