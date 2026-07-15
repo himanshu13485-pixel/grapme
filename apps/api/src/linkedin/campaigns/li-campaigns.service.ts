@@ -256,6 +256,41 @@ export class LiCampaignsService {
     return this.scheduler.enqueueNewLeads(campaignId);
   }
 
+  // ── Reusable audience presets (tenant-wide templates) ────────────────
+  private sanitizeAudienceSpec(spec: unknown): Prisma.InputJsonValue {
+    const s = (spec && typeof spec === 'object' ? spec : {}) as Record<string, unknown>;
+    const arr = (v: unknown) =>
+      Array.isArray(v) ? v.filter((x) => typeof x === 'string' && x.trim()).map((x) => (x as string).trim()).slice(0, 50) : [];
+    const keys = [
+      'countries', 'cities', 'industries', 'companySizes', 'departments', 'jobTitles',
+      'seniorities', 'companyKeywordsInclude', 'companyKeywordsExclude',
+      'personKeywordsInclude', 'personKeywordsExclude',
+    ];
+    const out: Record<string, string[]> = {};
+    for (const k of keys) out[k] = arr(s[k]);
+    return out as Prisma.InputJsonValue;
+  }
+
+  listPresets(tenantId: string) {
+    return this.prisma.liAudiencePreset.findMany({
+      where: { tenantId },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async createPreset(tenantId: string, name: string, spec: unknown) {
+    const clean = (name ?? '').trim();
+    if (!clean) throw new BadRequestException('Preset name is required.');
+    return this.prisma.liAudiencePreset.create({
+      data: { tenantId, name: clean.slice(0, 80), spec: this.sanitizeAudienceSpec(spec) },
+    });
+  }
+
+  async deletePreset(tenantId: string, id: string) {
+    await this.prisma.liAudiencePreset.deleteMany({ where: { id, tenantId } });
+    return { ok: true };
+  }
+
   /** Remove a lead from a campaign's Target Audience (cancels its queued jobs). */
   async deleteLead(campaignId: string, leadId: string) {
     await this.assertExists(campaignId);

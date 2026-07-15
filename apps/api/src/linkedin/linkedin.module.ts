@@ -15,6 +15,7 @@ import { LiOutreachProcessor } from './scheduler/li-outreach.processor';
 import { LiCampaignsService } from './campaigns/li-campaigns.service';
 import { LiGenerationService } from './campaigns/li-generation.service';
 import { LiCampaignsController } from './campaigns/li-campaigns.controller';
+import { LiPresetsController } from './campaigns/li-presets.controller';
 import { LiOverviewController } from './campaigns/li-overview.controller';
 import { LiKnowledgeService } from './knowledge/li-knowledge.service';
 import { LiKnowledgeController } from './knowledge/li-knowledge.controller';
@@ -51,6 +52,7 @@ const queueEnabled = process.env.QUEUE_ENABLED !== 'false';
     LinkedInAccountByIdController,
     LinkedInWebhooksController,
     LiCampaignsController,
+    LiPresetsController,
     LiOverviewController,
     LiKnowledgeController,
     LiInboxController,

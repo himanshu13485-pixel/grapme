@@ -148,6 +148,35 @@ export function LiRegularWizard({
 
   const setAud = (k: string, v: string[]) => setAudience((a) => ({ ...a, [k]: v }));
 
+  // ── Reusable audience presets ──────────────────────────────────────
+  const [presets, setPresets] = useState<{ id: string; name: string; spec: Partial<Audience> }[]>([]);
+  function loadPresets() {
+    api.get<{ id: string; name: string; spec: Partial<Audience> }[]>(`${base}/audience-presets`).then(setPresets).catch(() => {});
+  }
+  useEffect(() => { loadPresets(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [base]);
+  function applyPreset(id: string) {
+    const p = presets.find((x) => x.id === id);
+    if (!p) return;
+    setAudience((a) => {
+      const next: Audience = { ...a };
+      for (const [k, v] of Object.entries(p.spec)) {
+        if (Array.isArray(v)) (next as Record<string, string[]>)[k] = v as string[];
+      }
+      return next;
+    });
+  }
+  async function savePreset() {
+    const nm = window.prompt('Save this audience as a reusable preset — name it:');
+    if (!nm?.trim()) return;
+    try { await api.post(`${base}/audience-presets`, { name: nm.trim(), spec: audience }); loadPresets(); }
+    catch (e) { alert(e instanceof Error ? e.message : 'Failed to save preset'); }
+  }
+  async function deletePreset(id: string) {
+    if (!confirm('Delete this audience preset?')) return;
+    try { await api.del(`${base}/audience-presets/${id}`); loadPresets(); }
+    catch (e) { alert(e instanceof Error ? e.message : 'Failed to delete preset'); }
+  }
+
   async function ensureCampaign() {
     if (campaignId) { await api.patch(`${base}/campaigns/${campaignId}`, { name, outreachType }); return campaignId; }
     const c = await api.post<{ id: string }>(`${base}/campaigns`, { clientId, linkedInAccountId: accountId, name, mode: 'REGULAR', outreachType });
@@ -274,6 +303,19 @@ export function LiRegularWizard({
         {step === 1 && (
           <Step title="Target Audience" desc="Define who to reach with this campaign.">
             <Field label="Campaign Name *"><input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="My First Campaign" /></Field>
+
+            <Field label="Audience presets">
+              <div className="flex flex-wrap items-center gap-2">
+                {presets.map((p) => (
+                  <span key={p.id} className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 py-1 pl-3 pr-2 text-sm">
+                    <button type="button" className="font-medium text-slate-700 hover:text-brand-700" onClick={() => applyPreset(p.id)} title="Load this preset">{p.name}</button>
+                    <button type="button" className="text-slate-300 hover:text-rose-600" onClick={() => deletePreset(p.id)} title="Delete preset">✕</button>
+                  </span>
+                ))}
+                <button type="button" className="btn-ghost text-xs" onClick={savePreset}>+ Save current as preset</button>
+              </div>
+              {presets.length === 0 && <p className="mt-1 text-xs text-slate-400">Save this audience to reuse it on future campaigns.</p>}
+            </Field>
             <AudField label="Countries *" sug={COUNTRY_SUGGEST} v={audience.countries} on={(v) => setAud('countries', v)} ph="Add a country…" />
             <AudField label="Cities" v={audience.cities} on={(v) => setAud('cities', v)} ph="Type a city and press Enter" />
             <AudField label="Industries" sug={INDUSTRY_SUGGEST} v={audience.industries} on={(v) => setAud('industries', v)} ph="Add an industry…" />

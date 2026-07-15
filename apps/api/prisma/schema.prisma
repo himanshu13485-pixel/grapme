@@ -176,6 +176,7 @@ model Tenant {
   greetings       Greeting[]
   assets          Asset[]
   blogPosts       BlogPost[]
+  liAudiencePresets LiAudiencePreset[]
 }
 
 // Uploaded images (e.g. for email templates), served publicly by id so mail
@@ -186,6 +187,19 @@ model Asset {
   filename  String
   mimeType  String
   data      Bytes
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+/// Reusable Target-Audience templates for LinkedIn campaigns (tenant-wide).
+model LiAudiencePreset {
+  id        String   @id @default(uuid())
+  tenantId  String
+  name      String
+  spec      Json // the audience spec (countries, industries, jobTitles, keywords, …)
   createdAt DateTime @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)

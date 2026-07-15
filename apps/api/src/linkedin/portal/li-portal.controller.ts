@@ -78,6 +78,13 @@ export class LiPortalController {
   importLeads(@CurrentUser() u: AuthUser, @Param('id') id: string, @Body() dto: ImportLiLeadsDto) { return this.portal.importLeads(u.userId, id, dto); }
   @Delete('campaigns/:id/leads/:leadId')
   deleteLead(@CurrentUser() u: AuthUser, @Param('id') id: string, @Param('leadId') leadId: string) { return this.portal.deleteLead(u.userId, id, leadId); }
+
+  @Get('audience-presets')
+  presets(@CurrentUser() u: AuthUser) { return this.portal.listPresets(u.tenantId); }
+  @Post('audience-presets')
+  createPreset(@CurrentUser() u: AuthUser, @Body() dto: { name: string; spec: unknown }) { return this.portal.createPreset(u.tenantId, dto.name, dto.spec); }
+  @Delete('audience-presets/:id')
+  deletePreset(@CurrentUser() u: AuthUser, @Param('id') id: string) { return this.portal.deletePreset(u.tenantId, id); }
   @Post('campaigns/:id/import-connections')
   importConnections(@CurrentUser() u: AuthUser, @Param('id') id: string, @Query('limit') limit?: string) { return this.portal.importConnections(u.userId, id, limit ? Number(limit) : undefined); }
   // Audience sourcing is admin-only (avoids client-side credit/rate-limit misuse);
