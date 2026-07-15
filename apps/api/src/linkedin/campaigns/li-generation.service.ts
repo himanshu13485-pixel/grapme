@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
 import { LiCreditReason, LiLeadStatus, LiOutreachType, LiStepType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LiAiService } from '../ai/ai.service';
@@ -13,6 +13,8 @@ const COMPANY_SIZES = ['Startup (1-10)', 'Small (11-50)', 'Medium (51-200)', 'La
 
 @Injectable()
 export class LiGenerationService {
+  private readonly logger = new Logger(LiGenerationService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly ai: LiAiService,
@@ -30,16 +32,45 @@ export class LiGenerationService {
     return slug.replace(/-[a-z0-9]{6,}$/i, '').split('-').filter(Boolean)
       .map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') || slug;
   }
-  /** Build a LinkedIn keyword query from the campaign's audience spec. */
-  private audienceKeywords(spec: any): string {
-    if (!spec) return '';
-    const parts = [
-      ...(spec.jobTitles ?? []).slice(0, 3),
-      ...(spec.industries ?? []).slice(0, 2),
-      ...(spec.personKeywordsInclude ?? []).slice(0, 2),
-      ...(spec.countries ?? []).slice(0, 1),
-    ];
-    return parts.filter(Boolean).join(' ').trim();
+  /**
+   * Turn the Target Audience into a SET of focused search queries rather than one
+   * muddy keyword blob. LinkedIn's classic people-search is a keyword match, so a
+   * single query stuffed with every field returns noise; a matrix of
+   * "role + industry/company + location" queries is far more accurate and uses far
+   * more of the audience. Exclude keywords are appended as `-term` (classic NOT).
+   */
+  private buildQueries(spec: any): string[] {
+    if (!spec) return [];
+    const arr = (v: any): string[] =>
+      Array.isArray(v) ? v.filter((x) => typeof x === 'string' && x.trim()).map((x) => x.trim()) : [];
+
+    const titles = arr(spec.jobTitles);
+    // If no explicit titles, fall back to seniorities/departments as role hints.
+    const roles = titles.length ? titles : [...arr(spec.seniorities), ...arr(spec.departments)];
+    const contexts = [...arr(spec.industries), ...arr(spec.companyKeywordsInclude)];
+    const person = arr(spec.personKeywordsInclude).join(' ');
+    const location = [arr(spec.cities)[0], arr(spec.countries)[0]].filter(Boolean).join(' ');
+    const excludes = [...arr(spec.companyKeywordsExclude), ...arr(spec.personKeywordsExclude)]
+      .map((e) => `-${e.split(/\s+/)[0]}`)
+      .join(' ');
+    const compose = (...parts: (string | undefined)[]) =>
+      parts.filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+
+    const queries = new Set<string>();
+    if (roles.length) {
+      for (const role of roles.slice(0, 6)) {
+        if (contexts.length) {
+          for (const c of contexts.slice(0, 4)) queries.add(compose(role, c, person, location, excludes));
+        } else {
+          queries.add(compose(role, person, location, excludes));
+        }
+      }
+    } else if (contexts.length) {
+      for (const c of contexts.slice(0, 6)) queries.add(compose(c, person, location, excludes));
+    } else if (person || location) {
+      queries.add(compose(person, location, excludes));
+    }
+    return [...queries].filter(Boolean).slice(0, 12); // cap total queries per source run
   }
 
   /** Search LinkedIn for people matching the campaign's audience and add them as PENDING leads. */
@@ -53,8 +84,9 @@ export class LiGenerationService {
     if (!account?.unipileAccountId || account.status !== 'CONNECTED') {
       throw new BadRequestException('This campaign needs a CONNECTED LinkedIn account before sourcing leads.');
     }
-    const keywords = this.audienceKeywords(campaign.audienceSpec);
-    if (!keywords) throw new BadRequestException('Add audience criteria (job titles, industries, or keywords) before sourcing leads.');
+    const queries = this.buildQueries(campaign.audienceSpec);
+    if (queries.length === 0) throw new BadRequestException('Add audience criteria (job titles, industries, or keywords) before sourcing leads.');
+    const keywords = queries.join(' | '); // for the response + logs
 
     // Optional per-client credit metering: 1 credit PER lead added. Cap sourcing to
     // the affordable count so we never source more than the client can pay for.
@@ -71,25 +103,32 @@ export class LiGenerationService {
     const existing = await this.prisma.liLead.findMany({ where: { campaignId }, select: { profileUrl: true } });
     const seen = new Set(existing.map((l) => this.leadSlug(l.profileUrl)).filter(Boolean) as string[]);
 
+    // Run each focused query in turn (paginating a few pages each), merging + deduping
+    // the people until we hit the cap. This spreads sourcing across the audience matrix
+    // instead of one blurry query, so the leads are much better targeted.
     const rows: Prisma.LiLeadCreateManyInput[] = [];
-    let cursor: string | undefined;
-    for (let page = 0; page < 12 && rows.length < cap; page++) {
-      const res = await this.provider.searchPeople({ accountId: account.unipileAccountId, keywords, cursor });
-      for (const p of res.people) {
-        const s = this.leadSlug(p.profileUrl);
-        if (!s || seen.has(s)) continue;
-        seen.add(s);
-        rows.push({
-          campaignId, fullName: p.fullName ?? this.nameFromSlug(s),
-          firstName: p.firstName ?? undefined, lastName: p.lastName ?? undefined,
-          title: p.title ?? undefined, company: p.company ?? undefined, location: p.location ?? undefined,
-          profileUrl: normalizeProfileUrl(p.profileUrl), status: LiLeadStatus.PENDING, currentStep: 0,
-        });
-        if (rows.length >= cap) break;
+    queryLoop:
+    for (const q of queries) {
+      let cursor: string | undefined;
+      for (let page = 0; page < 6 && rows.length < cap; page++) {
+        const res = await this.provider.searchPeople({ accountId: account.unipileAccountId, keywords: q, cursor });
+        for (const p of res.people) {
+          const s = this.leadSlug(p.profileUrl);
+          if (!s || seen.has(s)) continue;
+          seen.add(s);
+          rows.push({
+            campaignId, fullName: p.fullName ?? this.nameFromSlug(s),
+            firstName: p.firstName ?? undefined, lastName: p.lastName ?? undefined,
+            title: p.title ?? undefined, company: p.company ?? undefined, location: p.location ?? undefined,
+            profileUrl: normalizeProfileUrl(p.profileUrl), status: LiLeadStatus.PENDING, currentStep: 0,
+          });
+          if (rows.length >= cap) break queryLoop;
+        }
+        if (!res.cursor || res.people.length === 0) break; // exhausted this query → next
+        cursor = res.cursor;
       }
-      if (!res.cursor || res.people.length === 0) break;
-      cursor = res.cursor;
     }
+    this.logger.log(`Campaign ${campaignId}: sourced ${rows.length}/${cap} across ${queries.length} queries → [${keywords}]`);
     if (rows.length === 0) return { sourced: 0, keywords, creditsCharged: 0 };
     const r = await this.prisma.liLead.createMany({ data: rows, skipDuplicates: true });
 
