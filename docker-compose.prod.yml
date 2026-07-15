@@ -62,9 +62,12 @@ services:
       UNIPILE_WEBHOOK_SECRET: ${UNIPILE_WEBHOOK_SECRET:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       AI_MODEL: ${AI_MODEL:-}
-      # On plan changes, ping the marketing site to refresh its live pricing page
-      # (internal docker network). REVALIDATE_SECRET guards the endpoint.
-      MARKETING_REVALIDATE_URL: ${MARKETING_REVALIDATE_URL:-http://marketing:3200/api/revalidate}
+      # On plan/blog changes, ping the marketing site (cPanel app) to refresh its
+      # live pricing + blog pages. Set MARKETING_REVALIDATE_URL to the public
+      # endpoint, e.g. https://www.grapme.com/api/revalidate (leave blank to skip
+      # and rely on the marketing site's own 2-min cache). REVALIDATE_SECRET, if
+      # set, must match the value configured on the marketing app.
+      MARKETING_REVALIDATE_URL: ${MARKETING_REVALIDATE_URL:-}
       REVALIDATE_SECRET: ${REVALIDATE_SECRET:-}
     # Apply DB migrations on boot, then start the API.
     command: >
@@ -89,25 +92,9 @@ services:
     ports:
       - '${BIND_HOST:-0.0.0.0}:3000:3000'
 
-  # Marketing site (grapme.com). Serves the public landing + live pricing page.
-  # Reaches the API over the internal docker network (API_URL), so no public
-  # API exposure is needed for the server-side plan fetch.
-  marketing:
-    image: ${APP_IMAGE:-ghcr.io/himanshu13485-pixel/grapme:latest}
-    restart: unless-stopped
-    depends_on:
-      - api
-    environment:
-      NODE_ENV: production
-      # Internal service URL for server-side fetch (grapme.com/pricing → plans).
-      API_URL: ${MARKETING_API_URL:-http://api:4000/api/v1}
-      # Public site origin (used for canonical URLs / metadata).
-      NEXT_PUBLIC_SITE_URL: ${MARKETING_SITE_URL:-https://www.grapme.com}
-      # Must match the API's REVALIDATE_SECRET to accept on-demand refresh calls.
-      REVALIDATE_SECRET: ${REVALIDATE_SECRET:-}
-    command: sh -c "npm run start --workspace apps/marketing"
-    ports:
-      - '${BIND_HOST:-0.0.0.0}:3200:3200'
+  # NOTE: the marketing site (grapme.com) is served separately as a cPanel
+  # Node.js app, not from this stack — so there's no `marketing` service here.
+  # It's rebuilt/restarted on its own; see docs/DEPLOY_CPANEL.md.
 
 volumes:
   aeo_pgdata:
