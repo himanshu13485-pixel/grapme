@@ -13,7 +13,7 @@ aeo/
 ├── apps/
 │   ├── api/        NestJS + Prisma + PostgreSQL API
 │   ├── web/        Next.js frontend — the AEO product app
-│   └── marketing/  Next.js public marketing site for Grapme (SEO pages + blog)
+│   └── marketing/  Next.js public marketing site for GrapMe (SEO pages + blog)
 ├── docker-compose.yml   Postgres + Redis for local dev
 ├── .env.example
 └── package.json    npm workspaces root
@@ -21,7 +21,7 @@ aeo/
 
 ## Marketing site (`apps/marketing`)
 
-Public, SEO-indexable website describing the Grapme outreach platform itself —
+Public, SEO-indexable website describing the GrapMe outreach platform itself —
 separate from the product app so it can be deployed and crawled independently.
 Home, Features, How It Works, Pricing, Contact, Privacy/Terms, plus a
 Markdown-driven blog under `content/blog/`. Includes `sitemap.xml`,

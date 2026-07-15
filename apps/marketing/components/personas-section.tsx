@@ -1,4 +1,4 @@
-import { Building2, Handshake, Target, Users } from 'lucide-react';
+import { Building2, Rocket, Target, Users } from 'lucide-react';
 import { Container } from './container';
 import { Reveal } from './reveal';
 import { FloatingDecor } from './floating-decor';
@@ -6,26 +6,26 @@ import { FloatingDecor } from './floating-decor';
 const PERSONAS = [
   {
     icon: Building2,
-    title: 'Lead-gen agencies',
-    body: 'Run cold outreach for a roster of clients — each one isolated, each campaign approved before it sends.',
-    tags: ['Multi-client', 'Per-client isolation'],
+    title: 'Growing businesses',
+    body: 'Run your own cold outreach in-house — full control, no third party in the loop.',
+    tags: ['Self-serve', 'Full control'],
   },
   {
-    icon: Handshake,
-    title: 'Managed-service providers',
-    body: 'Operate mailboxes, sequences and reporting for clients who never have to touch the tool themselves.',
-    tags: ['Done-for-you', 'Client reports'],
+    icon: Rocket,
+    title: 'Founders & small teams',
+    body: 'Send LinkedIn and email outreach yourself, with the same guardrails a larger company would use.',
+    tags: ['Easy setup', 'Built-in safety'],
   },
   {
     icon: Target,
-    title: 'Sales teams with sign-off',
-    body: 'Let SDRs build campaigns freely while a manager approves every launch — no rogue sends from the pipeline.',
-    tags: ['Manager approval', 'RevOps'],
+    title: 'Sales & RevOps teams',
+    body: 'Run outbound straight from your own pipeline — LinkedIn and email in one dashboard, without stitching tools together.',
+    tags: ['Pipeline-native', 'One dashboard'],
   },
   {
     icon: Users,
     title: 'Recruiting & staffing',
-    body: 'Source and message candidates at volume without ever risking the firm’s sending domains.',
+    body: 'Source and message candidates at volume without ever risking your sending domains.',
     tags: ['Candidate outreach', 'Volume-safe'],
   },
 ];
@@ -38,11 +38,11 @@ export function PersonasSection() {
         <Reveal className="mx-auto mb-10 max-w-2xl text-center">
           <p className="mb-4 font-grotesk text-eyebrow font-semibold uppercase text-brand">Who it’s for</p>
           <h2 className="font-display text-display2 font-semibold text-ink">
-            Built for teams that send <span className="italic text-brand">on behalf of others</span>
+            Built for teams that want <span className="italic text-brand">outreach done right</span>
           </h2>
           <p className="mx-auto mt-5 max-w-md text-muted">
-            Anywhere one team runs outreach for many accounts, an approval gate is the difference between scaling and
-            scrambling.
+            Wherever a business wants to run its own outreach — without hiring an agency or juggling five different
+            tools to do it.
           </p>
         </Reveal>
 

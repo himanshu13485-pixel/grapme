@@ -6,10 +6,10 @@ filename below (PNG or JPG — keep the `.png` name or update the `src` in the c
 
 | File | What it shows |
 |------|---------------|
-| `dashboard.png` | Client dashboard — the metric tiles (active cohorts, emails sent, delivery/open/reply/forward rates) |
-| `mailboxes.png` | Mailboxes tab — SPF/DKIM/DMARC auth scores, connection + inbox tests, daily caps |
+| `dashboard.png` | Dashboard — email metric tiles (active cohorts, sent, delivered, open/reply/forward rates) |
+| `linkedin.png`  | Dashboard, LinkedIn section — invites/connected/acceptance/reply rates, plus the recent cohorts table |
+| `targeting.png` | Campaign detail — analytics, target audience, and schedule & limits (send window, daily caps, warm-up ramp) |
 | `cohorts.png`   | Cohorts tab — manual upload, automatic monthly cohort, scheduled client reports |
-| `schedule.png`  | Running cohorts table + the upcoming scheduled-sends forecast |
 
 Until a file is present, that row shows a labelled placeholder (so the layout never breaks).
 

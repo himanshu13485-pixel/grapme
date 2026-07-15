@@ -53,7 +53,7 @@ export function MediaPhoto() {
     <div className="relative h-full min-h-[240px] overflow-hidden rounded-3xl border border-line shadow-card">
       {ok ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={PHOTO_SRC} alt="Agency team using Grapme" className="h-full w-full object-cover" />
+        <img src={PHOTO_SRC} alt="Team using GrapMe" className="h-full w-full object-cover" />
       ) : (
         <div className="grid h-full place-items-center bg-[linear-gradient(135deg,#eef1fb,#dee3ff)] text-center">
           <div>

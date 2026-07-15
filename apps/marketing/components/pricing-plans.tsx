@@ -63,7 +63,7 @@ export function PricingPlans({ plans }: { plans: PublicPlan[] }) {
         ))}
       </div>
       <p className="mt-8 text-center text-sm text-muted">
-        Prices are exclusive of taxes and can be tailored to your agency.{' '}
+        Prices are exclusive of taxes and can be tailored to your team.{' '}
         <a href={`${SITE.appUrl}/client`} className="font-semibold text-brand hover:underline">Create your account</a>{' '}
         or request a custom quote below.
       </p>

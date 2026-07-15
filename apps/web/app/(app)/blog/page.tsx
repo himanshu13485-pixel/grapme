@@ -297,7 +297,7 @@ function PostEditor({ post, onClose, onSaved }: { post: BlogPost | null; onClose
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label className="label">Author / publisher</label>
-            <input className="input" value={authorName} onChange={(e) => setAuthorName(e.target.value)} placeholder="e.g. Grapme Team" />
+            <input className="input" value={authorName} onChange={(e) => setAuthorName(e.target.value)} placeholder="e.g. GrapMe Team" />
           </div>
           <div>
             <label className="label">Publish date & time</label>

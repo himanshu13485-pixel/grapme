@@ -18,36 +18,16 @@ import { FloatingDecor } from '@/components/floating-decor';
 
 export const metadata: Metadata = {
   title: 'Features',
-  description: 'Approval workflows, multi-channel campaigns, deliverability protection, and full audit trails — the Grapme feature set.',
+  description: 'Multi-channel campaigns, deliverability protection, team roles, and full audit trails — the GrapMe feature set.',
 };
 
 const GROUPS = [
-  {
-    icon: ShieldCheck,
-    title: 'Approval & governance',
-    items: [
-      'Every campaign launch, schedule, follow-up sequence, contact import, and mailbox change enters a Pending → Approved/Rejected queue',
-      'A super admin — or a sub-admin with the right permission — must approve before anything goes live',
-      'Users build and draft freely; they cannot execute without an approved state',
-      'One unified approval center listing every pending item across the tenant',
-    ],
-  },
-  {
-    icon: Users,
-    title: 'Multi-tenant & roles',
-    items: [
-      'Row-level tenant isolation — a user only ever sees their own contacts, campaigns, mailboxes, and reports',
-      'Super Admin, Sub-Admin, and User roles with a granular, toggleable permission system',
-      'Sub-admins are scoped to only the users and campaigns explicitly assigned to them',
-      'Credits/balance module so admins can grant, deduct, and price usage per client',
-    ],
-  },
   {
     icon: Mail,
     title: 'Mailboxes & multi-channel campaigns',
     items: [
       'Connect SMTP/POP/IMAP mailboxes with encrypted credentials (AES-256-GCM) and a live connection test before saving',
-      'LinkedIn as a second outreach channel — client-owned accounts run connection and messaging sequences',
+      'LinkedIn as a second outreach channel — your own accounts run connection and messaging sequences',
       'Multi-step follow-up sequences, conditional on open, reply, or no-reply',
     ],
   },
@@ -90,6 +70,26 @@ const GROUPS = [
     ],
   },
   {
+    icon: Users,
+    title: 'Team & roles',
+    items: [
+      'Row-level tenant isolation — a user only ever sees their own contacts, campaigns, mailboxes, and reports',
+      'Super Admin, Sub-Admin, and User roles with a granular, toggleable permission system',
+      'Sub-admins are scoped to only the users and campaigns explicitly assigned to them',
+      'Credits/balance module so admins can grant, deduct, and price usage per user',
+    ],
+  },
+  {
+    icon: ShieldCheck,
+    title: 'Optional oversight, if you want it',
+    items: [
+      'Optionally route campaign launches, schedule changes, or mailbox updates through a Pending → Approved queue',
+      'Turn it on for the parts of your workflow that need a second look — everything else launches instantly',
+      'Draft and test freely, whether or not approval is switched on',
+      'One unified queue if you use it, listing every pending item in one place',
+    ],
+  },
+  {
     icon: Lock,
     title: 'Security & audit',
     items: [
@@ -102,7 +102,7 @@ const GROUPS = [
     icon: Bell,
     title: 'Notifications',
     items: [
-      'In-app notifications for approvals, replies, and campaign state changes',
+      'In-app notifications for replies and campaign state changes',
       'Optional email and webhook notifications',
     ],
   },
@@ -115,10 +115,10 @@ export default function FeaturesPage() {
         <FloatingDecor variant="a" />
         <Container className="relative z-10 max-w-2xl text-center">
           <Reveal>
-            <h1 className="mb-5 font-display text-[clamp(2.2rem,5vw,3.6rem)] font-bold leading-[1] tracking-tightest">Everything an agency needs to run outreach <span className="text-brand-gradient">safely</span></h1>
+            <h1 className="mb-5 font-display text-[clamp(2.2rem,5vw,3.6rem)] font-bold leading-[1] tracking-tightest">Everything your team needs to run outreach <span className="text-brand-gradient">safely</span></h1>
             <p className="text-lg text-muted">
-              One dashboard for mailboxes, campaigns, contacts, and reports — with an approval gate on anything that could
-              damage a client&apos;s domain reputation.
+              One dashboard for mailboxes, campaigns, contacts, and reports — built to keep your domain reputation
+              safe by default.
             </p>
           </Reveal>
         </Container>
@@ -157,7 +157,7 @@ export default function FeaturesPage() {
         <Container className="relative z-10 max-w-3xl text-center">
           <Reveal>
             <h2 className="mb-3 text-2xl font-extrabold text-ink">See it on your own campaigns</h2>
-            <p className="mb-8 text-muted">Book a walkthrough and we&apos;ll show the approval queue running live.</p>
+            <p className="mb-8 text-muted">Book a walkthrough and we&apos;ll show it running live.</p>
             <LeadForm />
           </Reveal>
         </Container>

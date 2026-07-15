@@ -36,7 +36,7 @@ export default function TermsPage() {
 
           <h2>Your responsibility for sender compliance</h2>
           <p>
-            Grapme provides the approval workflow, deliverability checks, and sending controls; you remain responsible
+            GrapMe provides deliverability checks, sending controls, and optional approval workflows; you remain responsible
             for ensuring your outreach — including LinkedIn account use — complies with applicable law and the terms of
             any third-party platform you connect.
           </p>

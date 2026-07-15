@@ -8,29 +8,29 @@ import { FloatingDecor } from '@/components/floating-decor';
 
 export const metadata: Metadata = {
   title: 'How It Works',
-  description: 'The campaign lifecycle behind Grapme — draft, submit, approve, schedule, run, and report.',
+  description: 'The campaign lifecycle behind GrapMe — connect, build, launch, schedule, run, and report.',
 };
 
 const STAGES = [
   {
     icon: FilePlus,
-    title: '1. Draft',
-    body: 'A user builds a campaign against a connected mailbox: contact list, template, schedule, and any follow-up steps. It saves as a draft — nothing is committed yet.',
+    title: '1. Connect',
+    body: 'Connect an SMTP/IMAP mailbox or a LinkedIn account, with a live connection test — no developer needed.',
   },
   {
     icon: Send,
-    title: '2. Submit for approval',
-    body: 'Submitting flips the campaign to "pending" and creates an approval record. The same gate applies to schedule changes, follow-up sequences, contact imports, and mailbox credential changes.',
+    title: '2. Build',
+    body: 'Build a campaign against a connected mailbox: contact list, template, schedule, and any follow-up steps. It saves as a draft — nothing is committed yet.',
   },
   {
     icon: CheckSquare,
-    title: '3. Approve or reject',
-    body: 'A super admin, or a sub-admin with the right permission, reviews the pending item in one unified approval queue and approves or rejects it. Only approved campaigns can be queued to send.',
+    title: '3. Launch it yourself',
+    body: 'Review your draft and launch it whenever you’re ready. No approval chain, no waiting on anyone else — unless your team chooses to turn one on for itself.',
   },
   {
     icon: CalendarClock,
     title: '4. Schedule',
-    body: 'Approved campaigns are scheduled with time-zone awareness, a daily send cap, and a warm-up-friendly send speed with jitter between sends.',
+    body: 'Campaigns run with time-zone awareness, a daily send cap, and a warm-up-friendly send speed with jitter between sends.',
   },
   {
     icon: PlayCircle,
@@ -40,7 +40,7 @@ const STAGES = [
   {
     icon: LineChart,
     title: '6. Report',
-    body: 'Sent, delivered, opens, clicks, replies, and bounces roll up per campaign and into the tenant-wide dashboard — visible to the user, and to any sub-admin or admin with access to that account.',
+    body: 'Sent, delivered, opens, clicks, replies, and bounces roll up per campaign and into your dashboard, live.',
   },
 ];
 
@@ -53,8 +53,8 @@ export default function HowItWorksPage() {
           <Reveal>
             <h1 className="mb-5 font-display text-[clamp(2.2rem,5vw,3.6rem)] font-bold leading-[1] tracking-tightest">The lifecycle behind <span className="text-brand-gradient">every</span> campaign</h1>
             <p className="text-lg text-muted">
-              Users build without restriction. Nothing reaches a contact&apos;s inbox until it has cleared an approval
-              checkpoint.
+              Connect your accounts, build your campaign, and launch it yourself — with safety checks built in at
+              every step.
             </p>
           </Reveal>
         </Container>

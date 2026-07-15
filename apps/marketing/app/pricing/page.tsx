@@ -10,31 +10,31 @@ import { fetchPublicPlans } from '@/lib/plans';
 
 export const metadata: Metadata = {
   title: 'Pricing',
-  description: 'Grapme plans are configured around mailbox seats, send credits, and campaign limits per channel — request a quote for your agency.',
+  description: 'GrapMe plans are configured around mailbox seats, send credits, and campaign limits per channel — request a quote for your team.',
 };
 
 const DIMENSIONS = [
   'Validity period — how long the plan runs before renewal',
-  'Credit balance — allocated per client and drawn down per send',
+  'Credit balance — allocated per user and drawn down per send',
   'Mailbox / seat count — how many connected mailboxes or LinkedIn accounts',
   'Campaign limits — per channel, for Email and LinkedIn separately',
 ];
 
 const EXAMPLES = [
   {
-    name: 'Solo agency',
-    body: 'A handful of client mailboxes, one or two active campaigns at a time.',
-    features: ['Small mailbox/seat count', 'Email + LinkedIn channels', 'Standard approval workflow'],
+    name: 'Starter',
+    body: 'A handful of connected mailboxes, one or two active campaigns at a time.',
+    features: ['Small mailbox/seat count', 'Email + LinkedIn channels', 'Deliverability checks included'],
   },
   {
-    name: 'Growing agency',
-    body: 'Multiple clients running concurrent campaigns across channels, with delegated approvals.',
-    features: ['Higher mailbox/seat count', 'Sub-admin delegation with scoped permissions', 'Priority support'],
+    name: 'Growth',
+    body: 'Multiple team members running concurrent campaigns across channels, with role-based access.',
+    features: ['Higher mailbox/seat count', 'Sub-admin roles with scoped permissions', 'Priority support'],
     highlighted: true,
   },
   {
-    name: 'Enterprise agency',
-    body: 'High client volume, dedicated oversight, and custom entitlement limits.',
+    name: 'Enterprise',
+    body: 'High send volume, dedicated oversight, and custom entitlement limits.',
     features: ['Custom seat and credit allocation', 'Dedicated account contact', 'Custom onboarding'],
   },
 ];
@@ -50,7 +50,7 @@ export default async function PricingPage() {
             <h1 className="mb-5 font-display text-[clamp(2.2rem,5vw,3.6rem)] font-bold leading-[1] tracking-tightest">Plans built around how you <span className="text-brand-gradient">actually</span> run outreach</h1>
             <p className="text-lg text-muted">
               Choose the plan that fits — switch between monthly and yearly billing, in your currency.
-              All prices are exclusive of taxes and can be tailored to your agency.
+              All prices are exclusive of taxes and can be tailored to your team.
             </p>
           </Reveal>
         </Container>
@@ -102,7 +102,7 @@ export default async function PricingPage() {
               </div>
               <p className="mt-8 text-center text-sm text-muted">
                 These are illustrative starting points, not fixed tiers — every plan&apos;s validity, credits, seats, and
-                campaign limits are configured to match your agency.
+                campaign limits are configured to match your team.
               </p>
             </>
           )}
@@ -114,7 +114,7 @@ export default async function PricingPage() {
         <Container className="relative z-10 max-w-3xl text-center">
           <Reveal>
             <h2 className="mb-3 text-2xl font-extrabold text-ink">Request a plan and quote</h2>
-            <p className="mb-8 text-muted">Tell us your client count and channels, and we&apos;ll size a plan.</p>
+            <p className="mb-8 text-muted">Tell us your team size and channels, and we&apos;ll size a plan.</p>
             <LeadForm />
           </Reveal>
         </Container>

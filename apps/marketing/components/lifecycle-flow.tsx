@@ -1,30 +1,29 @@
 'use client';
 
 import { Fragment, useState } from 'react';
-import { FileEdit, ShieldCheck, CalendarClock, Send, MessageSquareReply, ArrowRight } from 'lucide-react';
+import { FileEdit, Rocket, CalendarClock, Send, MessageSquareReply, ArrowRight } from 'lucide-react';
 
 const NODES = [
   {
     icon: FileEdit,
     label: 'Draft',
-    sub: 'User builds freely',
+    sub: 'You build freely',
     detail:
-      'A user assembles the campaign — mailbox or LinkedIn seat, contact list, template, and follow-up steps — and saves it. Fully editable, and nothing is queued yet.',
+      'Assemble the campaign — mailbox or LinkedIn seat, contact list, template, and follow-up steps — and save it. Fully editable, and nothing sends yet.',
   },
   {
-    icon: ShieldCheck,
-    label: 'Approval gate',
-    sub: 'Pending → Approved',
-    gate: true,
+    icon: Rocket,
+    label: 'Launch',
+    sub: 'You control it',
     detail:
-      'Submitting creates an approval record and freezes the payload. A super-admin or a scoped sub-admin approves or rejects it — with a reason. Only approved items can ever be queued, enforced server-side, not just in the UI.',
+      'When you’re ready, launch the campaign yourself — no approval chain, no waiting on anyone else. It goes live exactly as you configured it.',
   },
   {
     icon: CalendarClock,
     label: 'Schedule',
     sub: 'Tz + daily cap',
     detail:
-      'Approved campaigns land on a timezone-aware calendar with a daily send cap and warm-up-friendly jitter between each send, to protect the domain.',
+      'Campaigns land on a timezone-aware calendar with a daily send cap and warm-up-friendly jitter between each send, to protect the domain.',
   },
   {
     icon: Send,
@@ -43,7 +42,7 @@ const NODES = [
 ];
 
 export function LifecycleFlow() {
-  const [active, setActive] = useState(1); // start on the gate
+  const [active, setActive] = useState(0);
 
   return (
     <div className="rounded-3xl border border-line bg-paper/70 p-6 shadow-soft backdrop-blur-sm sm:p-8">
@@ -76,11 +75,6 @@ export function LifecycleFlow() {
                     <p className="text-xs text-muted">{n.sub}</p>
                   </div>
                 </div>
-                {n.gate && (
-                  <span className="animate-blink-soft absolute -right-2 -top-2 rounded-full border border-brand bg-white px-2 py-0.5 text-[10px] font-extrabold text-brand shadow-soft">
-                    ● GATE
-                  </span>
-                )}
               </button>
 
               {i < NODES.length - 1 && (

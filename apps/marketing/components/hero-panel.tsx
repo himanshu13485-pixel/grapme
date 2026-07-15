@@ -5,19 +5,19 @@ export function HeroPanel() {
     {
       title: 'Q3 Outreach — Meridian Co.',
       meta: 'Email · 480 contacts · 2h ago',
-      status: 'Pending',
-      tone: 'amber' as const,
+      status: 'Sending',
+      tone: 'teal' as const,
     },
     {
       title: 'LinkedIn Connector — Vantage',
       meta: 'LinkedIn · 210 profiles · 5h ago',
-      status: 'Approved',
+      status: 'Live',
       tone: 'teal' as const,
     },
     {
       title: 'Follow-up Seq — Orbital',
       meta: 'Email · 3 steps · 1d ago',
-      status: 'Pending',
+      status: 'Scheduled',
       tone: 'amber' as const,
     },
   ];
@@ -41,7 +41,7 @@ export function HeroPanel() {
           </div>
           <div className="flex items-center gap-3">
             <LiveDot label="Live" />
-            <span className="rounded-full bg-mist px-3 py-1 text-[11px] font-bold text-muted">Approval Center</span>
+            <span className="rounded-full bg-mist px-3 py-1 text-[11px] font-bold text-muted">Campaign Center</span>
           </div>
         </div>
 
@@ -72,7 +72,7 @@ export function HeroPanel() {
           </div>
           <div className="text-right">
             <p className="font-grotesk text-lg font-bold text-ink">98.4%</p>
-            <p className="text-[11px] text-muted">on-time approvals</p>
+            <p className="text-[11px] text-muted">inbox delivery rate</p>
           </div>
         </div>
       </div>

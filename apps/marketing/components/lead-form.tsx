@@ -112,7 +112,7 @@ export function LeadForm({
             id="lead-email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@agency.com"
+            placeholder="you@company.com"
             autoComplete="email"
             className={`${field} ${errors.email ? 'border-danger' : 'border-line'}`}
           />
@@ -135,7 +135,7 @@ export function LeadForm({
         </p>
       )}
 
-      <p className="mt-4 text-center text-xs text-faint">By submitting you agree to be contacted about Grapme.</p>
+      <p className="mt-4 text-center text-xs text-faint">By submitting you agree to be contacted about GrapMe.</p>
     </div>
   );
 }

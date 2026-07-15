@@ -1,6 +1,6 @@
 ---
 title: "The SPF/DKIM/DMARC Check That Runs Before Your Campaign Does"
-description: "Why deliverability checks belong inside the approval step, not as a separate tool you have to remember to run."
+description: "Why deliverability checks belong inside the send flow itself, not as a separate tool you have to remember to run."
 date: "2026-03-15"
 tags: ["deliverability", "email outreach"]
 ---
@@ -13,11 +13,11 @@ A cold-email campaign can have perfect copy, a clean contact list, and still lan
 
 ## Why this needs to sit inside the workflow, not next to it
 
-It's easy to run a one-off checker before a campaign, get a clean result, and then forget to re-check after a client swaps their sending domain three months later. Grapme's deliverability check is a live DNS lookup surfaced with a score at the point a mailbox or domain is used — the same place SMTP changes already sit in the approval queue — so it isn't a step someone has to remember separately.
+It's easy to run a one-off checker before a campaign, get a clean result, and then forget to re-check after you swap your sending domain three months later. GrapMe's deliverability check is a live DNS lookup surfaced with a score the moment a mailbox or domain is connected — the same place SMTP setup already happens — so it isn't a step you have to remember separately.
 
-## What the score changes about an approval decision
+## What the score changes before you hit send
 
-An approver reviewing a pending campaign isn't just checking the content — they can see the sending domain's current authentication score before signing off. A weak score is a reason to pause and fix DNS records first, rather than finding out three weeks into a campaign that reply rates are near zero for reasons that had nothing to do with the message.
+Launching a campaign yourself doesn't mean flying blind — you see the sending domain's current authentication score right there before you send. A weak score is a reason to pause and fix DNS records first, rather than finding out three weeks into a campaign that reply rates are near zero for reasons that had nothing to do with the message.
 
 ## Beyond the initial check
 

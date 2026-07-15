@@ -44,32 +44,32 @@ const TRUST = [
 ];
 
 const CHANNELS = [
-  { icon: Linkedin, label: 'LinkedIn', body: 'Client-owned accounts run connection and messaging sequences at a human, ban-safe pace.' },
+  { icon: Linkedin, label: 'LinkedIn', body: 'Your own accounts run connection and messaging sequences at a human, ban-safe pace.' },
   { icon: Mail, label: 'Email', body: 'Connect any SMTP/IMAP mailbox and run cold sequences at warm-up-safe speed.' },
 ];
 
 const STATS = [
   { big: '2', label: 'channels in one dashboard' },
-  { big: '100%', label: 'of sends pass an approval gate' },
-  { big: '0', label: 'rogue sends from junior staff' },
-  { big: '∞', label: 'client mailboxes, cleanly isolated' },
+  { big: 'Minutes', label: 'to launch your first campaign' },
+  { big: '0', label: 'agencies needed' },
+  { big: '∞', label: 'mailboxes, cleanly isolated' },
 ];
 
 const OUTCOMES = [
   {
     icon: ShieldCheck,
-    title: 'Nothing sends without sign-off',
-    body: 'Campaign launches, schedules, follow-ups, imports, and mailbox changes all sit in a Pending queue until an admin or delegated sub-admin approves them.',
+    title: 'Set up and send in one sitting',
+    body: 'Connect a mailbox or LinkedIn account, build your campaign, and launch it yourself — no third party, no waiting on anyone else.',
   },
   {
     icon: Users,
-    title: 'Built for agencies, not solo senders',
-    body: 'Row-level tenant isolation per user, scoped sub-admin delegation, and per-client credit allocation — one platform running outreach for many clients at once.',
+    title: 'Built for teams, not just solo senders',
+    body: 'Row-level isolation per user, role-based team access, and per-seat credit allocation — one platform for your whole team, whether it’s just you or a growing crew.',
   },
   {
     icon: BarChart3,
     title: 'Deliverability protected by default',
-    body: 'Time-zone aware scheduling, daily send caps, warm-up-friendly jitter, and a live domain check before volume ever touches a client mailbox.',
+    body: 'Time-zone aware scheduling, daily send caps, warm-up-friendly jitter, and a live domain check before volume ever touches your mailbox.',
   },
   {
     icon: Lock,
@@ -81,18 +81,18 @@ const OUTCOMES = [
 const STEPS = [
   {
     n: '01',
-    title: 'Build the campaign',
-    body: 'A user picks a LinkedIn seat or mailbox, a contact list, a template, and any follow-up steps — and saves it as a draft. Nothing is committed yet.',
+    title: 'Connect & build',
+    body: 'Connect a mailbox or LinkedIn seat, pick a contact list and template, and set your schedule — ready in minutes.',
   },
   {
     n: '02',
-    title: 'Route it for approval',
-    body: 'Submitting drops it into one shared Approval Center. A super admin, or a sub-admin scoped to that client, approves or rejects — with a reason.',
+    title: 'Launch it yourself',
+    body: 'No approval chain, no waiting on someone else. Review your campaign and send it whenever you’re ready.',
   },
   {
     n: '03',
     title: 'Send, track, report',
-    body: 'Approved campaigns queue with jitter and daily caps. Opens, clicks, replies, and bounces roll up live — per client, per channel, per sub-admin.',
+    body: 'Sends go out with jitter and daily caps for safety. Opens, clicks, replies, and bounces roll up live so you always know what’s working.',
   },
 ];
 
@@ -151,8 +151,8 @@ export default function HomePage() {
 
               <AnimatedHeadline
                 className="mb-6 max-w-2xl font-display text-display1 font-semibold text-ink"
-                lead="LinkedIn & Email Automation for Every Client,"
-                accent="Signed Off Before It Sends."
+                lead="LinkedIn & Email Automation"
+                accent="You Run Yourself."
               />
 
               <Reveal delay={140}>
@@ -240,7 +240,7 @@ export default function HomePage() {
               One dashboard. <span className="italic text-brand">Two channels.</span>
             </h2>
             <p className="mx-auto mt-5 max-w-md text-muted">
-              Run and monitor every outreach channel your clients use — without switching tools.
+              Run and monitor every outreach channel your team uses — without switching tools.
             </p>
           </Reveal>
 
@@ -291,7 +291,7 @@ export default function HomePage() {
           <Reveal className="mx-auto mb-10 max-w-2xl text-center">
             <p className="mb-4 font-grotesk text-eyebrow font-semibold uppercase text-brand">Why {SITE.name}</p>
             <h2 className="font-display text-display2 font-semibold text-ink">
-              Sending isn&apos;t the risk. <span className="italic text-brand">Unsupervised</span> sending is.
+              Run your own outreach, <span className="italic text-brand">without the guesswork.</span>
             </h2>
           </Reveal>
 
@@ -325,7 +325,7 @@ export default function HomePage() {
               The whole engine, <span className="italic text-brand">visualised</span>
             </h2>
             <p className="mx-auto mt-5 max-w-md text-muted">
-              From the approval flow to live analytics to the real product screens — here&apos;s how it all fits.
+              From building a campaign to live analytics to the real product screens — here&apos;s how it all fits.
             </p>
           </Reveal>
 
@@ -438,9 +438,9 @@ export default function HomePage() {
         <Container className="relative z-10">
           <Reveal className="mx-auto mb-9 max-w-2xl text-center">
             <h2 className="font-display text-display2 font-semibold text-ink">
-              See it running <span className="italic text-brand">your</span> client&apos;s campaigns
+              See it running <span className="italic text-brand">your</span> next campaign
             </h2>
-            <p className="mx-auto mt-5 max-w-lg text-muted">Tell us about your agency and we&apos;ll set up a walkthrough.</p>
+            <p className="mx-auto mt-5 max-w-lg text-muted">Tell us about your team and we&apos;ll set up a walkthrough.</p>
           </Reveal>
           <Reveal delay={120} className="mx-auto max-w-4xl">
             <LeadForm heading="Book a demo" sub="Leave your details and our team will reach out." />

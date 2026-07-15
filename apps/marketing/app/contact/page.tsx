@@ -8,7 +8,7 @@ import { SITE } from '@/lib/site';
 
 export const metadata: Metadata = {
   title: 'Contact',
-  description: 'Get in touch with Grapme — call, WhatsApp, or leave your details and we’ll be in touch.',
+  description: 'Get in touch with GrapMe — call, WhatsApp, or leave your details and we’ll be in touch.',
 };
 
 export default function ContactPage() {

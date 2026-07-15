@@ -1,4 +1,4 @@
-import { ShieldAlert, ScrollText, Scale } from 'lucide-react';
+import { ShieldAlert, LayoutGrid, Scale } from 'lucide-react';
 import { Container } from './container';
 import { Reveal } from './reveal';
 import { FloatingDecor } from './floating-decor';
@@ -8,19 +8,19 @@ const COSTS = [
     icon: ShieldAlert,
     stat: 'Weeks',
     title: 'of warm-up, gone overnight',
-    body: 'One careless campaign flags a client’s sending domain. Inbox placement tanks for every future send — and rebuilding reputation takes weeks you don’t have.',
+    body: 'One careless campaign flags your sending domain. Inbox placement tanks for every future send — and rebuilding reputation takes weeks you don’t have.',
   },
   {
     icon: Scale,
     stat: 'Yours',
     title: 'the compliance liability',
-    body: 'A missed unsubscribe or a bought list becomes the agency’s problem, not the intern’s. CAN-SPAM and GDPR penalties land on you.',
+    body: 'A missed unsubscribe or a bought list becomes your problem fast. CAN-SPAM and GDPR penalties land on you, not the tool you used.',
   },
   {
-    icon: ScrollText,
-    stat: 'Zero',
-    title: 'answer to “who approved this?”',
-    body: 'When a client asks who signed off, scattered Slack threads and inbox rules can’t tell you. No record of who sent what, when, or why.',
+    icon: LayoutGrid,
+    stat: 'Hours',
+    title: 'lost stitching tools together',
+    body: 'Spreadsheets for contacts, a separate mailer, LinkedIn by hand — piecing it together burns hours before a single message goes out.',
   },
 ];
 
@@ -33,11 +33,11 @@ export function CostSection() {
         <Reveal className="mx-auto mb-10 max-w-2xl text-center">
           <p className="mb-4 font-grotesk text-eyebrow font-semibold uppercase text-brand-400">The real cost</p>
           <h2 className="font-display text-display2 font-semibold">
-            Ungoverned outreach doesn’t save time. <span className="italic text-brand-400">It costs you a domain.</span>
+            DIY outreach without the right tools doesn’t save time. <span className="italic text-brand-400">It costs you a domain.</span>
           </h2>
           <p className="mx-auto mt-5 max-w-lg text-white/60">
-            Let junior staff and clients send across dozens of mailboxes with no checkpoint, and the failures are
-            expensive — and hard to undo.
+            Send across dozens of mailboxes with no safety checks, and the failures are expensive — and hard to
+            undo.
           </p>
         </Reveal>
 
@@ -58,7 +58,7 @@ export function CostSection() {
 
         <Reveal delay={200} className="mt-12 text-center">
           <p className="text-lg font-semibold text-white/80">
-            Grapme puts <span className="text-brand-400">one approval gate</span> in front of all of it.
+            GrapMe puts <span className="text-brand-400">the safety checks</span> in front of all of it, built in.
           </p>
         </Reveal>
       </Container>

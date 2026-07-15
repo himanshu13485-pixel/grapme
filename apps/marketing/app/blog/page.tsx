@@ -8,7 +8,7 @@ import { getBlogCards } from '@/lib/posts';
 
 export const metadata: Metadata = {
   title: 'Blog',
-  description: 'Notes on approval workflows, sub-admin delegation, and deliverability for agencies running outreach at scale.',
+  description: 'Notes on running your own outreach, team roles, and deliverability for growing businesses.',
 };
 
 export default async function BlogIndexPage() {
@@ -20,7 +20,7 @@ export default async function BlogIndexPage() {
       <Container className="relative z-10">
         <Reveal className="mx-auto mb-14 max-w-2xl text-center">
           <h1 className="mb-3 font-display text-[clamp(2.4rem,6vw,4rem)] font-bold tracking-tightest text-ink">Field <span className="text-brand-gradient">notes.</span></h1>
-          <p className="text-muted">How the approval workflow, roles, and deliverability checks work in practice.</p>
+          <p className="text-muted">How campaigns, team roles, and deliverability checks work in practice.</p>
         </Reveal>
 
         <div className="mx-auto grid max-w-4xl gap-6">

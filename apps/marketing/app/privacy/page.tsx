@@ -28,13 +28,13 @@ export default function PrivacyPage() {
 
           <h2>How we use it</h2>
           <p>
-            We use the information you submit to contact you about Grapme, respond to your enquiry, and, where you have
+            We use the information you submit to contact you about GrapMe, respond to your enquiry, and, where you have
             agreed to it, follow up about relevant plans. We do not sell your personal information to third parties.
           </p>
 
-          <h2>Data inside the Grapme platform</h2>
+          <h2>Data inside the GrapMe platform</h2>
           <p>
-            Contacts and mailbox credentials that customers upload into the Grapme application itself (as opposed to
+            Contacts and mailbox credentials that customers upload into the GrapMe application itself (as opposed to
             this marketing site) are stored with tenant-level isolation and encrypted at rest, and are handled under the
             terms of your service agreement rather than this website policy.
           </p>
