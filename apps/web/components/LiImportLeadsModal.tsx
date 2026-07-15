@@ -54,8 +54,12 @@ export function LiImportLeadsModal({
     if (parsed.length === 0) { setError('Paste at least one LinkedIn profile URL.'); return; }
     setBusy(true); setError('');
     try {
-      const res = await api.post<{ imported: number; creditsCharged?: number }>(`${base}/campaigns/${campaignId}/leads`, { leads: parsed });
-      alert(`Imported ${res.imported} lead${res.imported === 1 ? '' : 's'}.${res.creditsCharged ? ` · ${res.creditsCharged} credit${res.creditsCharged === 1 ? '' : 's'} used.` : ''}`);
+      const res = await api.post<{ imported: number; skipped?: number; creditsCharged?: number }>(`${base}/campaigns/${campaignId}/leads`, { leads: parsed });
+      alert(
+        `Imported ${res.imported} lead${res.imported === 1 ? '' : 's'}.` +
+        (res.skipped ? ` · ${res.skipped} already in the campaign (skipped).` : '') +
+        (res.creditsCharged ? ` · ${res.creditsCharged} credit${res.creditsCharged === 1 ? '' : 's'} used.` : ''),
+      );
       onImported();
     } catch (e: any) {
       setError(e.message ?? 'Import failed');

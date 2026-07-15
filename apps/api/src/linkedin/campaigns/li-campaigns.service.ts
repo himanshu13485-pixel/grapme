@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { ApprovalEntity, ApprovalStatus, LiCampaignStatus, LiCreditReason, LiLeadStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LiSchedulerService } from '../scheduler/li-scheduler.service';
+import { normalizeProfileUrl } from '../scheduler/li-queue.constants';
 import { LinkedInSubscriptionService } from '../subscription/linkedin-subscription.service';
 import {
   CreateLiCampaignDto, UpdateLiCampaignDto, UpdateLiSequenceDto,
@@ -212,19 +213,34 @@ export class LiCampaignsService {
       balance = sub.creditsBalance;
       if (balance < 1) throw new BadRequestException('Insufficient LinkedIn credits to import leads.');
     }
-    const rows: Prisma.LiLeadCreateManyInput[] = dto.leads.map((l) => ({
-      campaignId: id,
-      fullName: l.fullName,
-      firstName: l.firstName ?? l.fullName.split(' ')[0],
-      lastName: l.lastName,
-      title: l.title,
-      company: l.company,
-      location: l.location,
-      profileUrl: l.profileUrl,
-      status: LiLeadStatus.PENDING,
-      currentStep: 0,
-    }));
-    const res = await this.prisma.liLead.createMany({ data: rows, skipDuplicates: true });
+    // Skip anyone already in this campaign — matched by CANONICAL profile URL, so a
+    // trailing slash / http vs https / casing difference no longer sneaks in a dup.
+    const existing = await this.prisma.liLead.findMany({ where: { campaignId: id }, select: { profileUrl: true } });
+    const seen = new Set(existing.map((l) => normalizeProfileUrl(l.profileUrl)).filter(Boolean) as string[]);
+    const rows: Prisma.LiLeadCreateManyInput[] = [];
+    let skipped = 0;
+    for (const l of dto.leads) {
+      const url = normalizeProfileUrl(l.profileUrl);
+      if (url) {
+        if (seen.has(url)) { skipped++; continue; } // duplicate — don't add again
+        seen.add(url);
+      }
+      rows.push({
+        campaignId: id,
+        fullName: l.fullName,
+        firstName: l.firstName ?? l.fullName.split(' ')[0],
+        lastName: l.lastName,
+        title: l.title,
+        company: l.company,
+        location: l.location,
+        profileUrl: url,
+        status: LiLeadStatus.PENDING,
+        currentStep: 0,
+      });
+    }
+    const res = rows.length
+      ? await this.prisma.liLead.createMany({ data: rows, skipDuplicates: true })
+      : { count: 0 };
     let creditsCharged = 0;
     if (metered && res.count > 0) {
       creditsCharged = Math.min(res.count, balance);
@@ -232,12 +248,25 @@ export class LiCampaignsService {
     }
     // Enqueue the new leads if the campaign is already running (else they'd sit PENDING).
     if (res.count > 0) await this.scheduler.enqueueNewLeads(id).catch(() => undefined);
-    return { imported: res.count, creditsCharged };
+    return { imported: res.count, skipped, creditsCharged };
   }
 
   /** Enqueue newly-added leads on a running campaign (used after imports/sourcing). */
   enqueueNewLeads(campaignId: string) {
     return this.scheduler.enqueueNewLeads(campaignId);
+  }
+
+  /** Remove a lead from a campaign's Target Audience (cancels its queued jobs). */
+  async deleteLead(campaignId: string, leadId: string) {
+    await this.assertExists(campaignId);
+    const lead = await this.prisma.liLead.findFirst({
+      where: { id: leadId, campaignId },
+      select: { id: true },
+    });
+    if (!lead) throw new NotFoundException('Lead not found');
+    await this.scheduler.removeLeadJobs(leadId).catch(() => undefined);
+    await this.prisma.liLead.delete({ where: { id: leadId } }); // cascades its scheduled actions
+    return { ok: true };
   }
 
   async leads(id: string, opts: { status?: LiLeadStatus; page?: number; pageSize?: number; search?: string }) {

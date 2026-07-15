@@ -5,6 +5,7 @@ import { LiAiService } from '../ai/ai.service';
 import { LiCampaignsService } from './li-campaigns.service';
 import { LinkedInSubscriptionService } from '../subscription/linkedin-subscription.service';
 import { LINKEDIN_PROVIDER, LinkedInProvider } from '../provider/linkedin-provider.interface';
+import { normalizeProfileUrl } from '../scheduler/li-queue.constants';
 import { UpsertLiAudienceDto, LiSequenceStepDto } from './dto/campaign.dto';
 
 type Content = Record<string, any>;
@@ -82,7 +83,7 @@ export class LiGenerationService {
           campaignId, fullName: p.fullName ?? this.nameFromSlug(s),
           firstName: p.firstName ?? undefined, lastName: p.lastName ?? undefined,
           title: p.title ?? undefined, company: p.company ?? undefined, location: p.location ?? undefined,
-          profileUrl: p.profileUrl, status: LiLeadStatus.PENDING, currentStep: 0,
+          profileUrl: normalizeProfileUrl(p.profileUrl), status: LiLeadStatus.PENDING, currentStep: 0,
         });
         if (rows.length >= cap) break;
       }
@@ -146,7 +147,7 @@ export class LiGenerationService {
           fullName: p.fullName ?? (slug ? this.nameFromSlug(slug) : 'LinkedIn member'),
           firstName: p.firstName ?? undefined, lastName: p.lastName ?? undefined,
           title: p.title ?? undefined, company: p.company ?? undefined, location: p.location ?? undefined,
-          profileUrl: p.profileUrl ?? undefined, unipileMemberId: p.memberId ?? undefined, avatarUrl: p.avatarUrl ?? undefined,
+          profileUrl: normalizeProfileUrl(p.profileUrl) ?? undefined, unipileMemberId: p.memberId ?? undefined, avatarUrl: p.avatarUrl ?? undefined,
           // Already a 1st-degree connection: mark connectedAt; keep status PENDING so the
           // engine schedules the first (direct) message via startCampaign.
           status: LiLeadStatus.PENDING, currentStep: 0, connectedAt: new Date(),

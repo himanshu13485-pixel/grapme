@@ -205,6 +205,16 @@ function Details({ campaignId, base }: { campaignId: string; base: string }) {
     api.get<LiLeadsPage>(`${base}/campaigns/${campaignId}/leads?${qs}`).then(setData);
   }, [campaignId, base, tab, page, dq, reloadKey]);
 
+  async function deleteLead(id: string, name: string) {
+    if (!confirm(`Remove "${name}" from this campaign's audience? Any pending connection/message for them is cancelled.`)) return;
+    try {
+      await api.del(`${base}/campaigns/${campaignId}/leads/${id}`);
+      setReloadKey((k) => k + 1);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Failed to remove lead');
+    }
+  }
+
   const tabs = LEAD_TABS.map((t) => ({
     key: t.key, label: t.label,
     // Cumulative counts (Connected = connected-or-beyond, …); fall back to raw counts.
@@ -252,6 +262,7 @@ function Details({ campaignId, base }: { campaignId: string; base: string }) {
               <th className="p-3 font-medium">Company</th>
               <th className="p-3 font-medium">Status</th>
               <th className="p-3 font-medium">Step</th>
+              <th className="p-3 font-medium text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -269,10 +280,13 @@ function Details({ campaignId, base }: { campaignId: string; base: string }) {
                 <td className="p-3"><div className="max-w-[170px] truncate text-slate-600" title={tc.company}>{tc.company}</div></td>
                 <td className="p-3"><span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs">{STATUS_LABEL[l.status] ?? l.status}</span></td>
                 <td className="p-3 text-slate-500">{l.currentStep}</td>
+                <td className="p-3 text-right">
+                  <button className="text-xs font-medium text-rose-600 hover:underline" onClick={() => deleteLead(l.id, l.fullName)}>Delete</button>
+                </td>
               </tr>
               );
             })}
-            {data && data.items.length === 0 && <tr><td colSpan={6} className="p-8 text-center text-slate-400">{dq ? 'No targets match your search.' : 'No leads in this view.'}</td></tr>}
+            {data && data.items.length === 0 && <tr><td colSpan={7} className="p-8 text-center text-slate-400">{dq ? 'No targets match your search.' : 'No leads in this view.'}</td></tr>}
           </tbody>
         </table>
       </div>

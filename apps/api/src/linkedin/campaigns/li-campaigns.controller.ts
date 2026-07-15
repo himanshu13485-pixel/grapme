@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { LiCampaignStatus, LiLeadStatus, Role } from '@prisma/client';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
@@ -60,6 +60,11 @@ export class LiCampaignsController {
   @Post(':id/leads')
   importLeads(@Param('id') id: string, @Body() dto: ImportLiLeadsDto) {
     return this.campaigns.importLeads(id, dto);
+  }
+
+  @Delete(':id/leads/:leadId')
+  deleteLead(@Param('id') id: string, @Param('leadId') leadId: string) {
+    return this.campaigns.deleteLead(id, leadId);
   }
 
   @Get(':id/leads')

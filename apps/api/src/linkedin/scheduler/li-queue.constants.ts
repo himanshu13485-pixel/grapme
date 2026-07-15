@@ -48,6 +48,19 @@ export function profileSlug(url?: string | null): string | null {
 }
 
 /**
+ * Canonical profile URL for storage + duplicate detection:
+ * `https://www.linkedin.com/in/<slug>` — lowercased, no scheme/host/case/trailing-slash
+ * or query/hash differences. Keeps the FULL slug (incl. any trailing id) so distinct
+ * people stay distinct. So `/in/x/`, `/in/x`, `http://…/in/x?foo` all collapse to one.
+ */
+export function normalizeProfileUrl(url?: string | null): string | null {
+  if (!url) return null;
+  const m = url.match(/\/in\/([^/?#]+)/i);
+  if (!m) return url.trim() || null; // non-standard URL — keep as typed (trimmed)
+  return `https://www.linkedin.com/in/${decodeURIComponent(m[1]).toLowerCase()}`;
+}
+
+/**
  * True if a stored name field looks derived from the URL slug (e.g. "sachdevahimanshu"
  * or "Sachdevahimanshu") rather than a real name — those must not be used in
  * `{first_name}` tokens. Empty is NOT a slug (handled separately).

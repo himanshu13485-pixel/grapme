@@ -76,6 +76,8 @@ export class LiPortalController {
   }
   @Post('campaigns/:id/leads')
   importLeads(@CurrentUser() u: AuthUser, @Param('id') id: string, @Body() dto: ImportLiLeadsDto) { return this.portal.importLeads(u.userId, id, dto); }
+  @Delete('campaigns/:id/leads/:leadId')
+  deleteLead(@CurrentUser() u: AuthUser, @Param('id') id: string, @Param('leadId') leadId: string) { return this.portal.deleteLead(u.userId, id, leadId); }
   @Post('campaigns/:id/import-connections')
   importConnections(@CurrentUser() u: AuthUser, @Param('id') id: string, @Query('limit') limit?: string) { return this.portal.importConnections(u.userId, id, limit ? Number(limit) : undefined); }
   // Audience sourcing is admin-only (avoids client-side credit/rate-limit misuse);

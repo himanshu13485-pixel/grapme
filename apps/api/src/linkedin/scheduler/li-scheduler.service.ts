@@ -167,6 +167,16 @@ export class LiSchedulerService implements OnModuleInit {
     this.logger.log(`Campaign ${campaignId} paused: removed ${actions.length} jobs`);
   }
 
+  /** Remove any queued/delayed jobs for a lead (before deleting it). */
+  async removeLeadJobs(leadId: string) {
+    if (!this.queue) return;
+    const actions = await this.prisma.liScheduledAction.findMany({
+      where: { leadId, jobId: { not: null } },
+      select: { jobId: true },
+    });
+    for (const a of actions) if (a.jobId) await this.queue.remove(a.jobId).catch(() => undefined);
+  }
+
   /** Create a ScheduledAction row and enqueue its delayed job (used by the processor too). */
   async schedule(leadId: string, type: LiScheduledActionType, stepOrder: number | undefined, runAt: Date) {
     const finalRunAt = await this.gate(leadId, runAt);
