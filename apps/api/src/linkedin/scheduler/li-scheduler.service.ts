@@ -97,18 +97,40 @@ export class LiSchedulerService implements OnModuleInit {
       await this.attachJob(a.id, a.type, a.leadId, a.stepOrder ?? undefined, a.runAt);
     }
 
-    // Enqueue the first action per fresh lead, paced by the daily limit (warm-up aware).
+    // Enqueue the first action for any fresh (never-scheduled) leads.
+    const queued = await this.enqueueNewLeads(campaignId);
+    this.logger.log(`Campaign ${campaignId} (${campaign.outreachType}): resumed ${pending.length}, queued ${queued}`);
+  }
+
+  /**
+   * Schedule the first action for fresh (never-scheduled) PENDING leads, paced by the
+   * daily cap (warm-up aware) and spread across the send window. Safe to call after
+   * importing/sourcing leads into an already-RUNNING campaign — without this, leads
+   * added after launch sit PENDING forever (they were never enqueued). The processor
+   * still enforces the daily cap, so the new leads just wait their turn.
+   * Returns how many leads were enqueued.
+   */
+  async enqueueNewLeads(campaignId: string): Promise<number> {
+    if (!this.queue) return 0;
+    const campaign = await this.prisma.liCampaign.findUnique({
+      where: { id: campaignId },
+      include: { steps: { orderBy: { order: 'asc' } }, linkedInAccount: true },
+    });
+    if (!campaign || campaign.status !== LiCampaignStatus.RUNNING) return 0;
+    if (campaign.steps.length === 0 || campaign.linkedInAccount?.status !== 'CONNECTED') return 0;
+
     const direct = campaign.outreachType === 'DIRECT_MESSAGES';
     const freshLeads = await this.prisma.liLead.findMany({
       where: { campaignId, status: LiLeadStatus.PENDING, scheduled: { none: {} } },
       select: { id: true },
     });
+    if (freshLeads.length === 0) return 0;
+
     const limit = Math.max(1, direct ? campaign.dailyMessageLimit : this.effectiveConnectionCap(campaign));
     // Spread the daily cap EVENLY across the send window (not a burst), with a small
-    // ± random wobble per slot for a human feel. E.g. 20/day over a 9h window ≈ one
-    // action every ~27 min. Actions past the window roll to the next day's window.
+    // ± random wobble per slot for a human feel. Actions past the window roll forward.
     const windowSecs = campaign.run247 ? 86_400 : Math.max(1, campaign.workEndHour - campaign.workStartHour) * 3600;
-    const baseSpacing = windowSecs / limit; // seconds between consecutive sends
+    const baseSpacing = windowSecs / limit;
     const jMin = Math.max(0, campaign.jitterMinSeconds ?? 20);
     const jMax = Math.max(jMin, campaign.jitterMaxSeconds ?? 90);
     const wobble = () => (jMin + Math.random() * (jMax - jMin)) * (Math.random() < 0.5 ? -1 : 1);
@@ -124,7 +146,7 @@ export class LiSchedulerService implements OnModuleInit {
       else await this.schedule(lead.id, LiScheduledActionType.SEND_CONNECTION, undefined, runAt);
       index++;
     }
-    this.logger.log(`Campaign ${campaignId} (${campaign.outreachType}): resumed ${pending.length}, queued ${freshLeads.length}`);
+    return freshLeads.length;
   }
 
   async pauseCampaign(campaignId: string) {

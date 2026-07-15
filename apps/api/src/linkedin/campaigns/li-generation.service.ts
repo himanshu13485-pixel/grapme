@@ -97,6 +97,7 @@ export class LiGenerationService {
       creditsCharged = Math.min(r.count, balance);
       await this.subs.debit(campaign.tenantId, campaign.clientId, creditsCharged, LiCreditReason.LEAD_SOURCING, { refType: 'LiCampaign', refId: campaignId });
     }
+    if (r.count > 0) await this.campaigns.enqueueNewLeads(campaignId).catch(() => undefined);
     return { sourced: r.count, keywords, creditsCharged };
   }
 
@@ -163,6 +164,7 @@ export class LiGenerationService {
       creditsCharged = Math.min(r.count, balance);
       await this.subs.debit(campaign.tenantId, campaign.clientId, creditsCharged, LiCreditReason.LEAD_SOURCING, { refType: 'LiCampaign', refId: campaignId });
     }
+    if (r.count > 0) await this.campaigns.enqueueNewLeads(campaignId).catch(() => undefined);
     return { imported: r.count, creditsCharged };
   }
 

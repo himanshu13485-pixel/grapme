@@ -230,7 +230,14 @@ export class LiCampaignsService {
       creditsCharged = Math.min(res.count, balance);
       await this.subs.debit(campaign.tenantId, campaign.clientId, creditsCharged, LiCreditReason.LEAD_SOURCING, { refType: 'LiCampaign', refId: id });
     }
+    // Enqueue the new leads if the campaign is already running (else they'd sit PENDING).
+    if (res.count > 0) await this.scheduler.enqueueNewLeads(id).catch(() => undefined);
     return { imported: res.count, creditsCharged };
+  }
+
+  /** Enqueue newly-added leads on a running campaign (used after imports/sourcing). */
+  enqueueNewLeads(campaignId: string) {
+    return this.scheduler.enqueueNewLeads(campaignId);
   }
 
   async leads(id: string, opts: { status?: LiLeadStatus; page?: number; pageSize?: number; search?: string }) {
