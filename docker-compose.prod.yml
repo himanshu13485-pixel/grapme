@@ -62,12 +62,11 @@ services:
       UNIPILE_WEBHOOK_SECRET: ${UNIPILE_WEBHOOK_SECRET:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       AI_MODEL: ${AI_MODEL:-}
-      # On plan/blog changes, ping the marketing site (cPanel app) to refresh its
-      # live pricing + blog pages. Set MARKETING_REVALIDATE_URL to the public
-      # endpoint, e.g. https://www.grapme.com/api/revalidate (leave blank to skip
-      # and rely on the marketing site's own 2-min cache). REVALIDATE_SECRET, if
-      # set, must match the value configured on the marketing app.
-      MARKETING_REVALIDATE_URL: ${MARKETING_REVALIDATE_URL:-}
+      # On plan/blog changes, ping the marketing container to refresh its live
+      # pricing + blog pages instantly (internal docker network). Leave the
+      # default unless the marketing site moves off this stack. REVALIDATE_SECRET,
+      # if set, must match the marketing service's value.
+      MARKETING_REVALIDATE_URL: ${MARKETING_REVALIDATE_URL:-http://marketing:3200/api/revalidate}
       REVALIDATE_SECRET: ${REVALIDATE_SECRET:-}
     # Apply DB migrations on boot, then start the API.
     command: >
@@ -92,9 +91,23 @@ services:
     ports:
       - '${BIND_HOST:-0.0.0.0}:3000:3000'
 
-  # NOTE: the marketing site (grapme.com) is served separately as a cPanel
-  # Node.js app, not from this stack — so there's no `marketing` service here.
-  # It's rebuilt/restarted on its own; see docs/DEPLOY_CPANEL.md.
+  # Marketing site (grapme.com) — public landing + live pricing/blog. Reaches the
+  # API over the internal docker network (API_URL), which is required for the live
+  # plan/blog fetches, the like proxy, and same-origin blog image serving.
+  marketing:
+    image: ${APP_IMAGE:-ghcr.io/himanshu13485-pixel/grapme:latest}
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      NODE_ENV: production
+      API_URL: ${MARKETING_API_URL:-http://api:4000/api/v1}
+      NEXT_PUBLIC_SITE_URL: ${MARKETING_SITE_URL:-https://www.grapme.com}
+      # Must match the API's REVALIDATE_SECRET to accept on-demand refresh calls.
+      REVALIDATE_SECRET: ${REVALIDATE_SECRET:-}
+    command: sh -c "npm run start --workspace apps/marketing"
+    ports:
+      - '${BIND_HOST:-0.0.0.0}:3200:3200'
 
 volumes:
   aeo_pgdata:
