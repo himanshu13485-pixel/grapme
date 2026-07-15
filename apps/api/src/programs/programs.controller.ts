@@ -95,6 +95,16 @@ export class ProgramsController {
     return this.programs.createWorkspaceForUser(user, userId, body ?? {});
   }
 
+  /** Admin (super only): hard-delete a registered client (+ all its workspaces). */
+  @Delete('clients/registrations/:source/:id')
+  deleteRegistration(
+    @CurrentUser() user: AuthUser,
+    @Param('source') source: string,
+    @Param('id') id: string,
+  ) {
+    return this.programs.deleteRegistration(user, source, id);
+  }
+
   /** Profiles the signed-in client-portal user owns (panel switcher). */
   @Get('my/clients')
   myClients(@CurrentUser() user: AuthUser) {

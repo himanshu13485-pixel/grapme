@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { usePlans } from '@/lib/plans';
+import { useAuth } from '@/lib/auth';
 import { PageHeader, EmptyState, Pagination, Modal } from '@/components/ui';
 
 interface Registration {
@@ -39,6 +40,22 @@ export default function RegisteredClientsPage() {
   const [verified, setVerified] = useState('');
   const [creatingFor, setCreatingFor] = useState<Registration | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const { user } = useAuth();
+  const isSuper = user?.role === 'SUPER_ADMIN';
+
+  async function del(u: Registration) {
+    const msg = u.source === 'login'
+      ? `Permanently delete "${u.email}"?\n\nThis deletes the client login AND all ${u.profiles} workspace${u.profiles === 1 ? '' : 's'} it owns — cohorts, campaigns, contacts and history.\n\nThis CANNOT be undone.`
+      : `Permanently delete client profile "${u.name}"?\n\nThis deletes the profile and all its data.\n\nThis CANNOT be undone.`;
+    if (!confirm(msg)) return;
+    try {
+      const r = await api.del<{ deletedClients: number }>(`/clients/registrations/${u.source}/${u.id}`);
+      alert(`Deleted.${r.deletedClients ? ` ${r.deletedClients} workspace${r.deletedClients === 1 ? '' : 's'} removed.` : ''}`);
+      setReloadKey((k) => k + 1);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Failed to delete');
+    }
+  }
 
   useEffect(() => {
     const t = setTimeout(() => setDq(q.trim()), 300);
@@ -96,6 +113,7 @@ export default function RegisteredClientsPage() {
                   <th className="px-4 py-3">Profiles</th>
                   <th className="px-4 py-3">Registered</th>
                   <th className="px-4 py-3">Last login</th>
+                  {isSuper && <th className="px-4 py-3 text-right">Actions</th>}
                 </tr>
               </thead>
               <tbody>
@@ -127,6 +145,11 @@ export default function RegisteredClientsPage() {
                     </td>
                     <td className="px-4 py-3 text-slate-500">{new Date(u.createdAt).toLocaleDateString()}</td>
                     <td className="px-4 py-3 whitespace-nowrap text-slate-500">{u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : 'Never'}</td>
+                    {isSuper && (
+                      <td className="px-4 py-3 text-right">
+                        <button className="text-xs font-medium text-rose-600 hover:underline" onClick={() => del(u)}>Delete</button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

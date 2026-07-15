@@ -248,6 +248,67 @@ export class ProgramsService {
     return client;
   }
 
+  /**
+   * Admin (super only): hard-delete a Registered Clients row. For a client login,
+   * this also deletes every workspace it owns (and their cohorts / campaigns /
+   * data). For a login-less admin-created profile, deletes that profile. Irreversible.
+   */
+  async deleteRegistration(admin: AuthUser, source: string, id: string) {
+    if (admin.role !== Role.SUPER_ADMIN) {
+      throw new ForbiddenException('Only a super admin can delete registered clients.');
+    }
+
+    // Login-less admin-created client profile.
+    if (source === 'profile') {
+      const client = await this.prisma.client.findFirst({
+        where: { id, tenantId: admin.tenantId, ownerUserId: null },
+        select: { id: true, name: true },
+      });
+      if (!client) throw new NotFoundException('Profile not found');
+      await this.prisma.$transaction([
+        this.prisma.approval.deleteMany({ where: { entityId: id } }),
+        this.prisma.client.delete({ where: { id } }),
+      ]);
+      await this.activity.log({
+        tenantId: admin.tenantId, actorId: admin.userId, action: 'DELETE_CLIENT',
+        entityType: 'Client', entityId: id, before: { name: client.name },
+      });
+      return { ok: true, deletedLogin: false, deletedClients: 1 };
+    }
+
+    // Client login (self-registered): delete the login + all workspaces it owns.
+    const owner = await this.prisma.user.findFirst({
+      where: { id, tenantId: admin.tenantId, role: Role.CLIENT },
+      select: { id: true, email: true, name: true },
+    });
+    if (!owner) throw new NotFoundException('Client login not found');
+
+    const clients = await this.prisma.client.findMany({
+      where: { tenantId: admin.tenantId, ownerUserId: id },
+      select: { id: true },
+    });
+    const clientIds = clients.map((c) => c.id);
+
+    await this.prisma.$transaction([
+      // Approvals block deletion (submittedById has no cascade); clear the user's
+      // own submissions + any approvals for the workspaces being removed.
+      this.prisma.approval.deleteMany({
+        where: { OR: [{ submittedById: id }, ...(clientIds.length ? [{ entityId: { in: clientIds } }] : [])] },
+      }),
+      // Owned workspaces (cascades cohorts/enrollments; unlinks shared mailboxes).
+      this.prisma.client.deleteMany({ where: { tenantId: admin.tenantId, ownerUserId: id } }),
+      // The login itself (cascades its tokens, notifications, and anything it authored).
+      this.prisma.user.delete({ where: { id } }),
+    ]);
+
+    await this.activity.log({
+      tenantId: admin.tenantId, actorId: admin.userId, action: 'DELETE_CLIENT_LOGIN',
+      entityType: 'User', entityId: id,
+      before: { email: owner.email, name: owner.name, workspaces: clientIds.length },
+    });
+    return { ok: true, deletedLogin: true, deletedClients: clientIds.length };
+  }
+
   private readonly clientListInclude = {
     _count: { select: { mailboxes: true, cohorts: true, enrollments: true, contacts: true } },
     owner: { select: { id: true, name: true, email: true, contactMobile: true, emailVerified: true, pendingEmail: true } },
