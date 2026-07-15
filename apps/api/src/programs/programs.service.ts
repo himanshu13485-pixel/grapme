@@ -207,6 +207,47 @@ export class ProgramsService {
     return client;
   }
 
+  /**
+   * Admin: create a client workspace owned by an existing registered client login
+   * (used from Registered Clients → "Create workspace" for sign-ups that never set
+   * one up). Prefills company/email/mobile from the login; admin finishes the rest
+   * in the Clients Workspace edit form.
+   */
+  async createWorkspaceForUser(
+    admin: AuthUser,
+    userId: string,
+    dto: { name?: string; plan?: string },
+  ) {
+    this.assertAdmin(admin);
+    const owner = await this.prisma.user.findFirst({
+      where: { id: userId, tenantId: admin.tenantId, role: Role.CLIENT },
+      select: { id: true, name: true, email: true, companyName: true, contactMobile: true },
+    });
+    if (!owner) throw new NotFoundException('Client login not found');
+
+    const name = (dto.name ?? '').trim() || owner.companyName || owner.name || 'New workspace';
+    const client = await this.prisma.client.create({
+      data: {
+        tenantId: admin.tenantId,
+        ownerUserId: owner.id,
+        name,
+        email: owner.email ?? null,
+        mobile: owner.contactMobile ?? null,
+        productCategory: owner.companyName ?? null,
+        plan: (dto.plan ?? '').trim() || 'Growth',
+      },
+    });
+    await this.activity.log({
+      tenantId: admin.tenantId,
+      actorId: admin.userId,
+      action: 'CREATE_CLIENT',
+      entityType: 'Client',
+      entityId: client.id,
+      after: { name: client.name, plan: client.plan, ownerUserId: owner.id },
+    });
+    return client;
+  }
+
   private readonly clientListInclude = {
     _count: { select: { mailboxes: true, cohorts: true, enrollments: true, contacts: true } },
     owner: { select: { id: true, name: true, email: true, contactMobile: true, emailVerified: true, pendingEmail: true } },

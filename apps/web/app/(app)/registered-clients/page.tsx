@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
-import { PageHeader, EmptyState, Pagination } from '@/components/ui';
+import { usePlans } from '@/lib/plans';
+import { PageHeader, EmptyState, Pagination, Modal } from '@/components/ui';
 
 interface Registration {
   id: string;
@@ -35,6 +37,8 @@ export default function RegisteredClientsPage() {
   const [dq, setDq] = useState('');
   const [status, setStatus] = useState('');
   const [verified, setVerified] = useState('');
+  const [creatingFor, setCreatingFor] = useState<Registration | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     const t = setTimeout(() => setDq(q.trim()), 300);
@@ -51,7 +55,7 @@ export default function RegisteredClientsPage() {
       .then((r) => { setItems(r.items); setTotal(r.total); })
       .catch(() => {})
       .finally(() => setLoaded(true));
-  }, [page, dq, status, verified]);
+  }, [page, dq, status, verified, reloadKey]);
 
   return (
     <div>
@@ -114,7 +118,12 @@ export default function RegisteredClientsPage() {
                         ? <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700" title="Admin-created client profile">Admin-created</span>
                         : u.profiles > 0
                           ? <span className="font-semibold text-slate-700">{u.profiles} profile{u.profiles === 1 ? '' : 's'}</span>
-                          : <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-700" title="Registered but never set up a workspace">No workspace</span>}
+                          : (
+                            <div className="flex flex-col items-start gap-1">
+                              <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-700" title="Registered but never set up a workspace">No workspace</span>
+                              <button className="text-xs font-medium text-brand-600 hover:underline" onClick={() => setCreatingFor(u)}>+ Create workspace</button>
+                            </div>
+                          )}
                     </td>
                     <td className="px-4 py-3 text-slate-500">{new Date(u.createdAt).toLocaleDateString()}</td>
                     <td className="px-4 py-3 whitespace-nowrap text-slate-500">{u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : 'Never'}</td>
@@ -126,6 +135,70 @@ export default function RegisteredClientsPage() {
           <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPage={setPage} />
         </>
       )}
+
+      {creatingFor && (
+        <CreateWorkspaceModal
+          reg={creatingFor}
+          onClose={() => setCreatingFor(null)}
+          onCreated={() => { setCreatingFor(null); setReloadKey((k) => k + 1); }}
+        />
+      )}
     </div>
+  );
+}
+
+function CreateWorkspaceModal({ reg, onClose, onCreated }: { reg: Registration; onClose: () => void; onCreated: () => void }) {
+  const router = useRouter();
+  const { planNames } = usePlans();
+  const [name, setName] = useState(reg.company || reg.name || '');
+  const [plan, setPlan] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  // Default to the first available plan once loaded.
+  useEffect(() => { if (!plan && planNames.length) setPlan(planNames[0]); }, [planNames, plan]);
+
+  async function create(goToEdit: boolean) {
+    if (!name.trim()) { setError('Workspace name is required.'); return; }
+    setBusy(true);
+    setError('');
+    try {
+      const c = await api.post<{ id: string }>(`/clients/for-user/${reg.id}`, { name: name.trim(), plan });
+      if (goToEdit) router.push(`/clients?edit=${c.id}`);
+      else onCreated();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to create workspace');
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal open onClose={onClose} title="Create client workspace" disableBackdropClose>
+      <div className="space-y-4">
+        <p className="text-sm text-slate-500">
+          Set up a workspace owned by <span className="font-medium text-slate-700">{reg.email}</span>. You can configure
+          channels, credits and validity afterwards in the Clients Workspace.
+        </p>
+        {error && <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div>}
+        <div>
+          <label className="label">Workspace / company name</label>
+          <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Acme Exports" />
+        </div>
+        <div>
+          <label className="label">Plan</label>
+          <select className="input" value={plan} onChange={(e) => setPlan(e.target.value)}>
+            {planNames.length === 0 && <option value="">Growth</option>}
+            {planNames.map((p) => <option key={p} value={p}>{p}</option>)}
+          </select>
+        </div>
+        <div className="flex justify-end gap-2">
+          <button className="btn-ghost" onClick={onClose} disabled={busy}>Cancel</button>
+          <button className="btn-ghost" onClick={() => create(false)} disabled={busy}>{busy ? 'Creating…' : 'Create'}</button>
+          <button className="btn-primary" onClick={() => create(true)} disabled={busy}>
+            {busy ? 'Creating…' : 'Create & configure →'}
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }

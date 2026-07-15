@@ -85,6 +85,16 @@ export class ProgramsController {
     return this.programs.listRegisteredClients(user, { page, pageSize, q, status, verified });
   }
 
+  /** Admin: create a client workspace owned by an existing registered login. */
+  @Post('clients/for-user/:userId')
+  createWorkspaceForUser(
+    @CurrentUser() user: AuthUser,
+    @Param('userId') userId: string,
+    @Body() body: { name?: string; plan?: string },
+  ) {
+    return this.programs.createWorkspaceForUser(user, userId, body ?? {});
+  }
+
   /** Profiles the signed-in client-portal user owns (panel switcher). */
   @Get('my/clients')
   myClients(@CurrentUser() user: AuthUser) {
