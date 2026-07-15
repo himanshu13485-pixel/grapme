@@ -109,19 +109,11 @@ function StatsHeader({ clientId }: { clientId: string }) {
   }, [clientId]);
   useEffect(() => { load(); }, [load]);
 
-  async function adjustCredits() {
-    const raw = prompt('Adjust LinkedIn credits by (e.g. 100 or -50):');
-    if (!raw) return;
-    const amount = Number(raw);
-    if (!amount) return;
-    await api.post(`/linkedin/clients/${clientId}/subscription/credits`, { amount });
-    load();
-  }
-
   return (
     <div className="mb-5 grid grid-cols-2 gap-4 md:grid-cols-4">
       <Stat label="Seats" value={sub?.seats ?? '—'} />
-      <Stat label="Credits" value={sub?.creditsBalance ?? '—'} action={<button onClick={adjustCredits} className="text-xs font-medium text-brand-700 hover:text-brand-800">Adjust</button>} />
+      {/* Credits are managed from Subscription Management, not adjusted inline. */}
+      <Stat label="Credits" value={sub?.creditsBalance ?? '—'} />
       <Stat label="Plan validity (days)" value={client?.validityDays ?? '—'} sub={validityLeft(client?.validityDays, client?.validityStartAt)} />
       <Stat label="AI Knowledge" value={`${stats?.aiKnowledgePct ?? 0}%`} sub={`${stats?.profileCount ?? 0} profiles`} />
     </div>
