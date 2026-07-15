@@ -290,6 +290,8 @@ export function LiRegularWizard({
             <div className="grid gap-4 sm:grid-cols-2">
               <AudField label="Company keywords (include)" v={audience.companyKeywordsInclude} on={(v) => setAud('companyKeywordsInclude', v)} ph="Include…" />
               <AudField label="Company keywords (exclude)" v={audience.companyKeywordsExclude} on={(v) => setAud('companyKeywordsExclude', v)} ph="Exclude…" />
+              <AudField label="Person keywords (include)" v={audience.personKeywordsInclude} on={(v) => setAud('personKeywordsInclude', v)} ph="e.g. import, sourcing…" />
+              <AudField label="Person keywords (exclude)" v={audience.personKeywordsExclude} on={(v) => setAud('personKeywordsExclude', v)} ph="Exclude…" />
             </div>
           </Step>
         )}
