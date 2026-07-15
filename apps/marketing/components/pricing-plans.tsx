@@ -55,7 +55,15 @@ export function PricingPlans({ plans }: { plans: PublicPlan[] }) {
         )}
       </div>
 
-      <div className={`grid gap-6 ${plans.length >= 3 ? 'md:grid-cols-3' : 'md:mx-auto md:max-w-3xl md:grid-cols-2'}`}>
+      <div
+        className={`grid gap-6 ${
+          plans.length === 1
+            ? 'mx-auto max-w-md' // a lone plan sits centered, not stretched
+            : plans.length === 2
+              ? 'md:mx-auto md:max-w-3xl md:grid-cols-2'
+              : 'md:grid-cols-3'
+        }`}
+      >
         {plans.map((plan, i) => (
           <Reveal key={plan.id} delay={i * 90}>
             <PlanCard plan={plan} period={period} currency={activeCurrency} />
