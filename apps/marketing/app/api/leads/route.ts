@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server';
 
+const API_URL =
+  process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
+
 function isValidEmail(v: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 }
@@ -24,8 +27,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, errors }, { status: 400 });
   }
 
-  // TODO: persist the lead — forward to the CRM / AEO contacts API / notification
-  // email once that endpoint exists. Logging keeps this deployable in the meantime.
+  // Forward to the app API, which emails the lead to the configured sales inbox
+  // (LEADS_NOTIFY_EMAIL). Done server-side over the internal network.
+  try {
+    await fetch(`${API_URL}/marketing/lead`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name, phone, email }),
+      cache: 'no-store',
+    });
+  } catch (e) {
+    // Don't fail the visitor's submission if the API is briefly unreachable.
+    console.error('Lead forward failed:', e);
+  }
   console.log('Demo request captured:', { name, phone, email, submittedAt: new Date().toISOString() });
 
   return NextResponse.json({ ok: true });

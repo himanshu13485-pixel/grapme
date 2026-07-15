@@ -68,6 +68,8 @@ services:
       # if set, must match the marketing service's value.
       MARKETING_REVALIDATE_URL: ${MARKETING_REVALIDATE_URL:-http://marketing:3200/api/revalidate}
       REVALIDATE_SECRET: ${REVALIDATE_SECRET:-}
+      # Inbox that grapme.com "Book a demo" / "Get in touch" submissions are emailed to.
+      LEADS_NOTIFY_EMAIL: ${LEADS_NOTIFY_EMAIL:-harsh@grapmail.com}
     # Apply DB migrations on boot, then start the API.
     command: >
       sh -c "npx prisma migrate deploy --schema=/app/apps/api/prisma/schema.prisma &&

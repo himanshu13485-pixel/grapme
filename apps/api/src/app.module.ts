@@ -32,6 +32,7 @@ import { UpdatesModule } from './updates/updates.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { SessionsModule } from './sessions/sessions.module';
 import { BlogModule } from './blog/blog.module';
+import { MarketingModule } from './marketing/marketing.module';
 import { HealthController } from './health.controller';
 
 // The sending engine needs Redis. Set QUEUE_ENABLED=false to run the rest of
@@ -76,6 +77,7 @@ const engineModules = queueEnabled
     SubscriptionsModule,
     SessionsModule,
     BlogModule,
+    MarketingModule,
     ...engineModules,
   ],
   controllers: [HealthController],
