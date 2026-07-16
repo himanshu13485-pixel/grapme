@@ -53,30 +53,42 @@ export class LiGenerationService {
           : arr(spec.personKeywordsInclude);
     // Where they work (the "context" slot): industries + company keywords.
     const contexts = [...arr(spec.industries), ...arr(spec.companyKeywordsInclude)];
-    const location = [arr(spec.cities)[0], arr(spec.countries)[0]].filter(Boolean).join(' ');
+    // Geo axis to cycle: every country/city becomes its own queries so all your
+    // target locations get sourced (not just the first one).
+    const geos = [...arr(spec.countries), ...arr(spec.cities)];
     const compose = (...parts: (string | undefined)[]) =>
       parts.filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
 
-    // CRITICAL: keep each query SHORT (role + context + location, ~3–4 words).
-    // LinkedIn's classic search is an AND match, so stuffing every keyword/exclude
-    // into one query matches nobody. We rotate the values across many small queries
-    // instead — never concatenate them all. (Excludes/person-keyword blobs are
-    // deliberately NOT appended; they over-constrain classic search to zero results.)
+    // CRITICAL: keep each query SHORT (role + context + geo, ~3–4 words). LinkedIn's
+    // classic search is an AND match, so stuffing every keyword in one query matches
+    // nobody. We rotate the values across many small queries — never concatenate them.
+    const roleList = roles.length ? roles.slice(0, 6) : [''];
+    const ctxList = contexts.length ? contexts.slice(0, 4) : [''];
+    const geoList = geos.length ? geos.slice(0, 6) : [''];
+    if (!roleList[0] && !ctxList[0] && !geoList[0]) return [];
+
+    // Cap the TOTAL at 12 queries so a source run stays a handful of Unipile calls,
+    // and split evenly per geo so every location gets covered (with varied roles).
+    const CAP = 12;
+    const perGeo = Math.max(1, Math.floor(CAP / geoList.length));
     const queries = new Set<string>();
-    if (roles.length) {
-      for (const role of roles.slice(0, 6)) {
-        if (contexts.length) {
-          for (const c of contexts.slice(0, 3)) queries.add(compose(role, c, location));
-        } else {
-          queries.add(compose(role, location));
-        }
+    for (let g = 0; g < geoList.length && queries.size < CAP; g++) {
+      for (let k = 0; k < perGeo && queries.size < CAP; k++) {
+        const q = compose(roleList[(g * perGeo + k) % roleList.length], ctxList[k % ctxList.length], geoList[g]);
+        if (q) queries.add(q);
       }
-    } else if (contexts.length) {
-      for (const c of contexts.slice(0, 6)) queries.add(compose(c, location));
-    } else if (location) {
-      queries.add(location);
     }
-    return [...queries].filter(Boolean).slice(0, 12); // cap total queries per source run
+    // Fill any leftover slots (from rounding/dupes) with more role×context×geo combos.
+    const total = roleList.length * ctxList.length * geoList.length;
+    for (let i = 0; queries.size < CAP && i < total; i++) {
+      const q = compose(
+        roleList[i % roleList.length],
+        ctxList[Math.floor(i / roleList.length) % ctxList.length],
+        geoList[Math.floor(i / (roleList.length * ctxList.length)) % geoList.length],
+      );
+      if (q) queries.add(q);
+    }
+    return [...queries].slice(0, CAP);
   }
 
   /** Search LinkedIn for people matching the campaign's audience and add them as PENDING leads. */
