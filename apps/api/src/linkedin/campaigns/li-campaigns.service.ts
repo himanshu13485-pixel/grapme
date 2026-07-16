@@ -273,23 +273,24 @@ export class LiCampaignsService {
     return out as Prisma.InputJsonValue;
   }
 
-  listPresets(tenantId: string) {
+  /** Presets are scoped to a single client workspace (shared across its campaigns). */
+  listPresets(tenantId: string, clientId: string) {
     return this.prisma.liAudiencePreset.findMany({
-      where: { tenantId },
+      where: { tenantId, clientId },
       orderBy: { createdAt: 'desc' },
     });
   }
 
-  async createPreset(tenantId: string, name: string, spec: unknown) {
+  async createPreset(tenantId: string, clientId: string, name: string, spec: unknown) {
     const clean = (name ?? '').trim();
     if (!clean) throw new BadRequestException('Preset name is required.');
     return this.prisma.liAudiencePreset.create({
-      data: { tenantId, name: clean.slice(0, 80), spec: this.sanitizeAudienceSpec(spec) },
+      data: { tenantId, clientId, name: clean.slice(0, 80), spec: this.sanitizeAudienceSpec(spec) },
     });
   }
 
-  async deletePreset(tenantId: string, id: string) {
-    await this.prisma.liAudiencePreset.deleteMany({ where: { id, tenantId } });
+  async deletePreset(tenantId: string, clientId: string, id: string) {
+    await this.prisma.liAudiencePreset.deleteMany({ where: { id, tenantId, clientId } });
     return { ok: true };
   }
 

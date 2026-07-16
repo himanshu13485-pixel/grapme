@@ -194,17 +194,20 @@ model Asset {
   @@index([tenantId])
 }
 
-/// Reusable Target-Audience templates for LinkedIn campaigns (tenant-wide).
+/// Reusable Target-Audience templates for LinkedIn campaigns, scoped to a single
+/// client workspace (shared across that client's campaigns, not other clients').
 model LiAudiencePreset {
   id        String   @id @default(uuid())
   tenantId  String
+  clientId  String
   name      String
   spec      Json // the audience spec (countries, industries, jobTitles, keywords, …)
   createdAt DateTime @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
 
-  @@index([tenantId])
+  @@index([clientId])
 }
 
 /// Marketing blog posts, authored in the admin and surfaced on grapme.com/blog.
@@ -939,6 +942,7 @@ model Client {
   templates           EmailTemplate[]
   campaigns           Campaign[]
   subAdminAssignments SubAdminAssignment[]
+  liAudiencePresets   LiAudiencePreset[]
 
   @@index([tenantId])
 }

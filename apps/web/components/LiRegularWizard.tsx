@@ -157,9 +157,9 @@ export function LiRegularWizard({
   const specFilledCount = (spec: Partial<Audience> | Audience) =>
     Object.values(spec).filter((v) => Array.isArray(v) && v.length > 0).length;
   function loadPresets() {
-    api.get<{ id: string; name: string; spec: Partial<Audience> }[]>(`${base}/audience-presets`).then(setPresets).catch(() => {});
+    api.get<{ id: string; name: string; spec: Partial<Audience> }[]>(`${base}/clients/${clientId}/audience-presets`).then(setPresets).catch(() => {});
   }
-  useEffect(() => { loadPresets(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [base]);
+  useEffect(() => { loadPresets(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [base, clientId]);
   function applyPreset(id: string) {
     const p = presets.find((x) => x.id === id);
     if (!p) return;
@@ -182,7 +182,7 @@ export function LiRegularWizard({
     const nm = window.prompt('Save this audience as a reusable preset — name it:');
     if (!nm?.trim()) return;
     try {
-      await api.post(`${base}/audience-presets`, { name: nm.trim(), spec: audience });
+      await api.post(`${base}/clients/${clientId}/audience-presets`, { name: nm.trim(), spec: audience });
       loadPresets();
       setPresetMsg(`Saved “${nm.trim()}”.`);
       setTimeout(() => setPresetMsg(''), 4000);
@@ -190,7 +190,7 @@ export function LiRegularWizard({
   }
   async function deletePreset(id: string) {
     if (!confirm('Delete this audience preset?')) return;
-    try { await api.del(`${base}/audience-presets/${id}`); loadPresets(); }
+    try { await api.del(`${base}/clients/${clientId}/audience-presets/${id}`); loadPresets(); }
     catch (e) { alert(e instanceof Error ? e.message : 'Failed to delete preset'); }
   }
 

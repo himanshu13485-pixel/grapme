@@ -120,10 +120,10 @@ export class LiPortalService {
   async campaignLeads(userId: string, id: string, opts: any) { await this.assertCampaign(userId, id); return this.campaigns.leads(id, opts); }
   async importLeads(userId: string, id: string, dto: ImportLiLeadsDto) { await this.assertCampaign(userId, id); return this.campaigns.importLeads(id, dto); }
   async deleteLead(userId: string, id: string, leadId: string) { await this.assertCampaign(userId, id); return this.campaigns.deleteLead(id, leadId); }
-  // Tenant-wide audience presets (no per-client scoping — reusable templates).
-  listPresets(tenantId: string) { return this.campaigns.listPresets(tenantId); }
-  createPreset(tenantId: string, name: string, spec: unknown) { return this.campaigns.createPreset(tenantId, name, spec); }
-  deletePreset(tenantId: string, id: string) { return this.campaigns.deletePreset(tenantId, id); }
+  // Audience presets scoped to a client workspace the user owns.
+  async listPresets(userId: string, tenantId: string, clientId: string) { await this.assertOwnsClient(userId, clientId); return this.campaigns.listPresets(tenantId, clientId); }
+  async createPreset(userId: string, tenantId: string, clientId: string, name: string, spec: unknown) { await this.assertOwnsClient(userId, clientId); return this.campaigns.createPreset(tenantId, clientId, name, spec); }
+  async deletePreset(userId: string, tenantId: string, clientId: string, id: string) { await this.assertOwnsClient(userId, clientId); return this.campaigns.deletePreset(tenantId, clientId, id); }
   /** Client imports their own seat's existing 1st-degree connections (credit-metered). */
   async importConnections(userId: string, id: string, limit?: number) { await this.assertCampaign(userId, id); return this.generation.importConnections(id, limit); }
   async updateAudience(userId: string, id: string, dto: UpsertLiAudienceDto) { await this.assertCampaign(userId, id); return this.campaigns.upsertAudience(id, dto); }

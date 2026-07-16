@@ -79,12 +79,12 @@ export class LiPortalController {
   @Delete('campaigns/:id/leads/:leadId')
   deleteLead(@CurrentUser() u: AuthUser, @Param('id') id: string, @Param('leadId') leadId: string) { return this.portal.deleteLead(u.userId, id, leadId); }
 
-  @Get('audience-presets')
-  presets(@CurrentUser() u: AuthUser) { return this.portal.listPresets(u.tenantId); }
-  @Post('audience-presets')
-  createPreset(@CurrentUser() u: AuthUser, @Body() dto: { name: string; spec: unknown }) { return this.portal.createPreset(u.tenantId, dto.name, dto.spec); }
-  @Delete('audience-presets/:id')
-  deletePreset(@CurrentUser() u: AuthUser, @Param('id') id: string) { return this.portal.deletePreset(u.tenantId, id); }
+  @Get('clients/:clientId/audience-presets')
+  presets(@CurrentUser() u: AuthUser, @Param('clientId') clientId: string) { return this.portal.listPresets(u.userId, u.tenantId, clientId); }
+  @Post('clients/:clientId/audience-presets')
+  createPreset(@CurrentUser() u: AuthUser, @Param('clientId') clientId: string, @Body() dto: { name: string; spec: unknown }) { return this.portal.createPreset(u.userId, u.tenantId, clientId, dto.name, dto.spec); }
+  @Delete('clients/:clientId/audience-presets/:id')
+  deletePreset(@CurrentUser() u: AuthUser, @Param('clientId') clientId: string, @Param('id') id: string) { return this.portal.deletePreset(u.userId, u.tenantId, clientId, id); }
   @Post('campaigns/:id/import-connections')
   importConnections(@CurrentUser() u: AuthUser, @Param('id') id: string, @Query('limit') limit?: string) { return this.portal.importConnections(u.userId, id, limit ? Number(limit) : undefined); }
   // Audience sourcing is admin-only (avoids client-side credit/rate-limit misuse);
