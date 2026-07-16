@@ -44,31 +44,37 @@ export class LiGenerationService {
     const arr = (v: any): string[] =>
       Array.isArray(v) ? v.filter((x) => typeof x === 'string' && x.trim()).map((x) => x.trim()) : [];
 
+    // Who to reach (the "role" slot): job titles → else seniorities/departments →
+    // else person keywords (e.g. "procurement", "sourcing"). These describe the person.
     const titles = arr(spec.jobTitles);
-    // If no explicit titles, fall back to seniorities/departments as role hints.
-    const roles = titles.length ? titles : [...arr(spec.seniorities), ...arr(spec.departments)];
+    const roles =
+      titles.length ? titles
+        : [...arr(spec.seniorities), ...arr(spec.departments)].length ? [...arr(spec.seniorities), ...arr(spec.departments)]
+          : arr(spec.personKeywordsInclude);
+    // Where they work (the "context" slot): industries + company keywords.
     const contexts = [...arr(spec.industries), ...arr(spec.companyKeywordsInclude)];
-    const person = arr(spec.personKeywordsInclude).join(' ');
     const location = [arr(spec.cities)[0], arr(spec.countries)[0]].filter(Boolean).join(' ');
-    const excludes = [...arr(spec.companyKeywordsExclude), ...arr(spec.personKeywordsExclude)]
-      .map((e) => `-${e.split(/\s+/)[0]}`)
-      .join(' ');
     const compose = (...parts: (string | undefined)[]) =>
       parts.filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
 
+    // CRITICAL: keep each query SHORT (role + context + location, ~3–4 words).
+    // LinkedIn's classic search is an AND match, so stuffing every keyword/exclude
+    // into one query matches nobody. We rotate the values across many small queries
+    // instead — never concatenate them all. (Excludes/person-keyword blobs are
+    // deliberately NOT appended; they over-constrain classic search to zero results.)
     const queries = new Set<string>();
     if (roles.length) {
       for (const role of roles.slice(0, 6)) {
         if (contexts.length) {
-          for (const c of contexts.slice(0, 4)) queries.add(compose(role, c, person, location, excludes));
+          for (const c of contexts.slice(0, 3)) queries.add(compose(role, c, location));
         } else {
-          queries.add(compose(role, person, location, excludes));
+          queries.add(compose(role, location));
         }
       }
     } else if (contexts.length) {
-      for (const c of contexts.slice(0, 6)) queries.add(compose(c, person, location, excludes));
-    } else if (person || location) {
-      queries.add(compose(person, location, excludes));
+      for (const c of contexts.slice(0, 6)) queries.add(compose(c, location));
+    } else if (location) {
+      queries.add(location);
     }
     return [...queries].filter(Boolean).slice(0, 12); // cap total queries per source run
   }
