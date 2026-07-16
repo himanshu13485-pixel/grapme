@@ -150,6 +150,9 @@ export function LiRegularWizard({
 
   // ── Reusable audience presets ──────────────────────────────────────
   const [presets, setPresets] = useState<{ id: string; name: string; spec: Partial<Audience> }[]>([]);
+  const [presetMsg, setPresetMsg] = useState('');
+  const specFilledCount = (spec: Partial<Audience> | Audience) =>
+    Object.values(spec).filter((v) => Array.isArray(v) && v.length > 0).length;
   function loadPresets() {
     api.get<{ id: string; name: string; spec: Partial<Audience> }[]>(`${base}/audience-presets`).then(setPresets).catch(() => {});
   }
@@ -157,19 +160,30 @@ export function LiRegularWizard({
   function applyPreset(id: string) {
     const p = presets.find((x) => x.id === id);
     if (!p) return;
+    const filled = specFilledCount(p.spec);
     setAudience((a) => {
-      const next: Audience = { ...a };
+      const next: Audience = { ...emptyAudience }; // replace, don't merge, so it's a clean load
       for (const [k, v] of Object.entries(p.spec)) {
         if (Array.isArray(v)) (next as Record<string, string[]>)[k] = v as string[];
       }
       return next;
     });
+    setPresetMsg(filled > 0 ? `Loaded “${p.name}” — ${filled} field${filled === 1 ? '' : 's'} applied.` : `“${p.name}” has no saved criteria (it was saved empty).`);
+    setTimeout(() => setPresetMsg(''), 4000);
   }
   async function savePreset() {
+    if (specFilledCount(audience) === 0) {
+      alert('Add some audience criteria (countries, industries, job titles…) before saving a preset — otherwise it saves empty.');
+      return;
+    }
     const nm = window.prompt('Save this audience as a reusable preset — name it:');
     if (!nm?.trim()) return;
-    try { await api.post(`${base}/audience-presets`, { name: nm.trim(), spec: audience }); loadPresets(); }
-    catch (e) { alert(e instanceof Error ? e.message : 'Failed to save preset'); }
+    try {
+      await api.post(`${base}/audience-presets`, { name: nm.trim(), spec: audience });
+      loadPresets();
+      setPresetMsg(`Saved “${nm.trim()}”.`);
+      setTimeout(() => setPresetMsg(''), 4000);
+    } catch (e) { alert(e instanceof Error ? e.message : 'Failed to save preset'); }
   }
   async function deletePreset(id: string) {
     if (!confirm('Delete this audience preset?')) return;
@@ -314,7 +328,9 @@ export function LiRegularWizard({
                 ))}
                 <button type="button" className="btn-ghost text-xs" onClick={savePreset}>+ Save current as preset</button>
               </div>
-              {presets.length === 0 && <p className="mt-1 text-xs text-slate-400">Save this audience to reuse it on future campaigns.</p>}
+              {presetMsg
+                ? <p className="mt-1 text-xs font-medium text-brand-700">{presetMsg}</p>
+                : presets.length === 0 && <p className="mt-1 text-xs text-slate-400">Fill in the audience below, then save it to reuse on future campaigns.</p>}
             </Field>
             <AudField label="Countries *" sug={COUNTRY_SUGGEST} v={audience.countries} on={(v) => setAud('countries', v)} ph="Add a country…" />
             <AudField label="Cities" v={audience.cities} on={(v) => setAud('cities', v)} ph="Type a city and press Enter" />
