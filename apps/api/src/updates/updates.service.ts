@@ -115,7 +115,7 @@ export class UpdatesService {
         lastActorUserId: user.userId,
       },
     });
-    await this.fanOut(thread.id, user, `New ${typeLabel(thread.type)}: ${thread.title}`, stripHtml(thread.bodyHtml));
+    await this.fanOut(thread.id, user, `New ${typeLabel(thread.type)}: ${thread.title}`, stripHtml(thread.bodyHtml), thread.bodyHtml);
     return this.get(user, thread.id);
   }
 
@@ -152,7 +152,7 @@ export class UpdatesService {
    * other side, an email copy to the "other side" (if the thread's email toggle is
    * on), and a recorded-only WhatsApp stub.
    */
-  private async fanOut(threadId: string, actor: AuthUser, title: string, preview: string) {
+  private async fanOut(threadId: string, actor: AuthUser, title: string, preview: string, bodyHtml?: string) {
     const thread = await this.prisma.updateThread.findUnique({
       where: { id: threadId },
       select: { clientId: true, tenantId: true, notifyEmail: true, notifyWhatsapp: true },
@@ -188,7 +188,10 @@ export class UpdatesService {
       const emailTargets = actorIsClient
         ? (admins.map((a) => a.email).filter(Boolean) as string[])
         : ([client?.email, clientOwner?.email].filter(Boolean) as string[]);
-      await this.emailCopy(thread.tenantId, emailTargets, title, preview, link);
+      // Use the sanitized rich body for the email so bold/italic/lists/links render;
+      // fall back to escaped plain text (e.g. for replies, which are plain).
+      const emailBody = bodyHtml ?? `<p style="white-space:pre-wrap;margin:0">${escapeHtml(preview)}</p>`;
+      await this.emailCopy(thread.tenantId, emailTargets, title, emailBody, link);
     }
 
     // WhatsApp → recorded stub only (no send until a provider is wired).
@@ -198,7 +201,7 @@ export class UpdatesService {
     }
   }
 
-  private async emailCopy(tenantId: string, to: string[], subject: string, preview: string, link: string) {
+  private async emailCopy(tenantId: string, to: string[], subject: string, bodyHtml: string, link: string) {
     const targets = [...new Set(to.filter(Boolean))];
     if (targets.length === 0) return;
     const account = await this.systemMailbox(tenantId);
@@ -210,7 +213,7 @@ export class UpdatesService {
     const html = `
       <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto">
         <h2 style="color:#0f766e;font-size:18px">${escapeHtml(subject)}</h2>
-        <p style="color:#334155;white-space:pre-wrap">${escapeHtml(preview).slice(0, 600)}</p>
+        <div style="color:#334155;font-size:14px;line-height:1.6;word-break:break-word">${bodyHtml}</div>
         <p style="margin:22px 0">
           <a href="${href}" style="background:#0f766e;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:600">Open in GrapMe</a>
         </p>
