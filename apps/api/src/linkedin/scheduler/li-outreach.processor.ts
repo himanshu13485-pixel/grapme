@@ -82,11 +82,14 @@ export class LiOutreachProcessor extends WorkerHost {
     const memberId = await this.ensureMemberId(ctx);
     const noteRaw = pickVariant(step1?.note, step1?.variants);
     const note = noteRaw ? renderTemplate(noteRaw, ctx.lead) : undefined;
-    await this.provider.sendConnection({ accountId: ctx.account.unipileAccountId!, memberId, note });
+    const { invitationId } = await this.provider.sendConnection({ accountId: ctx.account.unipileAccountId!, memberId, note });
 
     await this.prisma.liLead.update({
       where: { id: ctx.lead.id },
-      data: { status: LiLeadStatus.CONNECTION_PENDING, currentStep: 1, lastActionAt: new Date() },
+      data: {
+        status: LiLeadStatus.CONNECTION_PENDING, currentStep: 1, lastActionAt: new Date(),
+        unipileInvitationId: invitationId || undefined, // stored so we can withdraw if never accepted
+      },
     });
     await this.complete(actionId);
     await this.scheduler.schedule(ctx.lead.id, LiScheduledActionType.CHECK_ACCEPTANCE, undefined, new Date(Date.now() + FIRST_ACCEPTANCE_CHECK_MS));
@@ -96,7 +99,19 @@ export class LiOutreachProcessor extends WorkerHost {
     if (ctx.lead.status !== LiLeadStatus.CONNECTION_PENDING) return this.complete(actionId);
     const accepted = await this.provider.isConnectionAccepted({ accountId: ctx.account.unipileAccountId!, memberId: ctx.lead.unipileMemberId! });
     if (!accepted) {
-      if (attempts >= MAX_ACCEPTANCE_CHECKS) return this.complete(actionId);
+      // Give up once the acceptance window has elapsed (or the hard safety cap): the
+      // invite was declined/ignored — withdraw it and mark the lead NOT_ACCEPTED.
+      const windowMs = Math.max(1, ctx.campaign.connectionWindowDays ?? 5) * 24 * 60 * 60 * 1000;
+      const sentAt = ctx.lead.lastActionAt?.getTime() ?? Date.now();
+      if (Date.now() - sentAt >= windowMs || attempts >= MAX_ACCEPTANCE_CHECKS) {
+        if (ctx.lead.unipileInvitationId) {
+          await this.provider
+            .withdrawConnection({ accountId: ctx.account.unipileAccountId!, invitationId: ctx.lead.unipileInvitationId })
+            .catch((e) => this.logger.warn(`Withdraw invite for lead ${ctx.lead.id} failed: ${(e as Error).message}`));
+        }
+        await this.prisma.liLead.update({ where: { id: ctx.lead.id }, data: { status: LiLeadStatus.NOT_ACCEPTED } });
+        return this.complete(actionId);
+      }
       return this.scheduler.rearm(actionId, new Date(Date.now() + RECHECK_INTERVAL_MS));
     }
     await this.prisma.liLead.update({ where: { id: ctx.lead.id }, data: { status: LiLeadStatus.CONNECTED, connectedAt: new Date(), currentStep: 1 } });

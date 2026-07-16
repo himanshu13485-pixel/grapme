@@ -63,6 +63,7 @@ export function LiRegularWizard({
     timezone: 'Asia/Kolkata', run247: false, workStartHour: 9, workEndHour: 18,
     workDays: [1, 2, 3, 4, 5] as number[], dailyConnectionLimit: 20, dailyMessageLimit: 20,
     warmupEnabled: true, warmupStartLimit: 5, warmupDays: 14,
+    connectionWindowDays: 5,
     dripEnabled: false, dripDailyTarget: 25, dripBuffer: 50,
     followUpMin: 0, followUpMax: 0, graceHours: 96,
   });
@@ -90,6 +91,7 @@ export function LiRegularWizard({
         warmupEnabled: d.warmupEnabled ?? prev.warmupEnabled,
         warmupStartLimit: d.warmupStartLimit ?? prev.warmupStartLimit,
         warmupDays: d.warmupDays ?? prev.warmupDays,
+        connectionWindowDays: (d as any).connectionWindowDays ?? prev.connectionWindowDays,
         dripEnabled: d.dripEnabled ?? prev.dripEnabled,
         dripDailyTarget: d.dripDailyTarget ?? prev.dripDailyTarget,
         dripBuffer: d.dripBuffer ?? prev.dripBuffer,
@@ -136,6 +138,7 @@ export function LiRegularWizard({
         warmupEnabled: c.warmupEnabled ?? prev.warmupEnabled,
         warmupStartLimit: c.warmupStartLimit ?? prev.warmupStartLimit,
         warmupDays: c.warmupDays ?? prev.warmupDays,
+        connectionWindowDays: (c as any).connectionWindowDays ?? prev.connectionWindowDays,
         dripEnabled: c.dripEnabled ?? prev.dripEnabled,
         dripDailyTarget: c.dripDailyTarget ?? prev.dripDailyTarget,
         dripBuffer: c.dripBuffer ?? prev.dripBuffer,
@@ -484,12 +487,14 @@ export function LiRegularWizard({
                 <Field label="Min follow-ups / lead"><input type="number" min={0} max={10} className="input" value={sched.followUpMin} onChange={(e) => setSched({ ...sched, followUpMin: Number(e.target.value) })} /></Field>
                 <Field label="Max follow-ups / lead"><input type="number" min={0} max={10} className="input" value={sched.followUpMax} onChange={(e) => setSched({ ...sched, followUpMax: Number(e.target.value) })} /></Field>
                 <Field label="Grace window (hours)"><input type="number" min={0} max={720} className="input" value={sched.graceHours} onChange={(e) => setSched({ ...sched, graceHours: Number(e.target.value) })} /></Field>
+                <Field label="Connection accept window (days)"><input type="number" min={1} max={30} className="input" value={sched.connectionWindowDays} onChange={(e) => setSched({ ...sched, connectionWindowDays: Number(e.target.value) })} /></Field>
               </div>
               <div className="mt-2 text-xs text-slate-500">
                 {sched.followUpMin > 0 && sched.followUpMax >= sched.followUpMin
                   ? `Each lead randomly gets ${sched.followUpMin}–${sched.followUpMax} of your ${followUps.length} message(s).`
                   : `Every lead gets all ${followUps.length} message(s).`}
                 {' '}After the last message, a lead is marked <strong>Completed</strong> if there&apos;s no reply within {sched.graceHours}h (≈{Math.round(sched.graceHours / 24)}d).
+                {' '}A connection invite not accepted within <strong>{sched.connectionWindowDays} day{sched.connectionWindowDays === 1 ? '' : 's'}</strong> is withdrawn and the lead marked <strong>Not accepted</strong>.
               </div>
             </div>
             )}

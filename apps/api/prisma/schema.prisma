@@ -1059,6 +1059,7 @@ enum LiLeadStatus {
   MESSAGED
   REPLIED
   CAMPAIGN_COMPLETED // finished its own sequence (grace window passed) with no reply
+  NOT_ACCEPTED // connection invite was never accepted within the window (invite withdrawn)
   BOUNCED
   EXCLUDED
 }
@@ -1243,6 +1244,9 @@ model LiCampaign {
   warmupStartLimit     Int                 @default(5) // connections/day on day 0
   warmupDays           Int                 @default(14) // days to reach dailyConnectionLimit
   warmupStartedAt      DateTime? // set when the campaign first goes RUNNING
+  // How long to wait for a connection to be accepted before giving up: the invite
+  // is withdrawn and the lead marked NOT_ACCEPTED. 1–30 days.
+  connectionWindowDays Int                 @default(5)
   // Background drip-sourcer: auto-refill the Target Audience from LinkedIn search.
   dripEnabled          Boolean             @default(false)
   dripDailyTarget      Int                 @default(25) // max leads to source per day
@@ -1316,6 +1320,7 @@ model LiLead {
   profileUrl       String?
   avatarUrl        String?
   unipileMemberId  String?
+  unipileInvitationId String? // sent-invite id, used to withdraw a never-accepted invite
   status           LiLeadStatus @default(PENDING)
   currentStep      Int          @default(0)
   // How many MESSAGE steps THIS lead will receive, drawn once from the campaign's

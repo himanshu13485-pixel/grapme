@@ -18,11 +18,12 @@ const LEAD_TABS: { key: string; label: string; status?: string }[] = [
   { key: 'messaged', label: 'Messaged', status: 'MESSAGED' },
   { key: 'replied', label: 'Replied', status: 'REPLIED' },
   { key: 'completed', label: 'Completed', status: 'CAMPAIGN_COMPLETED' },
+  { key: 'not_accepted', label: 'Not accepted', status: 'NOT_ACCEPTED' },
 ];
 const STATUS_LABEL: Record<string, string> = {
   PENDING: 'Pending', CONNECTION_PENDING: 'Sent', CONNECTED: 'Connected',
   MESSAGED: 'Messaged', REPLIED: 'Replied', CAMPAIGN_COMPLETED: 'Completed',
-  BOUNCED: 'Bounced', EXCLUDED: 'Excluded',
+  NOT_ACCEPTED: 'Not accepted', BOUNCED: 'Bounced', EXCLUDED: 'Excluded',
 };
 
 /** KPIs + sentiment + Setup/Analytics/Details for a campaign. Shared by admin

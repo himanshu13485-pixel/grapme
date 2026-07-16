@@ -67,6 +67,8 @@ export interface LinkedInProvider {
   getAccount(accountId: string): Promise<ProviderAccount>;
   resolveMember(accountId: string, profileUrl: string): Promise<ProviderMember>;
   sendConnection(params: { accountId: string; memberId: string; note?: string }): Promise<{ invitationId: string }>;
+  /** Withdraw a previously-sent connection invite (best-effort). */
+  withdrawConnection(params: { accountId: string; invitationId: string }): Promise<void>;
   sendMessage(params: { accountId: string; memberId: string; text: string }): Promise<{ chatId: string; messageId: string }>;
   isConnectionAccepted(params: { accountId: string; memberId: string }): Promise<boolean>;
   listMessages(params: { accountId: string; chatId: string }): Promise<ProviderMessage[]>;

@@ -100,6 +100,18 @@ export class UnipileProvider implements LinkedInProvider {
     return { invitationId: res?.invitation_id ?? res?.id ?? '' };
   }
 
+  async withdrawConnection(params: { accountId: string; invitationId: string }): Promise<void> {
+    if (!params.invitationId) return;
+    const key = (this.config.get<string>('UNIPILE_API_KEY') ?? '').trim();
+    const qs = new URLSearchParams({ account_id: params.accountId });
+    const res = await fetch(`${this.baseUrl()}/api/v1/users/invite/sent/${encodeURIComponent(params.invitationId)}?${qs}`, {
+      method: 'DELETE',
+      headers: { 'X-API-KEY': key, accept: 'application/json' },
+    });
+    if (!res.ok) throw new Error(`Unipile withdraw failed (${res.status}): ${(await res.text()).slice(0, 160)}`);
+    this.logger.log(`Withdrew invitation ${params.invitationId}`);
+  }
+
   async sendMessage(params: { accountId: string; memberId: string; text: string }): Promise<{ chatId: string; messageId: string }> {
     const client = this.getClient();
     const res = await client.messaging.startNewChat({

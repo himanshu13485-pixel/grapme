@@ -70,6 +70,7 @@ export class LiCampaignsService {
         warmupEnabled: bool('warmupEnabled'),
         warmupStartLimit: num('warmupStartLimit'),
         warmupDays: num('warmupDays'),
+        connectionWindowDays: num('connectionWindowDays'),
         dripEnabled: bool('dripEnabled'),
         dripDailyTarget: num('dripDailyTarget'),
         dripBuffer: num('dripBuffer'),
@@ -92,8 +93,9 @@ export class LiCampaignsService {
     PENDING: [LiLeadStatus.PENDING],
     CONNECTION_PENDING: [
       LiLeadStatus.CONNECTION_PENDING, LiLeadStatus.CONNECTED, LiLeadStatus.MESSAGED,
-      LiLeadStatus.REPLIED, LiLeadStatus.CAMPAIGN_COMPLETED,
+      LiLeadStatus.REPLIED, LiLeadStatus.CAMPAIGN_COMPLETED, LiLeadStatus.NOT_ACCEPTED,
     ],
+    NOT_ACCEPTED: [LiLeadStatus.NOT_ACCEPTED],
     CONNECTED: [
       LiLeadStatus.CONNECTED, LiLeadStatus.MESSAGED, LiLeadStatus.REPLIED, LiLeadStatus.CAMPAIGN_COMPLETED,
     ],
@@ -370,7 +372,8 @@ export class LiCampaignsService {
       replied = g('REPLIED');
       // CAMPAIGN_COMPLETED leads connected + were messaged, they just never replied.
       accepted = g('CONNECTED') + g('MESSAGED') + g('CAMPAIGN_COMPLETED') + replied;
-      sent = g('CONNECTION_PENDING') + accepted;
+      // An invite was sent for every pending, accepted, AND not-accepted lead.
+      sent = g('CONNECTION_PENDING') + accepted + g('NOT_ACCEPTED');
       totalMessages = totalMsg;
       for (const r of bySentiment) {
         const n = Number(r._count);

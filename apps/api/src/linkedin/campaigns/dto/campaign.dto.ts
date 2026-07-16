@@ -63,6 +63,9 @@ export class UpdateLiScheduleDto {
   @IsOptional() @IsBoolean() warmupEnabled?: boolean;
   @IsOptional() @IsInt() @Min(1) warmupStartLimit?: number;
   @IsOptional() @IsInt() @Min(1) @Max(60) warmupDays?: number;
+  // How long to wait for a connection to be accepted before withdrawing the invite
+  // and marking the lead NOT_ACCEPTED (1–30 days).
+  @IsOptional() @IsInt() @Min(1) @Max(30) connectionWindowDays?: number;
   @IsOptional() @IsBoolean() dripEnabled?: boolean;
   @IsOptional() @IsInt() @Min(1) @Max(200) dripDailyTarget?: number;
   @IsOptional() @IsInt() @Min(1) @Max(1000) dripBuffer?: number;
