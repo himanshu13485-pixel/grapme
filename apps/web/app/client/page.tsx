@@ -41,6 +41,13 @@ export default function ClientPortalPage() {
     if (mode === 'register') loadCaptcha();
   }, [mode, loadCaptcha]);
 
+  // grapme.com links here with ?mode=register so "Sign up" opens the sign-up form
+  // directly instead of the sign-in form.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (new URLSearchParams(window.location.search).get('mode') === 'register') setMode('register');
+  }, []);
+
   async function onLogin(e: FormEvent) {
     e.preventDefault();
     setError('');

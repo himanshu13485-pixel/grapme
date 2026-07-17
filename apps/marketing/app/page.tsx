@@ -171,7 +171,7 @@ export default function HomePage() {
                 <div className="flex flex-wrap items-center gap-4">
                   <Magnetic>
                     <a
-                      href={`${SITE.appUrl}/client`}
+                      href={`${SITE.appUrl}/client?mode=register`}
                       className="btn-shine group inline-flex items-center gap-2 rounded-full bg-ink px-8 py-4 text-[15px] font-bold text-white shadow-glow transition hover:bg-brand active:scale-[0.97]"
                     >
                       Get started

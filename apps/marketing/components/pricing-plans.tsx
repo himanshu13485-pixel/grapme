@@ -72,7 +72,7 @@ export function PricingPlans({ plans }: { plans: PublicPlan[] }) {
       </div>
       <p className="mt-8 text-center text-sm text-muted">
         Prices are exclusive of taxes and can be tailored to your team.{' '}
-        <a href={`${SITE.appUrl}/client`} className="font-semibold text-brand hover:underline">Create your account</a>{' '}
+        <a href={`${SITE.appUrl}/client?mode=register`} className="font-semibold text-brand hover:underline">Create your account</a>{' '}
         or request a custom quote below.
       </p>
     </>
@@ -194,7 +194,7 @@ function PlanCard({ plan, period, currency }: { plan: PublicPlan; period: 'month
 
       <div className="border-t border-line p-5">
         <a
-          href={`${SITE.appUrl}/client`}
+          href={`${SITE.appUrl}/client?mode=register`}
           className="group inline-flex w-full items-center justify-center gap-1.5 rounded-full bg-ink px-6 py-3 text-sm font-bold text-white transition hover:bg-brand active:scale-[0.97]"
         >
           Get started
