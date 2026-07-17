@@ -2,6 +2,7 @@ import {
   IsBoolean,
   IsEmail,
   IsEnum,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -41,6 +42,11 @@ export class CreateMailboxDto {
   @IsBoolean()
   smtpSecure?: boolean;
 
+  /** Outgoing encryption: SSL (implicit TLS), STARTTLS, or NONE. */
+  @IsOptional()
+  @IsIn(['SSL', 'STARTTLS', 'NONE'])
+  smtpEncryption?: string;
+
   @IsOptional()
   @IsString()
   imapHost?: string;
@@ -48,6 +54,11 @@ export class CreateMailboxDto {
   @IsOptional()
   @IsInt()
   imapPort?: number;
+
+  /** Incoming encryption: SSL (implicit TLS), STARTTLS, or NONE. */
+  @IsOptional()
+  @IsIn(['SSL', 'STARTTLS', 'NONE'])
+  imapEncryption?: string;
 
   /** IMAP login when receiving lives on a different host (e.g. mailbox user). */
   @IsOptional()
@@ -98,8 +109,10 @@ export class UpdateMailboxDto {
   @IsOptional() @IsString() smtpHost?: string;
   @IsOptional() @IsInt() smtpPort?: number;
   @IsOptional() @IsBoolean() smtpSecure?: boolean;
+  @IsOptional() @IsIn(['SSL', 'STARTTLS', 'NONE']) smtpEncryption?: string;
   @IsOptional() @IsString() imapHost?: string;
   @IsOptional() @IsInt() imapPort?: number;
+  @IsOptional() @IsIn(['SSL', 'STARTTLS', 'NONE']) imapEncryption?: string;
   @IsOptional() @IsString() imapUsername?: string;
   @IsOptional() @IsString() imapPassword?: string;
   @IsOptional() @IsBoolean() imapAllowSelfSigned?: boolean;

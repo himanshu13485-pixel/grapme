@@ -28,8 +28,10 @@ interface Mailbox {
   smtpHost?: string;
   smtpPort?: number;
   smtpSecure?: boolean;
+  smtpEncryption?: string;
   imapHost?: string;
   imapPort?: number;
+  imapEncryption?: string;
   imapUsername?: string;
   imapAllowSelfSigned?: boolean;
   sendSpeedSeconds?: number;
@@ -56,8 +58,10 @@ export function MailboxesManager({ clientId }: { clientId?: string }) {
     password: '',
     smtpHost: '',
     smtpPort: 587,
+    smtpEncryption: 'STARTTLS',
     imapHost: '',
     imapPort: 993,
+    imapEncryption: 'SSL',
     imapUsername: '',
     imapPassword: '',
     imapAllowSelfSigned: false,
@@ -321,6 +325,18 @@ export function MailboxesManager({ clientId }: { clientId?: string }) {
               />
             </div>
             <div>
+              <label className="label">SMTP encryption</label>
+              <select
+                className="input"
+                value={form.smtpEncryption}
+                onChange={(e) => setForm({ ...form, smtpEncryption: e.target.value })}
+              >
+                <option value="SSL">SSL / TLS (usually port 465)</option>
+                <option value="STARTTLS">STARTTLS (usually port 587)</option>
+                <option value="NONE">None (unencrypted)</option>
+              </select>
+            </div>
+            <div>
               <label className="label">IMAP host (for receiving)</label>
               <input
                 className="input"
@@ -339,6 +355,18 @@ export function MailboxesManager({ clientId }: { clientId?: string }) {
                   setForm({ ...form, imapPort: Number(e.target.value) })
                 }
               />
+            </div>
+            <div>
+              <label className="label">IMAP encryption</label>
+              <select
+                className="input"
+                value={form.imapEncryption}
+                onChange={(e) => setForm({ ...form, imapEncryption: e.target.value })}
+              >
+                <option value="SSL">SSL / TLS (usually port 993)</option>
+                <option value="STARTTLS">STARTTLS (usually port 143)</option>
+                <option value="NONE">None (unencrypted)</option>
+              </select>
             </div>
             <div>
               <label className="label">IMAP username (optional)</label>
@@ -531,8 +559,10 @@ function EditMailboxForm({
     smtpHost: mailbox.smtpHost ?? '',
     smtpPort: mailbox.smtpPort ?? 587,
     smtpSecure: mailbox.smtpSecure ?? true,
+    smtpEncryption: mailbox.smtpEncryption ?? (mailbox.smtpSecure === false ? 'STARTTLS' : 'SSL'),
     imapHost: mailbox.imapHost ?? '',
     imapPort: mailbox.imapPort ?? 993,
+    imapEncryption: mailbox.imapEncryption ?? 'SSL',
     imapUsername: mailbox.imapUsername ?? '',
     imapPassword: '',
     imapAllowSelfSigned: mailbox.imapAllowSelfSigned ?? false,
@@ -557,8 +587,10 @@ function EditMailboxForm({
         smtpHost: form.smtpHost || undefined,
         smtpPort: Number(form.smtpPort),
         smtpSecure: form.smtpSecure,
+        smtpEncryption: form.smtpEncryption,
         imapHost: form.imapHost || undefined,
         imapPort: Number(form.imapPort),
+        imapEncryption: form.imapEncryption,
         imapUsername: form.imapUsername || undefined,
         imapPassword: form.imapPassword || undefined,
         imapAllowSelfSigned: form.imapAllowSelfSigned,
@@ -651,6 +683,14 @@ function EditMailboxForm({
           />
         </div>
         <div>
+          <label className="label">SMTP encryption</label>
+          <select className="input" value={form.smtpEncryption} onChange={(e) => setForm({ ...form, smtpEncryption: e.target.value })}>
+            <option value="SSL">SSL / TLS (usually port 465)</option>
+            <option value="STARTTLS">STARTTLS (usually port 587)</option>
+            <option value="NONE">None (unencrypted)</option>
+          </select>
+        </div>
+        <div>
           <label className="label">IMAP host</label>
           <input
             className="input"
@@ -668,6 +708,14 @@ function EditMailboxForm({
               setForm({ ...form, imapPort: Number(e.target.value) })
             }
           />
+        </div>
+        <div>
+          <label className="label">IMAP encryption</label>
+          <select className="input" value={form.imapEncryption} onChange={(e) => setForm({ ...form, imapEncryption: e.target.value })}>
+            <option value="SSL">SSL / TLS (usually port 993)</option>
+            <option value="STARTTLS">STARTTLS (usually port 143)</option>
+            <option value="NONE">None (unencrypted)</option>
+          </select>
         </div>
         <div>
           <label className="label">IMAP username (optional)</label>

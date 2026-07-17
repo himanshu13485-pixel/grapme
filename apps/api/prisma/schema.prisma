@@ -464,9 +464,11 @@ model EmailAccount {
   protocol                 MailProtocol  @default(SMTP)
   smtpHost                 String?
   smtpPort                 Int?
-  smtpSecure               Boolean       @default(true)
+  smtpSecure               Boolean       @default(true) // legacy; smtpEncryption is the source of truth
+  smtpEncryption           String        @default("SSL") // "SSL" (implicit TLS) | "STARTTLS" | "NONE"
   imapHost                 String?
   imapPort                 Int?
+  imapEncryption           String        @default("SSL") // "SSL" | "STARTTLS" | "NONE"
   emailAddress             String
   smtpUsername             String? // SMTP login when it differs from the From address (e.g. AWS SES AKIA… user)
   credentialsEncrypted     String // AES-256-GCM blob (SMTP password), never returned to client

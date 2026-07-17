@@ -79,10 +79,13 @@ export class InboundMailService {
 
   /** Connects, fetches recent mail, stores new inbound. Returns # newly stored. */
   private async pollMailbox(mailbox: any, sinceDays: number): Promise<number> {
+    // Encryption mode: SSL = implicit TLS (993); STARTTLS/NONE connect plaintext and
+    // ImapFlow upgrades via STARTTLS when available (secure: false).
+    const imapMode = mailbox.imapEncryption || 'SSL';
     const client = new ImapFlow({
       host: mailbox.imapHost,
       port: mailbox.imapPort ?? 993,
-      secure: true,
+      secure: imapMode === 'SSL',
       auth: {
         // IMAP login often differs from SMTP (e.g. SES sends, mail host receives).
         user: mailbox.imapUsername || mailbox.emailAddress,
