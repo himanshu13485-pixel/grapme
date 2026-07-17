@@ -15,11 +15,19 @@ export class MailerService {
 
   private buildTransport(account: EmailAccount) {
     const password = decryptCredential(account.credentialsEncrypted);
+    const port = account.smtpPort ?? 587;
+    // SMTP convention: 465 → implicit TLS (secure), 587/25 → plaintext + STARTTLS.
+    // Derive from the port for the standard ports so a wrong "SSL" toggle can't cause
+    // an "sslv3 alert handshake failure" (implicit TLS on a STARTTLS port, or vice
+    // versa). Non-standard ports fall back to the stored flag.
+    const secure = port === 465 ? true : port === 587 || port === 25 ? false : (account.smtpSecure ?? false);
     return nodemailer.createTransport({
       host: account.smtpHost ?? undefined,
-      port: account.smtpPort ?? 587,
-      secure: account.smtpSecure ?? false,
+      port,
+      secure,
+      requireTLS: !secure, // enforce STARTTLS on submission ports so mail is encrypted
       auth: { user: account.smtpUsername || account.emailAddress, pass: password },
+      tls: { minVersion: 'TLSv1.2' },
     });
   }
 
