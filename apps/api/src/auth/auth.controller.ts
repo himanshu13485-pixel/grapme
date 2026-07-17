@@ -2,13 +2,16 @@ import {
   Body,
   Controller,
   Get,
+  Param,
   Patch,
   Post,
   HttpCode,
   Req,
 } from '@nestjs/common';
 import { Request } from 'express';
+import { Role } from '@prisma/client';
 import { Throttle } from '@nestjs/throttler';
+import { Roles } from '../common/decorators/roles.decorator';
 import { AuthService, SessionCtx } from './auth.service';
 import {
   LoginDto,
@@ -116,6 +119,14 @@ export class AuthController {
   @Post('client/verify')
   clientVerify(@Body() dto: ClientVerifyDto) {
     return this.auth.verifyClientEmail(dto.token);
+  }
+
+  /** Admin: re-send the confirmation email to an unverified client login. */
+  @Roles(Role.SUPER_ADMIN, Role.SUB_ADMIN)
+  @HttpCode(200)
+  @Post('client/:userId/resend-verification')
+  resendClientVerification(@CurrentUser() user: AuthUser, @Param('userId') userId: string) {
+    return this.auth.resendClientVerification(user, userId);
   }
 
   /** Client confirms an admin-initiated change to their portal login email. */

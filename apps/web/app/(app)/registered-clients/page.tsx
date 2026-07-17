@@ -43,6 +43,16 @@ export default function RegisteredClientsPage() {
   const { user } = useAuth();
   const isSuper = user?.role === 'SUPER_ADMIN';
 
+  async function resendVerification(u: Registration) {
+    if (!confirm(`Re-send the confirmation email to ${u.email}?`)) return;
+    try {
+      await api.post(`/auth/client/${u.id}/resend-verification`, {});
+      alert(`Confirmation email sent to ${u.email}.`);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Failed to send');
+    }
+  }
+
   async function del(u: Registration) {
     const msg = u.source === 'login'
       ? `Permanently delete "${u.email}"?\n\nThis deletes the client login AND all ${u.profiles} workspace${u.profiles === 1 ? '' : 's'} it owns — cohorts, campaigns, contacts and history.\n\nThis CANNOT be undone.`
@@ -128,7 +138,14 @@ export default function RegisteredClientsPage() {
                         ? <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-400" title="Admin-created profile — no client login">No login</span>
                         : u.emailVerified
                           ? <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">✓ Verified</span>
-                          : <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">Unverified</span>}
+                          : (
+                            <div className="flex flex-col items-start gap-1">
+                              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">Unverified</span>
+                              <button className="text-xs font-medium text-brand-600 hover:underline" onClick={() => resendVerification(u)}>
+                                Resend verification
+                              </button>
+                            </div>
+                          )}
                     </td>
                     <td className="px-4 py-3"><span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_CLS[u.status] ?? 'bg-slate-100 text-slate-600'}`}>{u.status}</span></td>
                     <td className="px-4 py-3">

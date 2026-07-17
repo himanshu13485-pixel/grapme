@@ -3,9 +3,11 @@ import {
   Logger,
   BadRequestException,
   ForbiddenException,
+  NotFoundException,
   UnauthorizedException,
   ConflictException,
 } from '@nestjs/common';
+import { AuthUser } from '../common/decorators/current-user.decorator';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { ApprovalEntity, ApprovalStatus, Role } from '@prisma/client';
@@ -526,6 +528,34 @@ export class AuthService {
     });
     await this.sendVerificationEmail(tenant.id, email, dto.contactName, token);
     return { success: true, email };
+  }
+
+  /**
+   * Admin: re-send the confirmation email to an unverified client login (from
+   * Registered Clients, when the original never arrived). Issues a fresh 24h token.
+   */
+  async resendClientVerification(admin: AuthUser, userId: string) {
+    if (admin.role !== Role.SUPER_ADMIN && admin.role !== Role.SUB_ADMIN) {
+      throw new ForbiddenException('Admins only');
+    }
+    const user = await this.prisma.user.findFirst({
+      where: { id: userId, tenantId: admin.tenantId, role: Role.CLIENT },
+      select: { id: true, email: true, name: true, emailVerified: true },
+    });
+    if (!user) throw new NotFoundException('Client login not found');
+    if (user.emailVerified) {
+      throw new BadRequestException('This client is already verified.');
+    }
+    const token = randomBytes(32).toString('hex');
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        verifyTokenHash: this.sha256(token),
+        verifyExpires: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      },
+    });
+    await this.sendVerificationEmail(admin.tenantId, user.email, user.name, token);
+    return { ok: true, email: user.email };
   }
 
   /** Confirms the email from the link and signs the client in immediately. */
