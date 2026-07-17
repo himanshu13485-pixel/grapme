@@ -586,7 +586,7 @@ function EditMailboxForm({
         password: form.password || undefined, // blank = keep current
         smtpHost: form.smtpHost || undefined,
         smtpPort: Number(form.smtpPort),
-        smtpSecure: form.smtpSecure,
+        smtpSecure: form.smtpEncryption === 'SSL', // keep legacy flag in sync with the mode
         smtpEncryption: form.smtpEncryption,
         imapHost: form.imapHost || undefined,
         imapPort: Number(form.imapPort),
@@ -776,16 +776,7 @@ function EditMailboxForm({
         </div>
       </div>
       <div className="flex items-center gap-4">
-        <label className="flex items-center gap-2 text-sm text-slate-700">
-          <input
-            type="checkbox"
-            checked={form.smtpSecure}
-            onChange={(e) =>
-              setForm({ ...form, smtpSecure: e.target.checked })
-            }
-          />
-          SMTP TLS/SSL
-        </label>
+        {/* Encryption is now chosen via the "SMTP encryption" dropdown above. */}
         <label className="flex items-center gap-2 text-sm text-slate-700">
           <input
             type="checkbox"
