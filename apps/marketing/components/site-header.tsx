@@ -46,7 +46,7 @@ export function SiteHeader() {
         </nav>
 
         <div className="hidden items-center gap-3 lg:flex">
-          <a href={SITE.appUrl} className="px-2.5 text-[16px] font-bold text-muted transition hover:text-ink">
+          <a href={`${SITE.appUrl}/client`} className="px-2.5 text-[16px] font-bold text-muted transition hover:text-ink">
             Log in
           </a>
           <a href={`${SITE.appUrl}/client?mode=register`} className="px-2.5 text-[16px] font-bold text-ink transition hover:text-brand">
@@ -83,7 +83,7 @@ export function SiteHeader() {
                 {link.label}
               </Link>
             ))}
-            <a href={SITE.appUrl} className="px-3 py-2.5 text-base font-bold text-ink/80 hover:text-ink">
+            <a href={`${SITE.appUrl}/client`} className="px-3 py-2.5 text-base font-bold text-ink/80 hover:text-ink">
               Log in
             </a>
             <a href={`${SITE.appUrl}/client?mode=register`} className="px-3 py-2.5 text-base font-bold text-ink/80 hover:text-ink">
