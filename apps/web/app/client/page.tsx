@@ -19,6 +19,7 @@ export default function ClientPortalPage() {
   // shared
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -166,13 +167,19 @@ export default function ClientPortalPage() {
                   Forgot password?
                 </button>
               </div>
-              <input
-                type="password"
-                className="input"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
+              <div className="relative">
+                <input
+                  type={showPw ? 'text' : 'password'}
+                  className="input pr-16"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+                <button type="button" onClick={() => setShowPw((s) => !s)}
+                  className="absolute inset-y-0 right-3 my-auto h-6 text-xs font-medium text-slate-500 hover:text-slate-700">
+                  {showPw ? 'Hide' : 'Show'}
+                </button>
+              </div>
             </div>
             {error && (
               <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-600">{error}</p>
@@ -275,14 +282,20 @@ export default function ClientPortalPage() {
             </div>
             <div>
               <label className="label">Password *</label>
-              <input
-                type="password"
-                className="input"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                minLength={8}
-                required
-              />
+              <div className="relative">
+                <input
+                  type={showPw ? 'text' : 'password'}
+                  className="input pr-16"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  minLength={8}
+                  required
+                />
+                <button type="button" onClick={() => setShowPw((s) => !s)}
+                  className="absolute inset-y-0 right-3 my-auto h-6 text-xs font-medium text-slate-500 hover:text-slate-700">
+                  {showPw ? 'Hide' : 'Show'}
+                </button>
+              </div>
             </div>
             <div>
               <label className="label">
