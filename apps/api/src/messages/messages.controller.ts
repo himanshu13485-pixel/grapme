@@ -1,3 +1,5 @@
+import { Role as SalesGateRole } from '@prisma/client';
+import { Roles as SalesGateRoles } from '../common/decorators/roles.decorator';
 import {
   Controller,
   Delete,
@@ -14,6 +16,7 @@ import {
   AuthUser,
 } from '../common/decorators/current-user.decorator';
 
+@SalesGateRoles(SalesGateRole.SUPER_ADMIN, SalesGateRole.SUB_ADMIN, SalesGateRole.USER, SalesGateRole.CLIENT) // excludes SALES (scoped panel only)
 @Controller('mailbox')
 export class MessagesController {
   constructor(

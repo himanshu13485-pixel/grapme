@@ -13,13 +13,22 @@ import { api } from '@/lib/api';
 // "Email Outreach" header, the 'linkedin' group under a LinkedIn "More…" toggle.
 type NavItem = {
   href: string; label: string; icon: string; module: string;
-  admin?: boolean; superOnly?: boolean; inboxBadge?: boolean; updatesBadge?: boolean; group?: 'email' | 'linkedin' | 'main';
+  admin?: boolean; superOnly?: boolean; sales?: boolean; inboxBadge?: boolean; updatesBadge?: boolean; supportBadge?: boolean; group?: 'email' | 'linkedin' | 'main';
 };
+// Pages a salesperson may reach in their restricted panel (nothing else).
+const SALES_ALLOWED = ['/sales-home', '/sales-clients', '/support', '/updates', '/my-profile'];
 const NAV: NavItem[] = [
+  // ── Salesperson panel (only these show for role SALES) ──
+  { href: '/sales-home', label: 'Dashboard', icon: '▦', sales: true, module: 'sales-home' },
+  { href: '/sales-clients', label: 'My Clients', icon: '🏢', sales: true, module: 'sales-clients' },
+  // ── Admin / shared ──
   { href: '/dashboard', label: 'Dashboard', icon: '▦', module: 'dashboard' },
   { href: '/updates', label: 'Updates', icon: '🔔', module: 'updates', updatesBadge: true },
   { href: '/registered-clients', label: 'Registered Clients', icon: '👥', admin: true, module: 'registered-clients' },
   { href: '/clients', label: 'Clients Workspace', icon: '🏢', admin: true, module: 'clients' },
+  { href: '/support', label: 'Client Support', icon: '🎧', module: 'support', supportBadge: true },
+  { href: '/broadcasts', label: 'Notifications', icon: '📢', admin: true, module: 'broadcasts' },
+  { href: '/sales-persons', label: 'Sales Persons', icon: '🧑‍💼', admin: true, module: 'sales-persons' },
   { href: '/live-clients', label: 'Live Clients', icon: '🟢', admin: true, module: 'live-clients' },
   { href: '/blog', label: 'Blog', icon: '📝', admin: true, module: 'blog' },
   // ── Email Outreach (collapsed under "More…") ──
@@ -58,6 +67,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   const [unread, setUnread] = useState(0);
   const [updatesUnread, setUpdatesUnread] = useState(0);
+  const [supportUnread, setSupportUnread] = useState(0);
+  const [broadcastUnread, setBroadcastUnread] = useState(0);
   const [toast, setToast] = useState('');
   const [updatesToast, setUpdatesToast] = useState('');
   const prevUnread = useRef<number | null>(null);
@@ -76,6 +87,57 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!loading && !user) router.replace('/login');
   }, [user, loading, router]);
+
+  // Salespersons live entirely inside their restricted panel — land them on
+  // their dashboard and keep them out of any other route.
+  useEffect(() => {
+    if (user?.role !== 'SALES') return;
+    const allowed = SALES_ALLOWED.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+    if (!allowed) router.replace('/sales-home');
+  }, [user, pathname, router]);
+
+  // Client Support unread badge (open/answered for clients; open/escalated for staff),
+  // polled for everyone. Refreshed when a support view signals a change.
+  useEffect(() => {
+    if (!user) return;
+    let stop = false;
+    async function check() {
+      try {
+        const { count } = await api.get<{ count: number }>('/support/badge');
+        if (!stop) setSupportUnread(count);
+      } catch { /* ignore */ }
+    }
+    check();
+    const id = setInterval(check, 60_000);
+    const onChanged = () => check();
+    window.addEventListener('support-changed', onChanged);
+    return () => {
+      stop = true;
+      clearInterval(id);
+      window.removeEventListener('support-changed', onChanged);
+    };
+  }, [user]);
+
+  // Client "Notification" (admin broadcasts) unread badge — clients only.
+  useEffect(() => {
+    if (user?.role !== 'CLIENT') return;
+    let stop = false;
+    async function check() {
+      try {
+        const { count } = await api.get<{ count: number }>('/broadcasts/my/unread');
+        if (!stop) setBroadcastUnread(count);
+      } catch { /* ignore */ }
+    }
+    check();
+    const id = setInterval(check, 60_000);
+    const onChanged = () => check();
+    window.addEventListener('broadcasts-changed', onChanged);
+    return () => {
+      stop = true;
+      clearInterval(id);
+      window.removeEventListener('broadcasts-changed', onChanged);
+    };
+  }, [user]);
 
   // Close the mobile drawer whenever the route changes.
   useEffect(() => setSidebarOpen(false), [pathname]);
@@ -109,9 +171,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         // already are within their own portal pages.
         if (
           !pathname.startsWith('/clients') &&
+          !pathname.startsWith('/support') &&
           pathname !== '/my-profile' &&
           pathname !== '/client-home' &&
           pathname !== '/updates' &&
+          pathname !== '/notifications' &&
           pathname !== '/pricing' &&
           pathname !== '/subscription'
         ) {
@@ -205,6 +269,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   const nav = NAV.filter((n) => {
+    // Salespersons get a strictly restricted panel: only their own pages.
+    if (user.role === 'SALES') return SALES_ALLOWED.includes(n.href);
+    // The salesperson-only items never show for anyone else.
+    if (n.sales) return false;
     if (user.role === 'SUPER_ADMIN') return true;
     if (user.role === 'SUB_ADMIN') {
       if (n.superOnly) return false; // e.g. managing other sub-admins
@@ -230,7 +298,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         ? 'Sub Admin'
         : user.role === 'CLIENT'
           ? 'Client'
-          : 'User';
+          : user.role === 'SALES'
+            ? 'Salesperson'
+            : 'User';
 
   // ── Client portal: themed by the client's membership colour ──
   if (user.role === 'CLIENT') {
@@ -285,6 +355,26 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               color={themeColor}
               badge={updatesUnread > 0 ? (
                 <span className="rounded-full bg-rose-500 px-2 py-0.5 text-[10px] font-semibold text-white shadow">{updatesUnread}</span>
+              ) : null}
+            />
+            <ClientNavItem
+              href="/notifications"
+              active={pathname === '/notifications'}
+              icon="📢"
+              label="Notification"
+              color={themeColor}
+              badge={broadcastUnread > 0 ? (
+                <span className="rounded-full bg-rose-500 px-2 py-0.5 text-[10px] font-semibold text-white shadow">{broadcastUnread}</span>
+              ) : null}
+            />
+            <ClientNavItem
+              href="/support"
+              active={pathname === '/support'}
+              icon="🎧"
+              label="Client Support"
+              color={themeColor}
+              badge={supportUnread > 0 ? (
+                <span className="rounded-full bg-rose-500 px-2 py-0.5 text-[10px] font-semibold text-white shadow">{supportUnread}</span>
               ) : null}
             />
 
@@ -475,6 +565,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   {item.updatesBadge && updatesUnread > 0 && (
                     <span className="rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white shadow">
                       {updatesUnread}
+                    </span>
+                  )}
+                  {item.supportBadge && supportUnread > 0 && (
+                    <span className="rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white shadow">
+                      {supportUnread}
                     </span>
                   )}
                 </Link>

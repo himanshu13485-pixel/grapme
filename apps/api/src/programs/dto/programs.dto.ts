@@ -3,6 +3,7 @@ import {
   IsArray,
   IsBoolean,
   IsDateString,
+  IsEmail,
   IsInt,
   IsOptional,
   IsString,
@@ -10,6 +11,12 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+
+/** An operations person to cc on the monthly campaign-data reminder. */
+export class OperationContactDto {
+  @IsOptional() @IsString() name?: string;
+  @IsEmail() email: string;
+}
 
 /** Client-facing LinkedIn send window (basic), collected at self-service setup. */
 export class LiClientSendWindowDto {
@@ -55,6 +62,7 @@ export class CreateClientDto {
 
 export class UpdateClientDto {
   @IsOptional() @IsString() name?: string;
+  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => OperationContactDto) operationContacts?: OperationContactDto[];
   @IsOptional() @IsString() invoiceNo?: string;
   @IsOptional() @IsString() contactPerson?: string;
   @IsOptional() @IsString() email?: string;

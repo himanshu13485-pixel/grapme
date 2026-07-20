@@ -116,6 +116,17 @@ async function request<T>(
   return res.json() as Promise<T>;
 }
 
+/** Fetch a binary response (e.g. a gated attachment) with the auth header. */
+export async function fetchBlob(path: string): Promise<Blob> {
+  const token = getToken();
+  const res = await fetch(`${BASE}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new ApiError(res.status, res.statusText);
+  return res.blob();
+}
+
 export const api = {
   get: <T>(path: string) => request<T>('GET', path),
   post: <T>(path: string, body?: unknown) => request<T>('POST', path, body),

@@ -38,6 +38,7 @@ export class MailerService {
     subject: string;
     html: string;
     headers?: Record<string, string>;
+    attachments?: { filename: string; content: Buffer; contentType?: string }[];
   }): Promise<SendResult> {
     const transport = this.buildTransport(params.account);
     const info = await transport.sendMail({
@@ -47,6 +48,7 @@ export class MailerService {
       subject: params.subject,
       html: params.html,
       headers: params.headers,
+      attachments: params.attachments,
     });
     this.logger.log(`Sent to ${params.to} via ${params.account.emailAddress}`);
     return {

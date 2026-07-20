@@ -16,7 +16,7 @@ export interface AuthUser {
   id: string;
   name: string;
   email: string;
-  role: 'SUPER_ADMIN' | 'SUB_ADMIN' | 'USER' | 'CLIENT';
+  role: 'SUPER_ADMIN' | 'SUB_ADMIN' | 'USER' | 'CLIENT' | 'SALES';
   tenantId: string;
   fullAccess?: boolean;
   accessModules?: string[];

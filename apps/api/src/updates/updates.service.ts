@@ -24,28 +24,27 @@ export class UpdatesService {
 
   private isAdmin(user: AuthUser) { return ADMIN_ROLES.includes(user.role as Role); }
 
-  /** Client ids the user may see/post to: admins → all in tenant, client → owned. */
+  /** Which clients this user may see/post to: admins → all; salesperson → their
+   *  assigned clients; client → the profiles they own. */
+  private clientScopeWhere(user: AuthUser): Prisma.ClientWhereInput {
+    if (this.isAdmin(user)) return { tenantId: user.tenantId };
+    if (user.role === Role.SALES) return { tenantId: user.tenantId, salesPersonId: user.userId };
+    return { tenantId: user.tenantId, ownerUserId: user.userId };
+  }
+
   private async allowedClientIds(user: AuthUser): Promise<string[]> {
-    const where: Prisma.ClientWhereInput = this.isAdmin(user)
-      ? { tenantId: user.tenantId }
-      : { tenantId: user.tenantId, ownerUserId: user.userId };
-    const rows = await this.prisma.client.findMany({ where, select: { id: true } });
+    const rows = await this.prisma.client.findMany({ where: this.clientScopeWhere(user), select: { id: true } });
     return rows.map((r) => r.id);
   }
 
   private async assertClientAccess(user: AuthUser, clientId: string) {
-    const ok = this.isAdmin(user)
-      ? await this.prisma.client.count({ where: { id: clientId, tenantId: user.tenantId } })
-      : await this.prisma.client.count({ where: { id: clientId, ownerUserId: user.userId } });
+    const ok = await this.prisma.client.count({ where: { id: clientId, ...this.clientScopeWhere(user) } });
     if (!ok) throw new ForbiddenException('You do not have access to this client');
   }
 
   /** Clients the current user can file updates under (for the composer's picker). */
   async clientOptions(user: AuthUser) {
-    const where: Prisma.ClientWhereInput = this.isAdmin(user)
-      ? { tenantId: user.tenantId }
-      : { tenantId: user.tenantId, ownerUserId: user.userId };
-    return this.prisma.client.findMany({ where, select: { id: true, name: true }, orderBy: { name: 'asc' } });
+    return this.prisma.client.findMany({ where: this.clientScopeWhere(user), select: { id: true, name: true }, orderBy: { name: 'asc' } });
   }
 
   // ── list / read ──────────────────────────────────────────────────────
@@ -160,7 +159,7 @@ export class UpdatesService {
     if (!thread) return;
 
     const [client, admins] = await Promise.all([
-      this.prisma.client.findUnique({ where: { id: thread.clientId }, select: { ownerUserId: true, name: true, email: true, mobile: true } }),
+      this.prisma.client.findUnique({ where: { id: thread.clientId }, select: { ownerUserId: true, salesPersonId: true, name: true, email: true, mobile: true } }),
       this.prisma.user.findMany({
         where: { tenantId: thread.tenantId, role: { in: [Role.SUPER_ADMIN, Role.SUB_ADMIN] }, status: 'ACTIVE' },
         select: { id: true, email: true, name: true },
@@ -169,12 +168,17 @@ export class UpdatesService {
     const clientOwner = client?.ownerUserId
       ? await this.prisma.user.findUnique({ where: { id: client.ownerUserId }, select: { id: true, email: true, name: true } })
       : null;
+    // The client's salesperson is part of the agency side and stays in the loop.
+    const salesPerson = client?.salesPersonId
+      ? await this.prisma.user.findUnique({ where: { id: client.salesPersonId }, select: { id: true, email: true, name: true } })
+      : null;
 
     const actorIsClient = actor.role === Role.CLIENT;
     // Bell → everyone on the board except the actor (both sides stay in the loop).
     const bellUserIds = new Set<string>();
     admins.forEach((a) => bellUserIds.add(a.id));
     if (clientOwner) bellUserIds.add(clientOwner.id);
+    if (salesPerson) bellUserIds.add(salesPerson.id);
     bellUserIds.delete(actor.userId);
     const link = `/updates?thread=${threadId}`;
     if (bellUserIds.size) {
@@ -183,10 +187,11 @@ export class UpdatesService {
       });
     }
 
-    // Email → the OTHER side only (client→admins, admin→client), if the toggle is on.
+    // Email → the OTHER side only, if the toggle is on. Agency side = admins +
+    // salesperson; client side = the client + its portal owner.
     if (thread.notifyEmail) {
       const emailTargets = actorIsClient
-        ? (admins.map((a) => a.email).filter(Boolean) as string[])
+        ? ([...admins.map((a) => a.email), salesPerson?.email].filter(Boolean) as string[])
         : ([client?.email, clientOwner?.email].filter(Boolean) as string[]);
       // Use the sanitized rich body for the email so bold/italic/lists/links render;
       // fall back to escaped plain text (e.g. for replies, which are plain).

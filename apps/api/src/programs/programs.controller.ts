@@ -21,7 +21,14 @@ import {
   CurrentUser,
   AuthUser,
 } from '../common/decorators/current-user.decorator';
+import { Role } from '@prisma/client';
+import { Roles } from '../common/decorators/roles.decorator';
 
+// Everyone who could already reach these endpoints — deliberately EXCLUDING SALES,
+// whose panel is served only by the scoped /sales/* API. Without this a salesperson
+// could read/mutate any client via the raw programs endpoints (their own service-level
+// scoping only special-cases CLIENT).
+@Roles(Role.SUPER_ADMIN, Role.SUB_ADMIN, Role.USER, Role.CLIENT)
 @Controller()
 export class ProgramsController {
   constructor(private readonly programs: ProgramsService) {}
@@ -48,6 +55,7 @@ export class ProgramsController {
     @Query('invoice') invoice?: string,
     @Query('status') status?: string,
     @Query('plan') plan?: string,
+    @Query('salesPersonId') salesPersonId?: string,
     @Query('linkedInEnabled') linkedInEnabled?: string,
     @Query('channel') channel?: string,
     @Query('expiryFrom') expiryFrom?: string,
@@ -63,6 +71,7 @@ export class ProgramsController {
       invoice,
       status,
       plan,
+      salesPersonId,
       linkedInEnabled,
       channel,
       expiryFrom,
@@ -180,6 +189,12 @@ export class ProgramsController {
   @Delete('clients/:id')
   deleteClient(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.programs.deleteClient(user, id);
+  }
+
+  /** Send the monthly campaign-data reminder now, to test recipients + mailbox. */
+  @Post('clients/:id/campaign-reminder/test')
+  testCampaignReminder(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.programs.testCampaignReminder(user, id);
   }
 
   // Mailbox group

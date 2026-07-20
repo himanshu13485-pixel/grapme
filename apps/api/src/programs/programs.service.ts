@@ -312,6 +312,7 @@ export class ProgramsService {
   private readonly clientListInclude = {
     _count: { select: { mailboxes: true, cohorts: true, enrollments: true, contacts: true } },
     owner: { select: { id: true, name: true, email: true, contactMobile: true, emailVerified: true, pendingEmail: true } },
+    salesPerson: { select: { id: true, name: true, email: true } },
   } as const;
 
   listClients(user: AuthUser) {
@@ -337,6 +338,7 @@ export class ProgramsService {
       invoice?: string;
       status?: string;
       plan?: string;
+      salesPersonId?: string;
       linkedInEnabled?: string;
       channel?: string;
       expiryFrom?: string;
@@ -392,6 +394,11 @@ export class ProgramsService {
     if (createdRange) and.push({ createdAt: createdRange });
 
     if (query.plan) and.push({ plan: query.plan });
+    if (query.salesPersonId) {
+      and.push(query.salesPersonId === 'none'
+        ? { salesPersonId: null }
+        : { salesPersonId: query.salesPersonId });
+    }
     if (query.linkedInEnabled === 'true') and.push({ linkedInEnabled: true });
     // Channel filter — matches the card's label logic (email is on unless explicitly off).
     switch ((query.channel ?? '').toUpperCase()) {
@@ -550,6 +557,7 @@ export class ProgramsService {
       },
       include: {
         owner: { select: { id: true, email: true, name: true, emailVerified: true, pendingEmail: true } },
+        salesPerson: { select: { id: true, name: true, email: true } },
         mailboxes: {
           select: { id: true, label: true, emailAddress: true, status: true, rotationOrder: true },
           orderBy: { rotationOrder: 'asc' },
@@ -574,8 +582,12 @@ export class ProgramsService {
   async updateClient(user: AuthUser, id: string, dto: UpdateClientDto) {
     const before = await this.assertClient(user, id);
     // Validity is stored with a start date; changing the window (re)starts the clock.
-    const { validityDays, ...rest } = dto;
+    const { validityDays, operationContacts, ...rest } = dto;
     const data: Prisma.ClientUpdateInput = { ...rest };
+    if (operationContacts !== undefined) {
+      // Persist as a plain JSON array of { name, email }.
+      data.operationContacts = operationContacts.map((o) => ({ name: o.name ?? '', email: o.email })) as Prisma.InputJsonValue;
+    }
     if (validityDays !== undefined && validityDays !== (before.validityDays ?? 0)) {
       if (validityDays > 0) {
         data.validityDays = Math.floor(validityDays);
@@ -1405,6 +1417,8 @@ export class ProgramsService {
     // inactive + pause cohorts.
     await this.notifyValidityMilestones();
     await this.enforceClientValidity();
+    // Monthly nudge to sales/ops that next month's campaign data is due.
+    await this.notifyCampaignDataDue();
 
     const due = await this.prisma.enrollment.findMany({
       where: {
@@ -2009,6 +2023,116 @@ export class ProgramsService {
   }
 
   /**
+   * Monthly campaign-data reminder. Within the first week of each month (on a
+   * per-client jittered day so sends spread out), email each EMAIL-enabled client's
+   * salesperson + operation contacts that next month's batch of ~80–100 buyers/
+   * suppliers is due to be added to the email campaign. Guarded to fire at most
+   * once per client per month via lastCampaignReminderAt.
+   */
+  private async notifyCampaignDataDue(): Promise<void> {
+    const now = new Date();
+    const dayOfMonth = now.getDate();
+    if (dayOfMonth > 7) return; // only during the first week of the month
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthKey = `${now.getFullYear()}-${now.getMonth()}`;
+
+    const clients = await this.prisma.client.findMany({
+      where: {
+        emailEnabled: true,
+        status: { equals: 'active', mode: 'insensitive' },
+        OR: [{ lastCampaignReminderAt: null }, { lastCampaignReminderAt: { lt: monthStart } }],
+      },
+      select: {
+        id: true,
+        name: true,
+        tenantId: true,
+        operationContacts: true,
+        salesPerson: { select: { id: true, email: true, name: true } },
+      },
+    });
+    if (clients.length === 0) return;
+
+    for (const c of clients) {
+      // Jitter: a deterministic target day (1..7) within the first week; only fire
+      // on/after that day so reminders don't all go out on the 1st.
+      const targetDay = 1 + (hashInt(c.id + monthKey) % 7);
+      if (dayOfMonth < targetDay) continue;
+
+      const opsEmails = extractOpsEmails(c.operationContacts);
+      const recipients = [...new Set([c.salesPerson?.email, ...opsEmails].filter(Boolean) as string[])];
+      if (recipients.length === 0) continue; // nobody to notify yet — retry later in the week
+
+      try {
+        await this.sendCampaignDataReminder(c.tenantId, c.name, recipients);
+        if (c.salesPerson?.id) {
+          await this.prisma.notification.create({
+            data: {
+              userId: c.salesPerson.id,
+              type: 'campaign-data',
+              title: `New campaign data due — ${c.name}`,
+              body: `Please add this month's 80–100 buyers/suppliers to ${c.name}'s email campaign.`,
+              link: `/sales-clients/${c.id}`,
+            },
+          });
+        }
+        await this.prisma.client.update({ where: { id: c.id }, data: { lastCampaignReminderAt: now } });
+        this.logger.log(`Campaign-data reminder sent for ${c.name} to ${recipients.join(', ')}`);
+      } catch (err) {
+        this.logger.warn(`Campaign-data reminder failed for ${c.name}: ${err}`);
+      }
+    }
+  }
+
+  /** Fire the campaign-data reminder right now (admin test) — no date window, no
+   *  monthly stamp. Returns the recipients so the UI can confirm delivery targets. */
+  async testCampaignReminder(user: AuthUser, clientId: string): Promise<{ sent: string[] }> {
+    this.assertAdmin(user);
+    const c = await this.prisma.client.findFirst({
+      where: { id: clientId, tenantId: user.tenantId },
+      select: { id: true, name: true, tenantId: true, operationContacts: true, salesPerson: { select: { email: true } } },
+    });
+    if (!c) throw new NotFoundException('Client not found');
+    const recipients = [...new Set([c.salesPerson?.email, ...extractOpsEmails(c.operationContacts)].filter(Boolean) as string[])];
+    if (recipients.length === 0) {
+      throw new BadRequestException('No recipients — assign a salesperson or add an operation contact first.');
+    }
+    await this.sendCampaignDataReminder(c.tenantId, c.name, recipients, true);
+    return { sent: recipients };
+  }
+
+  private async sendCampaignDataReminder(tenantId: string, clientName: string, to: string[], strict = false): Promise<void> {
+    const account = await this.tenantSystemMailbox(tenantId);
+    if (!account) {
+      if (strict) throw new BadRequestException('No sending mailbox is configured for this workspace.');
+      return;
+    }
+    const subject = `Action needed: new campaign data due for ${clientName}`;
+    const html = `
+      <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto">
+        <h2 style="color:#0f766e">New campaign data due — ${escapeHtml(clientName)}</h2>
+        <p>It's the start of a new month. Please add this month's fresh batch of
+        <strong>80–100 buyers/suppliers</strong> to the email campaign for
+        <strong>${escapeHtml(clientName)}</strong> so the outreach continues without a gap.</p>
+        <p style="color:#64748b;font-size:13px">Each subscription covers up to 1,000 buyers/suppliers globally, topped up ~80–100 per month.</p>
+        <p style="margin:20px 0">
+          <a href="${this.webUrlBase()}/login"
+             style="background:#0f766e;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600">
+            Open GrapMe
+          </a>
+        </p>
+        <p style="color:#94a3b8;font-size:12px">GrapMe · GVC Framework</p>
+      </div>`;
+    for (const addr of to) {
+      try {
+        await this.mailer.send({ account, to: addr, subject, html });
+      } catch (err) {
+        this.logger.warn(`Campaign reminder to ${addr} failed: ${err}`);
+        if (strict) throw new BadRequestException(`Send failed: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+  }
+
+  /**
    * Auto-enforcement: any active client whose validity has expired is flipped to
    * inactive and its running cohorts paused. Run at the top of each engine tick.
    */
@@ -2248,4 +2372,26 @@ export class ProgramsService {
       orderBy: { createdAt: 'asc' },
     });
   }
+}
+
+// ── helpers for the monthly campaign-data reminder ──
+function hashInt(str: string): number {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+
+function extractOpsEmails(json: unknown): string[] {
+  if (!Array.isArray(json)) return [];
+  return json
+    .map((x) => (x && typeof x === 'object' && 'email' in x ? String((x as { email?: unknown }).email ?? '').trim() : ''))
+    .filter((e) => /.+@.+\..+/.test(e));
+}
+
+function escapeHtml(s: string): string {
+  return (s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }

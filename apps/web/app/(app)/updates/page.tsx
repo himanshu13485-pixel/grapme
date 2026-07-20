@@ -60,25 +60,19 @@ export default function UpdatesBoardPage() {
 
   const reload = () => setReloadKey((k) => k + 1);
 
-  const tabs = [{ key: '', label: 'All' }, ...UPDATE_TYPES.map((t) => ({ key: t.key, label: t.label }))];
-
   return (
     <div className="mx-auto max-w-4xl">
       <PageHeader
-        title="Work / Meetings / Notification Update"
-        subtitle={isAdmin ? 'Post updates to a client and keep the conversation in one place.' : 'Updates and meetings from your account team — reply anytime.'}
+        title="Work"
+        subtitle={isAdmin ? 'Post work updates to a client and keep the conversation (incl. meetings) in one place.' : 'Work updates from your account team — reply anytime.'}
         action={(
           <div className="flex items-center gap-2">
             <button className="btn-ghost" onClick={markAllRead}>✓ Mark all read</button>
-            <button className="btn-primary" onClick={() => setComposing(true)}>＋ New update</button>
+            <button className="btn-primary" onClick={() => setComposing(true)}>＋ New work update</button>
           </div>
         )}
       />
 
-      {/* Filters */}
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <div className="flex-1"><Tabs tabs={tabs} active={type} onChange={(k) => { setType(k as any); setPage(1); }} /></div>
-      </div>
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <input className="input w-full sm:w-64" placeholder="Search title, body, author…" value={q} onChange={(e) => setQ(e.target.value)} />
         {isAdmin && clients.length > 0 && (
@@ -177,17 +171,6 @@ function Composer({
     <Modal open onClose={onClose} title="New update" wide disableBackdropClose>
       {error && <div className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div>}
       <div className="space-y-3">
-        <div>
-          <label className="mb-1 block text-sm font-medium text-slate-600">Type</label>
-          <div className="flex gap-2">
-            {UPDATE_TYPES.map((t) => (
-              <button key={t.key} type="button" onClick={() => setType(t.key)}
-                className={`rounded-lg border px-3 py-1.5 text-sm ${type === t.key ? 'border-brand-300 bg-brand-50 text-brand-700' : 'border-slate-200 text-slate-600'}`}>
-                {t.icon} {t.label}
-              </button>
-            ))}
-          </div>
-        </div>
         {isAdmin && (
           <div>
             <label className="mb-1 block text-sm font-medium text-slate-600">Client *</label>

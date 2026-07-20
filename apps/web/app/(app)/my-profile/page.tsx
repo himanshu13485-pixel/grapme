@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, FormEvent } from 'react';
+import { useEffect, useState, FormEvent } from 'react';
 import { useAuth } from '@/lib/auth';
 import { api } from '@/lib/api';
 import { PageHeader } from '@/components/ui';
@@ -8,6 +8,41 @@ import { PageHeader } from '@/components/ui';
 export default function MyProfilePage() {
   const { user, refreshUser } = useAuth();
   const isClient = user?.role === 'CLIENT';
+
+  // Notification preferences (email + WhatsApp alerts; the in-app bell is always on).
+  const [prefs, setPrefs] = useState({ notifyEmail: true, notifyWhatsapp: false, contactMobile: '' });
+  const [prefsBusy, setPrefsBusy] = useState(false);
+  const [prefsMsg, setPrefsMsg] = useState('');
+
+  useEffect(() => {
+    api
+      .get<{ notifyEmail?: boolean; notifyWhatsapp?: boolean; contactMobile?: string | null }>('/users/me/profile')
+      .then((p) =>
+        setPrefs({
+          notifyEmail: p.notifyEmail ?? true,
+          notifyWhatsapp: p.notifyWhatsapp ?? false,
+          contactMobile: p.contactMobile ?? '',
+        }),
+      )
+      .catch(() => {});
+  }, []);
+
+  async function savePrefs() {
+    setPrefsBusy(true);
+    setPrefsMsg('');
+    try {
+      await api.patch('/users/me/profile', {
+        notifyEmail: prefs.notifyEmail,
+        notifyWhatsapp: prefs.notifyWhatsapp,
+        ...(isClient ? {} : { contactMobile: prefs.contactMobile }),
+      });
+      setPrefsMsg('Notification preferences saved.');
+    } catch {
+      setPrefsMsg('Could not save. Please try again.');
+    } finally {
+      setPrefsBusy(false);
+    }
+  }
 
   // Account (admins/users can edit name + email; clients see it read-only).
   const [name, setName] = useState(user?.name ?? '');
@@ -126,6 +161,69 @@ export default function MyProfilePage() {
             </button>
           </form>
         )}
+      </div>
+
+      {/* Notification preferences */}
+      <div className="card mb-6 p-5">
+        <h2 className="mb-1 text-sm font-semibold text-slate-700">Notification preferences</h2>
+        <p className="mb-4 text-xs text-slate-400">
+          Controls all alerts, including Client Support tickets. In-app alerts (the bell)
+          always stay on. Sign-in and password emails are always sent.
+        </p>
+        <div className="space-y-3">
+          <label className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3">
+            <span>
+              <span className="block text-sm font-medium text-slate-700">Email alerts</span>
+              <span className="block text-xs text-slate-400">New ticket replies, updates, and other alerts by email.</span>
+            </span>
+            <input
+              type="checkbox"
+              className="h-5 w-5"
+              checked={prefs.notifyEmail}
+              onChange={(e) => setPrefs({ ...prefs, notifyEmail: e.target.checked })}
+            />
+          </label>
+          <label className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3">
+            <span>
+              <span className="block text-sm font-medium text-slate-700">WhatsApp alerts</span>
+              <span className="block text-xs text-slate-400">The same alerts on WhatsApp (requires a number below).</span>
+            </span>
+            <input
+              type="checkbox"
+              className="h-5 w-5"
+              checked={prefs.notifyWhatsapp}
+              onChange={(e) => setPrefs({ ...prefs, notifyWhatsapp: e.target.checked })}
+            />
+          </label>
+          {isClient ? (
+            // Clients already gave their number at registration — show it, don't re-ask.
+            prefs.notifyWhatsapp && (
+              <p className="text-xs text-slate-500">
+                {prefs.contactMobile
+                  ? <>Alerts will be sent to your registered number <strong className="text-slate-700">{prefs.contactMobile}</strong>. To change it, contact your account manager.</>
+                  : <>No number is on file. Contact your account manager to add one.</>}
+              </p>
+            )
+          ) : (
+            <div>
+              <label className="label">WhatsApp number</label>
+              <input
+                className="input"
+                value={prefs.contactMobile}
+                placeholder="+1 555 000 1234"
+                onChange={(e) => setPrefs({ ...prefs, contactMobile: e.target.value })}
+              />
+            </div>
+          )}
+          {prefsMsg && (
+            <p className={`rounded-lg px-3 py-2 text-sm ${prefsMsg.startsWith('Could not') ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-700'}`}>
+              {prefsMsg}
+            </p>
+          )}
+          <button type="button" className="btn-primary" disabled={prefsBusy} onClick={savePrefs}>
+            {prefsBusy ? 'Saving…' : 'Save preferences'}
+          </button>
+        </div>
       </div>
 
       {/* Password change */}

@@ -10,7 +10,7 @@ import { CreateUpdateDto, ReplyUpdateDto } from './dto/update.dto';
  * Visibility is scoped in the service (admins → all tenant clients, clients → own).
  */
 @Controller('updates')
-@Roles(Role.SUPER_ADMIN, Role.SUB_ADMIN, Role.USER, Role.CLIENT)
+@Roles(Role.SUPER_ADMIN, Role.SUB_ADMIN, Role.USER, Role.CLIENT, Role.SALES)
 export class UpdatesController {
   constructor(private readonly updates: UpdatesService) {}
 

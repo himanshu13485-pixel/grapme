@@ -17,6 +17,7 @@ enum Role {
   SUB_ADMIN
   USER
   CLIENT
+  SALES
 }
 
 enum UserStatus {
@@ -157,26 +158,28 @@ model Tenant {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  users           User[]
-  emailAccounts   EmailAccount[]
-  contactLists    ContactList[]
-  contacts        Contact[]
-  suppressionList Suppression[]
-  importJobs      ImportJob[]
-  templates       EmailTemplate[]
-  campaigns       Campaign[]
-  messages        EmailMessage[]
-  approvals       Approval[]
-  activityLogs    ActivityLog[]
-  creditAccounts  CreditAccount[]
-  clients         Client[]
-  cohorts         Cohort[]
-  enrollments     Enrollment[]
-  plans           Plan[]
-  greetings       Greeting[]
-  assets          Asset[]
-  blogPosts       BlogPost[]
+  users             User[]
+  emailAccounts     EmailAccount[]
+  contactLists      ContactList[]
+  contacts          Contact[]
+  suppressionList   Suppression[]
+  importJobs        ImportJob[]
+  templates         EmailTemplate[]
+  campaigns         Campaign[]
+  messages          EmailMessage[]
+  approvals         Approval[]
+  activityLogs      ActivityLog[]
+  creditAccounts    CreditAccount[]
+  clients           Client[]
+  cohorts           Cohort[]
+  enrollments       Enrollment[]
+  plans             Plan[]
+  greetings         Greeting[]
+  assets            Asset[]
+  blogPosts         BlogPost[]
   liAudiencePresets LiAudiencePreset[]
+  supportTickets    SupportTicket[]
+  broadcasts        Broadcast[]
 }
 
 // Uploaded images (e.g. for email templates), served publicly by id so mail
@@ -345,7 +348,11 @@ model User {
   canEdit               Boolean    @default(true) // sub-admin: allowed to use edit actions
   profileLimit          Int        @default(1) // client-portal: how many profiles they may self-create (billable)
   companyName           String? // client self-registration: their company (prefills New Client form)
-  contactMobile         String? // client self-registration: contact phone (prefills New Client form)
+  contactMobile         String? // client self-registration: contact phone (prefills New Client form). Also the salesperson "office mobile" and the WhatsApp number for alerts.
+  // Per-user communication preferences for *alert* notifications (in-app is always on).
+  // Transactional mail (verification, reset, welcome) ignores these and always sends.
+  notifyEmail           Boolean    @default(true)
+  notifyWhatsapp        Boolean    @default(false)
   emailVerified         Boolean    @default(true) // client self-registration must confirm email before login
   verifyTokenHash       String? // sha256 of the email-confirmation token
   verifyExpires         DateTime? // confirmation-link expiry
@@ -385,6 +392,17 @@ model User {
   // Sub-admin assignments
   assignmentsAsSubAdmin SubAdminAssignment[] @relation("SubAdmin")
   assignmentsAsUser     SubAdminAssignment[] @relation("AssignedUser")
+
+  // Sales: clients this salesperson is responsible for.
+  salesClients     Client[]         @relation("SalesPerson")
+  // Client Support relations.
+  raisedTickets    SupportTicket[]  @relation("TicketOwner")
+  assignedTickets  SupportTicket[]  @relation("TicketAssignee")
+  escalatedTickets SupportTicket[]  @relation("TicketEscalator")
+  supportMessages  SupportMessage[]
+
+  // Admin broadcasts delivered to this (client) user.
+  broadcastReceipts BroadcastRecipient[]
 
   @@index([tenantId])
   @@index([role])
@@ -888,6 +906,9 @@ model Client {
   contactPerson           String? // client-side point of contact (name)
   email                   String? // client contact email — also the report recipient
   ownerUserId             String? // client-portal login that owns this profile
+  salesPersonId           String? // the SALES user responsible for this client (nullable = unassigned)
+  operationContacts       Json      @default("[]") // [{ name, email }] — ops people cc'd on the monthly campaign-data reminder
+  lastCampaignReminderAt  DateTime? // guards the monthly "add next month's buyers/suppliers" reminder (once per month)
   mobile                  String? // client mobile incl. country code
   productCategory         String? // product / category being exported/imported
   serviceType             String? // EXPORT | IMPORT | BOTH
@@ -935,6 +956,7 @@ model Client {
 
   tenant              Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   owner               User?                @relation("ClientOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
+  salesPerson         User?                @relation("SalesPerson", fields: [salesPersonId], references: [id], onDelete: SetNull)
   mailboxes           EmailAccount[]
   sequenceSteps       SequenceStep[]
   cohorts             Cohort[]
@@ -945,8 +967,10 @@ model Client {
   campaigns           Campaign[]
   subAdminAssignments SubAdminAssignment[]
   liAudiencePresets   LiAudiencePreset[]
+  supportTickets      SupportTicket[]
 
   @@index([tenantId])
+  @@index([salesPersonId])
 }
 
 model SequenceStep {
@@ -1314,31 +1338,31 @@ model LiSequenceStep {
 }
 
 model LiLead {
-  id               String       @id @default(uuid())
-  campaignId       String
-  campaign         LiCampaign   @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  fullName         String
-  firstName        String?
-  lastName         String?
-  title            String?
-  company          String?
-  location         String?
-  profileUrl       String?
-  avatarUrl        String?
-  unipileMemberId  String?
+  id                  String       @id @default(uuid())
+  campaignId          String
+  campaign            LiCampaign   @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  fullName            String
+  firstName           String?
+  lastName            String?
+  title               String?
+  company             String?
+  location            String?
+  profileUrl          String?
+  avatarUrl           String?
+  unipileMemberId     String?
   unipileInvitationId String? // sent-invite id, used to withdraw a never-accepted invite
-  status           LiLeadStatus @default(PENDING)
-  currentStep      Int          @default(0)
+  status              LiLeadStatus @default(PENDING)
+  currentStep         Int          @default(0)
   // How many MESSAGE steps THIS lead will receive, drawn once from the campaign's
   // [followUpMin, followUpMax] at first schedule. Null until resolved (= all steps).
-  assignedMessages Int?
-  sentiment        LiSentiment?
-  intent           String?
-  connectedAt      DateTime?
-  lastActionAt     DateTime?
-  lastReplyAt      DateTime?
-  createdAt        DateTime     @default(now())
-  updatedAt        DateTime     @updatedAt
+  assignedMessages    Int?
+  sentiment           LiSentiment?
+  intent              String?
+  connectedAt         DateTime?
+  lastActionAt        DateTime?
+  lastReplyAt         DateTime?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
 
   conversation LiConversation?
   aiFetches    LiAiFetch[]
@@ -1411,4 +1435,130 @@ model LiScheduledAction {
 
   @@index([status, runAt])
   @@index([leadId])
+}
+
+// ───────────────── Client Support (tickets + two-way chat) ─────────────────
+// A client raises a ticket from the portal; it becomes a threaded conversation
+// with the client's assigned salesperson (or admins/sub-admins if unassigned).
+// Sales can escalate to admin/sub-admin, who resolve back. Attachments are
+// stored as DB blobs (private — never in webroot) and served via a gated route.
+enum SupportStatus {
+  OPEN
+  ANSWERED
+  RESOLVED
+  CLOSED
+}
+
+enum SupportSatisfaction {
+  SATISFIED
+  NOT_SATISFIED
+}
+
+enum SupportReplyRole {
+  CLIENT
+  SUPPORT
+}
+
+model SupportTicket {
+  id               String               @id @default(uuid())
+  tenantId         String
+  userId           String // the client-portal login who raised it
+  clientId         String? // the client workspace it belongs to (resolves salesperson / company / phone)
+  subject          String
+  category         String?
+  status           SupportStatus        @default(OPEN)
+  assignedToId     String? // the current handler (salesperson, admin, or sub-admin)
+  satisfaction     SupportSatisfaction?
+  satisfactionNote String?
+  lastReplyAt      DateTime             @default(now())
+  lastReplyRole    SupportReplyRole     @default(CLIENT)
+  escalatedAt      DateTime?
+  escalatedById    String?
+  escalationNote   String?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  tenant      Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user        User             @relation("TicketOwner", fields: [userId], references: [id], onDelete: Cascade)
+  client      Client?          @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  assignedTo  User?            @relation("TicketAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  escalatedBy User?            @relation("TicketEscalator", fields: [escalatedById], references: [id], onDelete: SetNull)
+  messages    SupportMessage[]
+
+  @@index([tenantId, status])
+  @@index([userId])
+  @@index([assignedToId])
+  @@index([clientId])
+}
+
+model SupportMessage {
+  id             String   @id @default(uuid())
+  ticketId       String
+  userId         String // the author of this message
+  body           String   @db.Text
+  attachmentData Bytes? // private blob (nullable); served only through the gated download route
+  attachmentName String?
+  attachmentMime String?
+  createdAt      DateTime @default(now())
+
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  user   User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+}
+
+// ───────────────── Admin Broadcasts (one-way Notification to clients) ─────────────────
+// An admin composes a titled, rich-HTML notification and sends it to a target
+// audience (all clients, a service segment, a plan, or one specific client). It is
+// delivered to each targeted client's portal "Notification" page, plus an optional
+// in-app bell alert / email / WhatsApp (each gated by the broadcast toggle AND the
+// recipient's own notification preferences). One-directional — clients cannot reply.
+enum BroadcastAudience {
+  ALL // every client
+  CHANNEL // by outreach channel (EMAIL / LINKEDIN)
+  PLAN // all clients on a plan
+  CLIENT // one specific client
+}
+
+model Broadcast {
+  id              String            @id @default(uuid())
+  tenantId        String
+  title           String
+  bodyHtml        String
+  signatureHtml   String?
+  audience        BroadcastAudience @default(ALL)
+  channel         String? // when audience = CHANNEL: EMAIL | LINKEDIN
+  plan            String? // when audience = PLAN
+  clientId        String? // when audience = CLIENT: the specific client
+  audienceLabel   String? // denormalized human label for the sent list
+  status          String            @default("DRAFT") // DRAFT | SENT
+  sentAt          DateTime? // when it was actually delivered (null while a draft)
+  showInApp       Boolean           @default(true)
+  sendEmail       Boolean           @default(true)
+  sendWhatsapp    Boolean           @default(false)
+  createdByUserId String
+  createdByName   String?
+  recipientCount  Int               @default(0)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  tenant     Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  recipients BroadcastRecipient[]
+
+  @@index([tenantId, createdAt])
+}
+
+model BroadcastRecipient {
+  id          String    @id @default(uuid())
+  broadcastId String
+  userId      String // the client-portal login who receives it
+  clientId    String? // the client profile it was sent about (for display)
+  readAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  broadcast Broadcast @relation(fields: [broadcastId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+  @@index([broadcastId])
 }

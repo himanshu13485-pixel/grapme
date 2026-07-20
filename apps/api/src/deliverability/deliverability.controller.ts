@@ -1,3 +1,5 @@
+import { Role as SalesGateRole } from '@prisma/client';
+import { Roles as SalesGateRoles } from '../common/decorators/roles.decorator';
 import { Body, Controller, Get, Post, Query, HttpCode } from '@nestjs/common';
 import { IsEmail, IsString } from 'class-validator';
 import { DeliverabilityService } from './deliverability.service';
@@ -16,6 +18,7 @@ class DomainQuery {
   domain: string;
 }
 
+@SalesGateRoles(SalesGateRole.SUPER_ADMIN, SalesGateRole.SUB_ADMIN, SalesGateRole.USER, SalesGateRole.CLIENT) // excludes SALES (scoped panel only)
 @Controller('deliverability')
 export class DeliverabilityController {
   constructor(private readonly deliverability: DeliverabilityService) {}

@@ -47,10 +47,12 @@ export interface BellItem {
 }
 export interface BellFeed { unread: number; items: BellItem[] }
 
+// The Work board is now Work-only. Meeting & Notification were retired — Meetings
+// live inside the Work conversation, and one-way Notifications moved to the
+// dedicated admin Broadcast → client Notification feature. `updateTypeMeta` still
+// renders the old labels for any legacy rows.
 export const UPDATE_TYPES: { key: UpdateType; label: string; icon: string }[] = [
   { key: 'WORK', label: 'Work', icon: '🗂' },
-  { key: 'MEETING', label: 'Meetings', icon: '📅' },
-  { key: 'NOTIFICATION', label: 'Notification', icon: '🔔' },
 ];
 
 export function updateTypeMeta(t: string): { label: string; icon: string; cls: string } {

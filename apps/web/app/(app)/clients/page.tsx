@@ -44,6 +44,8 @@ interface Client {
   _count?: { mailboxes: number; cohorts: number; enrollments: number; contacts: number };
   stats?: { emailSent: number; emailOpens: number; contacts: number; liInvites: number; liConnected: number; liLeads: number };
   owner?: { id: string; name: string; email: string; contactMobile?: string | null; emailVerified?: boolean | null; pendingEmail?: string | null } | null;
+  salesPerson?: { id: string; name: string; email: string } | null;
+  operationContacts?: { name: string; email: string }[];
 }
 
 export default function ClientsPage() {
@@ -53,12 +55,15 @@ export default function ClientsPage() {
   const [show, setShow] = useState(false);
   const [viewing, setViewing] = useState<Client | null>(null);
   const [editing, setEditing] = useState<Client | null>(null);
+  const [bulkAssign, setBulkAssign] = useState(false);
   const [q, setQ] = useState('');
   const [invoiceQ, setInvoiceQ] = useState('');
   const [emailQ, setEmailQ] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [planFilter, setPlanFilter] = useState('ALL');
   const [channelFilter, setChannelFilter] = useState('ALL');
+  const [salesFilter, setSalesFilter] = useState('ALL'); // ALL | none | <salespersonId>
+  const [salesPersons, setSalesPersons] = useState<{ id: string; name: string }[]>([]);
   const [dateField, setDateField] = useState<'expiry' | 'created'>('expiry');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -92,7 +97,7 @@ export default function ClientsPage() {
 
   const hasFilters =
     !!dq || !!dEmail || !!dInvoice || statusFilter !== 'ALL' || planFilter !== 'ALL' ||
-    channelFilter !== 'ALL' || !!dateFrom || !!dateTo;
+    channelFilter !== 'ALL' || salesFilter !== 'ALL' || !!dateFrom || !!dateTo;
 
   const load = useCallback(() => {
     const params = new URLSearchParams();
@@ -104,6 +109,7 @@ export default function ClientsPage() {
     if (statusFilter !== 'ALL') params.set('status', statusFilter.toLowerCase());
     if (planFilter !== 'ALL') params.set('plan', planFilter);
     if (channelFilter !== 'ALL') params.set('channel', channelFilter);
+    if (salesFilter !== 'ALL') params.set('salesPersonId', salesFilter);
     // Date range applies to either the subscription expiry or the created date.
     if (!isClient && (dateFrom || dateTo)) {
       const fromKey = dateField === 'created' ? 'createdFrom' : 'expiryFrom';
@@ -119,10 +125,16 @@ export default function ClientsPage() {
       })
       .catch(() => {})
       .finally(() => setLoaded(true));
-  }, [page, dq, dEmail, dInvoice, statusFilter, planFilter, channelFilter, dateField, dateFrom, dateTo, isClient]);
+  }, [page, dq, dEmail, dInvoice, statusFilter, planFilter, channelFilter, salesFilter, dateField, dateFrom, dateTo, isClient]);
 
   // Reset to page 1 whenever the filters change, then (re)fetch.
-  useEffect(() => setPage(1), [dq, dEmail, dInvoice, statusFilter, planFilter, channelFilter, dateField, dateFrom, dateTo]);
+  useEffect(() => setPage(1), [dq, dEmail, dInvoice, statusFilter, planFilter, channelFilter, salesFilter, dateField, dateFrom, dateTo]);
+
+  // Salesperson filter options (admins only).
+  useEffect(() => {
+    if (!isAdmin) return;
+    api.get<{ id: string; name: string }[]>('/sales/persons').then(setSalesPersons).catch(() => {});
+  }, [isAdmin]);
   useEffect(() => {
     load();
   }, [load]);
@@ -191,17 +203,29 @@ export default function ClientsPage() {
             : 'Each client runs its own mailbox group, sequence, and monthly cohorts'
         }
         action={
-          isAdmin || clientCanAdd ? (
+          isAdmin ? (
+            <div className="flex gap-2">
+              <button className="btn-ghost" onClick={() => setBulkAssign(true)}>Assign salesperson</button>
+              <button className="btn-primary" onClick={() => setShow(true)}>+ New client</button>
+            </div>
+          ) : clientCanAdd ? (
             <button className="btn-primary" onClick={() => setShow(true)}>
               {isClient
                 ? total === 0
                   ? '+ Set up my workspace'
                   : '+ Add profile'
-                : '+ New client'}
+                : '+ Add profile'}
             </button>
           ) : null
         }
       />
+      {bulkAssign && (
+        <BulkAssignSalesperson
+          clients={clients}
+          onClose={() => setBulkAssign(false)}
+          onDone={() => { setBulkAssign(false); load(); }}
+        />
+      )}
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
           <input
@@ -260,6 +284,18 @@ export default function ClientsPage() {
               <option value="EMAIL">📧 Email only</option>
               <option value="LINKEDIN">🔗 LinkedIn only</option>
               <option value="BOTH">📧 + 🔗 Both</option>
+            </select>
+          )}
+          {isAdmin && (
+            <select
+              className="input w-48"
+              value={salesFilter}
+              onChange={(e) => setSalesFilter(e.target.value)}
+              title="Filter by assigned salesperson"
+            >
+              <option value="ALL">All salespersons</option>
+              <option value="none">— Unassigned —</option>
+              {salesPersons.map((p) => <option key={p.id} value={p.id}>🧑‍💼 {p.name}</option>)}
             </select>
           )}
           {!isClient && (
@@ -337,10 +373,15 @@ export default function ClientsPage() {
                 {c.plan}
                 {c.invoiceNo && <span> · Invoice {c.invoiceNo}</span>}
               </div>
-              <div className="mt-2">
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 <span className="inline-flex items-center rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-700">
                   {channelLabel(c)}
                 </span>
+                {isAdmin && (
+                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${c.salesPerson ? 'bg-violet-50 text-violet-700' : 'bg-slate-100 text-slate-500'}`}>
+                    {c.salesPerson ? `🧑‍💼 ${c.salesPerson.name}` : 'No salesperson'}
+                  </span>
+                )}
               </div>
               {c.emailEnabled !== false && (
                 <div className="mt-4 grid grid-cols-3 gap-2 text-center">
@@ -963,6 +1004,7 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
   const [busy, setBusy] = useState(false);
   const [loginEmail, setLoginEmail] = useState(client.owner?.email ?? client.email ?? '');
   const [loginPassword, setLoginPassword] = useState('');
+  const [showLoginPw, setShowLoginPw] = useState(false);
   const [loginNote, setLoginNote] = useState('');
   const [loginBusy, setLoginBusy] = useState(false);
   const hasOwner = !!client.owner;
@@ -973,6 +1015,14 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
   const [ownerBusy, setOwnerBusy] = useState(false);
   const [status, setStatus] = useState((client.status ?? 'active').toLowerCase());
   const [statusBusy, setStatusBusy] = useState(false);
+  // Assigned salesperson (saved independently via /sales/assign).
+  const [salesPersons, setSalesPersons] = useState<{ id: string; name: string; email: string }[]>([]);
+  const [salesPersonId, setSalesPersonId] = useState(client.salesPerson?.id ?? '');
+  const [salesBusy, setSalesBusy] = useState(false);
+  const [salesMsg, setSalesMsg] = useState('');
+  const [opsContacts, setOpsContacts] = useState<{ name: string; email: string }[]>(client.operationContacts ?? []);
+  const [opsBusy, setOpsBusy] = useState(false);
+  const [opsMsg, setOpsMsg] = useState('');
   const { planNames, plans } = usePlans();
   // Always include the client's current plan even if it was later removed.
   const planOptions = [...new Set([client.plan, ...planNames].filter(Boolean))];
@@ -986,6 +1036,48 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
     }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client.id]);
+
+  useEffect(() => {
+    api.get<{ id: string; name: string; email: string }[]>('/sales/persons').then(setSalesPersons).catch(() => {});
+  }, []);
+
+  async function saveSalesperson() {
+    setSalesBusy(true); setSalesMsg('');
+    try {
+      await api.post('/sales/assign', { salesPersonId: salesPersonId || null, clientIds: [client.id] });
+      setSalesMsg('Saved');
+    } catch {
+      setSalesMsg('Failed');
+    } finally { setSalesBusy(false); }
+  }
+
+  async function persistOps() {
+    const clean = opsContacts.map((o) => ({ name: o.name.trim(), email: o.email.trim() })).filter((o) => o.email);
+    await api.patch(`/clients/${client.id}`, { operationContacts: clean });
+    setOpsContacts(clean);
+    return clean;
+  }
+
+  async function saveOps() {
+    setOpsBusy(true); setOpsMsg('');
+    try {
+      await persistOps();
+      setOpsMsg('Saved');
+    } catch {
+      setOpsMsg('Failed');
+    } finally { setOpsBusy(false); }
+  }
+
+  async function sendOpsTest() {
+    setOpsBusy(true); setOpsMsg('');
+    try {
+      await persistOps(); // test the current (saved) recipients
+      const r = await api.post<{ sent: string[] }>(`/clients/${client.id}/campaign-reminder/test`);
+      setOpsMsg(`Test sent to: ${r.sent.join(', ')}`);
+    } catch (e) {
+      setOpsMsg(e instanceof Error ? e.message : 'Test failed');
+    } finally { setOpsBusy(false); }
+  }
 
   async function toggleStatus(active: boolean) {
     if (
@@ -1139,6 +1231,63 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
         >
           {statusBusy ? '…' : active ? 'Deactivate' : 'Activate'}
         </button>
+      </div>
+
+      <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
+        <label className="label">Assigned salesperson</label>
+        <div className="flex items-center gap-2">
+          <select
+            className="input flex-1"
+            value={salesPersonId}
+            onChange={(e) => { setSalesPersonId(e.target.value); setSalesMsg(''); }}
+          >
+            <option value="">— Unassigned —</option>
+            {salesPersons.map((p) => (
+              <option key={p.id} value={p.id}>{p.name} ({p.email})</option>
+            ))}
+          </select>
+          <button type="button" className="btn-ghost" disabled={salesBusy} onClick={saveSalesperson}>
+            {salesBusy ? '…' : 'Save'}
+          </button>
+          {salesMsg && <span className={`text-xs ${salesMsg === 'Saved' ? 'text-emerald-600' : 'text-rose-600'}`}>{salesMsg}</span>}
+        </div>
+        <p className="mt-1 text-xs text-slate-400">The salesperson sees this client and handles its support tickets.</p>
+      </div>
+
+      {/* Operation contacts — cc'd on the monthly campaign-data reminder */}
+      <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
+        <div className="mb-1 flex items-center justify-between">
+          <label className="label mb-0">Operation contacts</label>
+          <button type="button" className="text-xs font-medium text-brand-700 hover:underline"
+            onClick={() => setOpsContacts([...opsContacts, { name: '', email: '' }])}>
+            + Add
+          </button>
+        </div>
+        <p className="mb-2 text-xs text-slate-400">
+          Ops people who get the monthly reminder to add the next 80–100 buyers/suppliers (alongside the salesperson).
+        </p>
+        {opsContacts.length === 0 && <p className="text-xs text-slate-400">No operation contacts yet.</p>}
+        <div className="space-y-2">
+          {opsContacts.map((o, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <input className="input flex-1" placeholder="Name" value={o.name}
+                onChange={(e) => setOpsContacts(opsContacts.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />
+              <input className="input flex-[2]" placeholder="email@company.com" value={o.email}
+                onChange={(e) => setOpsContacts(opsContacts.map((x, j) => j === i ? { ...x, email: e.target.value } : x))} />
+              <button type="button" className="text-rose-500 hover:text-rose-700"
+                onClick={() => setOpsContacts(opsContacts.filter((_, j) => j !== i))} title="Remove">✕</button>
+            </div>
+          ))}
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          <button type="button" className="btn-ghost" disabled={opsBusy} onClick={saveOps}>
+            {opsBusy ? '…' : 'Save contacts'}
+          </button>
+          <button type="button" className="btn-ghost" disabled={opsBusy} onClick={sendOpsTest} title="Send the monthly reminder now to check recipients + mailbox">
+            ✉ Send test mail
+          </button>
+          {opsMsg && <span className={`text-xs ${opsMsg.startsWith('Saved') || opsMsg.startsWith('Test sent') ? 'text-emerald-600' : 'text-rose-600'}`}>{opsMsg}</span>}
+        </div>
       </div>
 
       <div>
@@ -1299,8 +1448,14 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
           </div>
           <div>
             <label className="label">Set / reset password</label>
-            <input type="password" className="input" value={loginPassword}
-              onChange={(e) => setLoginPassword(e.target.value)} placeholder="Min 6 characters" />
+            <div className="relative">
+              <input type={showLoginPw ? 'text' : 'password'} className="input pr-16" value={loginPassword}
+                onChange={(e) => setLoginPassword(e.target.value)} placeholder="Min 6 characters" />
+              <button type="button" onClick={() => setShowLoginPw((s) => !s)}
+                className="absolute inset-y-0 right-2 my-auto h-6 text-xs font-medium text-slate-500 hover:text-slate-700">
+                {showLoginPw ? 'Hide' : 'Show'}
+              </button>
+            </div>
           </div>
         </div>
         <div className="mt-3 flex items-center gap-3">
@@ -1408,6 +1563,97 @@ function NumberField({
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
       />
+    </div>
+  );
+}
+
+// ── Bulk assign / unassign a salesperson across several clients ──
+function BulkAssignSalesperson({
+  clients,
+  onClose,
+  onDone,
+}: {
+  clients: Client[];
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [persons, setPersons] = useState<{ id: string; name: string; email: string }[]>([]);
+  const [salesPersonId, setSalesPersonId] = useState<string>('');
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    api.get<{ id: string; name: string; email: string }[]>('/sales/persons').then(setPersons).catch(() => {});
+  }, []);
+
+  function toggle(id: string) {
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function apply() {
+    if (picked.size === 0) { setErr('Select at least one client.'); return; }
+    setBusy(true); setErr('');
+    try {
+      await api.post('/sales/assign', {
+        salesPersonId: salesPersonId || null,
+        clientIds: [...picked],
+      });
+      onDone();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed to assign');
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 pt-16" onClick={onClose}>
+      <div className="w-full max-w-lg rounded-xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <h2 className="mb-1 text-lg font-bold text-slate-800">Assign salesperson</h2>
+        <p className="mb-4 text-xs text-slate-500">
+          Pick a salesperson (or leave as “Unassign”), then choose the clients to apply it to.
+        </p>
+        {err && <div className="mb-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{err}</div>}
+        <label className="mb-3 block text-sm">
+          <span className="mb-1 block font-medium text-slate-600">Salesperson</span>
+          <select
+            value={salesPersonId}
+            onChange={(e) => setSalesPersonId(e.target.value)}
+            className="w-full rounded-lg border border-slate-200 px-3 py-2"
+          >
+            <option value="">— Unassign —</option>
+            {persons.map((p) => (
+              <option key={p.id} value={p.id}>{p.name} ({p.email})</option>
+            ))}
+          </select>
+        </label>
+        <div className="mb-4 max-h-64 overflow-y-auto rounded-lg border border-slate-200">
+          {clients.length === 0 ? (
+            <div className="px-3 py-4 text-center text-sm text-slate-400">No clients in view.</div>
+          ) : (
+            clients.map((c) => (
+              <label key={c.id} className="flex cursor-pointer items-center gap-2 border-b border-slate-100 px-3 py-2 text-sm last:border-0 hover:bg-slate-50">
+                <input type="checkbox" checked={picked.has(c.id)} onChange={() => toggle(c.id)} />
+                <span className="flex-1 truncate text-slate-700">{c.name}</span>
+                <span className="text-xs text-slate-400">{c.salesPerson?.name ?? 'Unassigned'}</span>
+              </label>
+            ))
+          )}
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-slate-500">{picked.size} selected</span>
+          <div className="flex gap-2">
+            <button onClick={onClose} className="btn-ghost">Cancel</button>
+            <button disabled={busy} onClick={apply} className="btn-primary disabled:opacity-50">
+              {busy ? 'Applying…' : salesPersonId ? 'Assign' : 'Unassign'}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

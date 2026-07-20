@@ -1,3 +1,5 @@
+import { Role as SalesGateRole } from '@prisma/client';
+import { Roles as SalesGateRoles } from '../common/decorators/roles.decorator';
 import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
 import { GreetingsService } from './greetings.service';
 import {
@@ -5,6 +7,7 @@ import {
   AuthUser,
 } from '../common/decorators/current-user.decorator';
 
+@SalesGateRoles(SalesGateRole.SUPER_ADMIN, SalesGateRole.SUB_ADMIN, SalesGateRole.USER, SalesGateRole.CLIENT) // excludes SALES (scoped panel only)
 @Controller('greetings')
 export class GreetingsController {
   constructor(private readonly greetings: GreetingsService) {}

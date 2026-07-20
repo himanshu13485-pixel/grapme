@@ -1,3 +1,5 @@
+import { Role as SalesGateRole } from '@prisma/client';
+import { Roles as SalesGateRoles } from '../common/decorators/roles.decorator';
 import {
   Body,
   Controller,
@@ -24,6 +26,7 @@ export class UpsertTemplateDto {
   @IsOptional() @IsString() clientId?: string;
 }
 
+@SalesGateRoles(SalesGateRole.SUPER_ADMIN, SalesGateRole.SUB_ADMIN, SalesGateRole.USER, SalesGateRole.CLIENT) // excludes SALES (scoped panel only)
 @Controller('templates')
 export class TemplatesController {
   constructor(private readonly templates: TemplatesService) {}

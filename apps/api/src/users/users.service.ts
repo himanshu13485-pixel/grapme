@@ -17,6 +17,9 @@ const PUBLIC_FIELDS = {
   status: true,
   timezone: true,
   avatarUrl: true,
+  contactMobile: true,
+  notifyEmail: true,
+  notifyWhatsapp: true,
   lastLoginAt: true,
   createdAt: true,
 } as const;

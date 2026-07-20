@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsEmail,
   IsEnum,
   IsNotEmpty,
@@ -37,4 +38,18 @@ export class UpdateProfileDto {
   @IsOptional()
   @IsString()
   avatarUrl?: string;
+
+  /** WhatsApp / contact number used for alert notifications. */
+  @IsOptional()
+  @IsString()
+  contactMobile?: string;
+
+  /** Per-user alert channel preferences (in-app is always on). */
+  @IsOptional()
+  @IsBoolean()
+  notifyEmail?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  notifyWhatsapp?: boolean;
 }
