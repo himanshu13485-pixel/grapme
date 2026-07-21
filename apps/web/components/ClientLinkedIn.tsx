@@ -102,7 +102,7 @@ function ClientAccounts({ clientId, accounts, seats, reload }: { clientId: strin
   }
 
   async function remove(id: string) {
-    if (!confirm('Remove this LinkedIn seat? If it never finished connecting, this clears the pending row.')) return;
+    if (!confirm('Remove this LinkedIn seat? Any campaigns using it will also be removed.')) return;
     try { await api.del(`${BASE}/linkedin-accounts/${id}`); reload(); }
     catch (e: any) { alert(e.message ?? 'Could not remove the account'); }
   }

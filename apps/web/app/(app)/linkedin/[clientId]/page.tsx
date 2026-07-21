@@ -176,7 +176,7 @@ function AccountsTab({ clientId }: { clientId: string }) {
                     </span>
                     <button className="text-sm text-slate-500 hover:text-slate-800" onClick={async () => { await api.post(`/linkedin/linkedin-accounts/${a.id}/sync`); load(); }}>Sync</button>
                     {h.attention && <button className="text-sm text-brand-600 hover:text-brand-800" onClick={connect}>Reconnect</button>}
-                    <button className="text-sm text-rose-500 hover:text-rose-700" onClick={async () => { if (confirm('Remove this account?')) { await api.del(`/linkedin/linkedin-accounts/${a.id}`); load(); } }}>Remove</button>
+                    <button className="text-sm text-rose-500 hover:text-rose-700" onClick={async () => { if (confirm('Remove this account? Any campaigns using it will also be removed.')) { try { await api.del(`/linkedin/linkedin-accounts/${a.id}`); load(); } catch (e: any) { alert(e?.message ?? 'Could not remove the account'); } } }}>Remove</button>
                   </div>
                 </div>
               );

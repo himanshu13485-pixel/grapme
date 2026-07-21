@@ -108,7 +108,13 @@ export class LinkedInAccountsService {
 
   async remove(id: string) {
     await this.get(id);
-    await this.prisma.linkedInAccount.delete({ where: { id } });
+    // Campaigns require this account (FK), so a plain delete 500s once any campaign
+    // is attached. Remove the account's campaigns first — their leads + scheduled
+    // actions cascade from the campaign — then the account, atomically.
+    await this.prisma.$transaction([
+      this.prisma.liCampaign.deleteMany({ where: { linkedInAccountId: id } }),
+      this.prisma.linkedInAccount.delete({ where: { id } }),
+    ]);
     return { ok: true };
   }
 }
