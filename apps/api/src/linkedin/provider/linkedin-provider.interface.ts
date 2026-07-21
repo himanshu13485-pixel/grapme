@@ -12,6 +12,8 @@ export interface HostedAuthLink {
 export interface ProviderAccount {
   accountId: string;
   status: 'CONNECTED' | 'CREDENTIALS' | 'DISCONNECTED' | 'ERROR' | 'PENDING';
+  /** True when the account no longer exists on the provider (deleted/unlinked). */
+  deleted?: boolean;
   fullName?: string;
   headline?: string;
   profileUrl?: string;

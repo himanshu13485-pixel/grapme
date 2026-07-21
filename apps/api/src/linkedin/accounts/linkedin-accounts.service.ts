@@ -57,6 +57,20 @@ export class LinkedInAccountsService {
     const a = await this.get(id);
     if (!a.unipileAccountId) return a;
     const info = await this.provider.getAccount(a.unipileAccountId);
+    // Account was deleted on Unipile's side → drop the stale local row so it stops
+    // showing as connected. If a campaign still references it (FK), we can't hard-
+    // delete, so fall back to marking it disconnected.
+    if (info.deleted) {
+      try {
+        await this.prisma.linkedInAccount.delete({ where: { id } });
+        return { id, removed: true };
+      } catch {
+        return this.prisma.linkedInAccount.update({
+          where: { id },
+          data: { status: LinkedInAccountStatus.DISCONNECTED, lastSyncedAt: new Date() },
+        });
+      }
+    }
     return this.prisma.linkedInAccount.update({
       where: { id },
       data: {

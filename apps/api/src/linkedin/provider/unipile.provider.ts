@@ -64,7 +64,15 @@ export class UnipileProvider implements LinkedInProvider {
 
   async getAccount(accountId: string): Promise<ProviderAccount> {
     const client = this.getClient();
-    const a = await client.account.getOne(accountId);
+    let a: Awaited<ReturnType<typeof client.account.getOne>>;
+    try {
+      a = await client.account.getOne(accountId);
+    } catch (err) {
+      // Account was deleted on Unipile's side → report it as disconnected so a
+      // Sync reconciles the stale local row instead of erroring.
+      if (isNotFound(err)) return { accountId, status: 'DISCONNECTED', deleted: true };
+      throw err;
+    }
     return {
       accountId,
       status: this.mapStatus(a?.sources?.[0]?.status),
@@ -268,4 +276,12 @@ export class UnipileProvider implements LinkedInProvider {
     const m = profileUrl.match(/\/in\/([^/?#]+)/i);
     return m ? decodeURIComponent(m[1]) : profileUrl;
   }
+}
+
+/** True when a Unipile error means "this account no longer exists" (deleted/unlinked). */
+function isNotFound(err: unknown): boolean {
+  const e = err as { status?: number; statusCode?: number; body?: { status?: number }; message?: string };
+  const code = e?.status ?? e?.statusCode ?? e?.body?.status;
+  if (code === 404) return true;
+  return /\b404\b|not[\s_-]*found|no such account|unknown account|does not exist/i.test(String(e?.message ?? err));
 }
