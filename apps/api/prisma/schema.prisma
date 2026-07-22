@@ -1082,6 +1082,16 @@ enum LiStepType {
   MESSAGE
 }
 
+// When a follow-up MESSAGE step should fire, relative to whether the connection
+// invite was accepted. ANY = the normal accepted flow (default; back-compat);
+// IF_ACCEPTED = only when accepted; IF_NOT_ACCEPTED = only when the invite was
+// never accepted (branch), letting a sequence skip one step and send another.
+enum LiStepCondition {
+  ANY
+  IF_ACCEPTED
+  IF_NOT_ACCEPTED
+}
+
 enum LiLeadStatus {
   PENDING
   CONNECTION_PENDING
@@ -1318,20 +1328,21 @@ model LiTargetAudienceSpec {
 }
 
 model LiSequenceStep {
-  id         String     @id @default(uuid())
+  id         String          @id @default(uuid())
   campaignId String
-  campaign   LiCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  campaign   LiCampaign      @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   order      Int
   type       LiStepType
-  waitHours  Int        @default(0)
+  condition  LiStepCondition @default(ANY) // when a MESSAGE step fires (accept branch)
+  waitHours  Int             @default(0)
   body       String?
   note       String?
   // Alternate wordings for this step (human-likeness). One is picked at random per
   // lead at send time from [body/note, ...variants], so no single string repeats to
   // the whole audience. Empty = single fixed wording (back-compat).
-  variants   String[]   @default([])
-  createdAt  DateTime   @default(now())
-  updatedAt  DateTime   @updatedAt
+  variants   String[]        @default([])
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
 
   @@unique([campaignId, order])
   @@index([campaignId])

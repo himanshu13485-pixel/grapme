@@ -56,8 +56,8 @@ export function LiRegularWizard({
   const [audience, setAudience] = useState<Audience>(emptyAudience);
   const [note, setNote] = useState('');
   const [noteVariants, setNoteVariants] = useState<string[]>([]);
-  const [followUps, setFollowUps] = useState<{ waitHours: number; body: string; variants: string[] }[]>([
-    { waitHours: 24, body: 'Hi {first_name}, thanks for connecting. Would love to share how we help teams like {company}.', variants: [] },
+  const [followUps, setFollowUps] = useState<{ waitHours: number; body: string; variants: string[]; condition: 'ANY' | 'IF_ACCEPTED' | 'IF_NOT_ACCEPTED' }[]>([
+    { waitHours: 24, body: 'Hi {first_name}, thanks for connecting. Would love to share how we help teams like {company}.', variants: [], condition: 'ANY' },
   ]);
   const [sched, setSched] = useState({
     timezone: 'Asia/Kolkata', run247: false, workStartHour: 9, workEndHour: 18,
@@ -124,7 +124,7 @@ export function LiRegularWizard({
       const conn = c.steps.find((s) => s.type === 'CONNECTION_REQUEST');
       setNote(conn?.note ?? '');
       setNoteVariants(conn?.variants ?? []);
-      const msgs = c.steps.filter((s) => s.type === 'MESSAGE').map((s) => ({ waitHours: s.waitHours, body: s.body ?? '', variants: s.variants ?? [] }));
+      const msgs = c.steps.filter((s) => s.type === 'MESSAGE').map((s) => ({ waitHours: s.waitHours, body: s.body ?? '', variants: s.variants ?? [], condition: (s.condition ?? 'ANY') as 'ANY' | 'IF_ACCEPTED' | 'IF_NOT_ACCEPTED' }));
       if (msgs.length) setFollowUps(msgs);
       setSched((prev) => ({
         ...prev,
@@ -204,7 +204,7 @@ export function LiRegularWizard({
   function buildSteps() {
     const steps: any[] = [];
     if (outreachType === 'WITH_CONNECTION') steps.push({ type: 'CONNECTION_REQUEST', waitHours: 0, note: note || undefined, variants: cleanVariants(noteVariants) });
-    followUps.forEach((f, i) => steps.push({ type: 'MESSAGE', waitHours: outreachType === 'DIRECT_MESSAGES' && i === 0 ? 0 : Number(f.waitHours), body: f.body, variants: cleanVariants(f.variants) }));
+    followUps.forEach((f, i) => steps.push({ type: 'MESSAGE', condition: outreachType === 'WITH_CONNECTION' ? f.condition : 'ANY', waitHours: outreachType === 'DIRECT_MESSAGES' && i === 0 ? 0 : Number(f.waitHours), body: f.body, variants: cleanVariants(f.variants) }));
     return steps;
   }
 
@@ -387,12 +387,31 @@ export function LiRegularWizard({
                     {followUps.length > 1 && <button className="text-rose-500" onClick={() => setFollowUps((fs) => fs.filter((_, j) => j !== i))}>Delete</button>}
                   </div>
                 </div>
+                {outreachType === 'WITH_CONNECTION' && (
+                  <div className="mb-2 flex items-center gap-2 text-sm">
+                    <span className="text-slate-500">Send this step</span>
+                    <select
+                      className="rounded border border-slate-300 px-2 py-1"
+                      value={f.condition}
+                      onChange={(e) => setFollowUps((fs) => fs.map((x, j) => j === i ? { ...x, condition: e.target.value as 'ANY' | 'IF_ACCEPTED' | 'IF_NOT_ACCEPTED' } : x))}
+                    >
+                      <option value="ANY">Always (after the invite is accepted)</option>
+                      <option value="IF_ACCEPTED">Only if the connection was accepted</option>
+                      <option value="IF_NOT_ACCEPTED">Only if the connection was NOT accepted</option>
+                    </select>
+                  </div>
+                )}
                 <textarea className="input" rows={3} value={f.body} onChange={(e) => setFollowUps((fs) => fs.map((x, j) => j === i ? { ...x, body: e.target.value } : x))} />
                 <div className="mt-1 text-xs text-slate-400">Tokens: {'{first_name} {last_name} {company} {title}'}</div>
                 <VariantsEditor variants={f.variants} onChange={(v) => setFollowUps((fs) => fs.map((x, j) => j === i ? { ...x, variants: v } : x))} />
               </div>
             ))}
-            <button className="btn-ghost w-full" onClick={() => setFollowUps((fs) => [...fs, { waitHours: 48, body: '', variants: [] }])}>+ Add message</button>
+            <button className="btn-ghost w-full" onClick={() => setFollowUps((fs) => [...fs, { waitHours: 48, body: '', variants: [], condition: 'ANY' }])}>+ Add message</button>
+            {outreachType === 'WITH_CONNECTION' && (
+              <p className="mt-2 text-xs text-slate-400">
+                Branch example: FU-1 = Always · FU-2 = “Only if accepted” · FU-3 = “Only if NOT accepted”. LinkedIn only delivers DMs to accepted connections, so the “NOT accepted” branch may not reach non-connections.
+              </p>
+            )}
             <p className="mt-2 text-xs text-slate-500">
               💡 Add alternate wordings to any step — each lead gets one at random, so no message repeats to your
               whole audience (looks human, safer for the account).

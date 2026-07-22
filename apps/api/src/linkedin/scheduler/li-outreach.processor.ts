@@ -110,7 +110,10 @@ export class LiOutreachProcessor extends WorkerHost {
             .catch((e) => this.logger.warn(`Withdraw invite for lead ${ctx.lead.id} failed: ${(e as Error).message}`));
         }
         await this.prisma.liLead.update({ where: { id: ctx.lead.id }, data: { status: LiLeadStatus.NOT_ACCEPTED } });
-        return this.complete(actionId);
+        await this.complete(actionId);
+        // Run the "if not accepted" branch of the sequence, if one is defined.
+        await this.scheduleNextMessage(ctx, 0);
+        return;
       }
       return this.scheduler.rearm(actionId, new Date(Date.now() + RECHECK_INTERVAL_MS));
     }
@@ -130,7 +133,17 @@ export class LiOutreachProcessor extends WorkerHost {
 
     const memberId = await this.ensureMemberId(ctx);
     const text = renderTemplate(bodyRaw, ctx.lead);
-    const res = await this.provider.sendMessage({ accountId: ctx.account.unipileAccountId!, memberId, text });
+    let res: Awaited<ReturnType<typeof this.provider.sendMessage>>;
+    try {
+      res = await this.provider.sendMessage({ accountId: ctx.account.unipileAccountId!, memberId, text });
+    } catch (err) {
+      // e.g. LinkedIn refuses a DM to someone who isn't a connection (the
+      // IF_NOT_ACCEPTED branch). Don't loop — log, skip this step, move on.
+      this.logger.warn(`LI message send failed for lead ${ctx.lead.id} (step ${stepOrder}): ${(err as Error).message}`);
+      await this.complete(actionId);
+      await this.scheduleNextMessage(ctx, stepOrder);
+      return;
+    }
 
     const conversation = await this.prisma.liConversation.upsert({
       where: { leadId: ctx.lead.id },
@@ -146,14 +159,21 @@ export class LiOutreachProcessor extends WorkerHost {
   }
 
   private async scheduleNextMessage(ctx: LeadWithContext, afterOrder: number) {
-    const assigned = await this.resolveAssignedMessages(ctx);
-    const messageSteps = ctx.steps.filter((s) => s.type === 'MESSAGE');
-    const next = ctx.steps.find((s) => s.order === afterOrder + 1 && s.type === 'MESSAGE');
+    // The connection outcome drives which steps are eligible: accepted leads run
+    // ANY/IF_ACCEPTED steps, never-accepted leads run only IF_NOT_ACCEPTED steps.
+    const accepted = !!ctx.lead.connectedAt;
+    const eligible = ctx.steps.filter((s) => s.type === 'MESSAGE' && stepAllowed(s.condition, accepted));
+    const next = eligible.find((s) => s.order > afterOrder);
     if (next) {
-      // 1-based position of `next` among MESSAGE steps = its follow-up number. Only send
-      // it if it's within this lead's randomly-assigned message count.
-      const idx = messageSteps.findIndex((s) => s.order === next.order) + 1;
-      if (idx <= assigned) {
+      // Human-likeness cap (random follow-up count) applies to the accepted flow only;
+      // the not-accepted branch always runs its steps.
+      let withinCap = true;
+      if (accepted) {
+        const assigned = await this.resolveAssignedMessages(ctx);
+        const idx = eligible.findIndex((s) => s.order === next.order) + 1;
+        withinCap = idx <= assigned;
+      }
+      if (withinCap) {
         await this.scheduler.schedule(ctx.lead.id, LiScheduledActionType.SEND_MESSAGE, next.order, new Date(Date.now() + next.waitHours * 60 * 60 * 1000));
         return;
       }
@@ -274,5 +294,22 @@ export class LiOutreachProcessor extends WorkerHost {
   }
   private fail(actionId: string, error: string) {
     return this.prisma.liScheduledAction.update({ where: { id: actionId }, data: { status: LiScheduledActionStatus.FAILED, lastError: error } }).then(() => undefined);
+  }
+}
+
+/**
+ * Whether a MESSAGE step is eligible for a lead, given the connection outcome.
+ * `accepted` = the invite was accepted. LinkedIn only allows DMs to 1st-degree
+ * connections, so ANY/IF_ACCEPTED run for accepted leads; IF_NOT_ACCEPTED is the
+ * branch for leads that never accepted (delivery may be limited by LinkedIn).
+ */
+function stepAllowed(condition: string | null | undefined, accepted: boolean): boolean {
+  switch (condition ?? 'ANY') {
+    case 'IF_NOT_ACCEPTED':
+      return !accepted;
+    case 'IF_ACCEPTED':
+      return accepted;
+    default: // ANY
+      return accepted;
   }
 }

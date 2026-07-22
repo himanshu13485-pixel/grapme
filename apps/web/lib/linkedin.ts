@@ -142,6 +142,7 @@ export interface LiSequenceStep {
   id: string;
   order: number;
   type: 'CONNECTION_REQUEST' | 'MESSAGE';
+  condition?: 'ANY' | 'IF_ACCEPTED' | 'IF_NOT_ACCEPTED';
   waitHours: number;
   body?: string | null;
   note?: string | null;

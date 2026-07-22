@@ -168,7 +168,7 @@ export class LiCampaignsService {
       this.prisma.liSequenceStep.deleteMany({ where: { campaignId: id } }),
       this.prisma.liSequenceStep.createMany({
         data: dto.steps.map((s, i) => ({
-          campaignId: id, order: i + 1, type: s.type, waitHours: s.waitHours, body: s.body, note: s.note,
+          campaignId: id, order: i + 1, type: s.type, condition: s.condition ?? 'ANY', waitHours: s.waitHours, body: s.body, note: s.note,
           // Keep only non-empty alternate wordings.
           variants: (s.variants ?? []).map((v) => (v ?? '').trim()).filter((v) => v.length > 0),
         })),

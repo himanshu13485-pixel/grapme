@@ -3,7 +3,7 @@ import {
   ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsEnum, IsInt, IsOptional, IsString,
   Max, Min, MinLength, ValidateNested,
 } from 'class-validator';
-import { LiCampaignMode, LiCampaignType, LiOutreachType, LiStepType } from '@prisma/client';
+import { LiCampaignMode, LiCampaignType, LiOutreachType, LiStepType, LiStepCondition } from '@prisma/client';
 
 export class CreateLiCampaignDto {
   @IsString() clientId!: string;
@@ -26,6 +26,8 @@ export class UpdateLiCampaignDto {
 
 export class LiSequenceStepDto {
   @IsEnum(LiStepType) type!: LiStepType;
+  // When this MESSAGE step fires relative to the connection outcome (default ANY).
+  @IsOptional() @IsEnum(LiStepCondition) condition?: LiStepCondition;
   @IsInt() @Min(0) waitHours!: number;
   @IsOptional() @IsString() body?: string;
   @IsOptional() @IsString() note?: string;
