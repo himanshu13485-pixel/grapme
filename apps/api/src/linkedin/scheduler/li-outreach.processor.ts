@@ -49,7 +49,15 @@ export class LiOutreachProcessor extends WorkerHost {
     // even before the engine tick pauses the campaign. Defer, don't cancel — the
     // action is restored when the campaign resumes on reactivation.
     if (!(await this.clientCanSend(ctx.campaign.clientId))) return this.scheduler.rearm(scheduledActionId, this.scheduler.tomorrow());
-    if (ctx.lead.status === LiLeadStatus.REPLIED || ctx.lead.status === LiLeadStatus.EXCLUDED || ctx.lead.status === LiLeadStatus.CAMPAIGN_COMPLETED) return this.complete(scheduledActionId);
+    // NOT_ACCEPTED is terminal: the invite was given up on and withdrawn, so the lead
+    // is out of the sequence — no further follow-ups (the "not yet accepted" branch
+    // only applies while the invite is still pending).
+    if (
+      ctx.lead.status === LiLeadStatus.REPLIED ||
+      ctx.lead.status === LiLeadStatus.EXCLUDED ||
+      ctx.lead.status === LiLeadStatus.CAMPAIGN_COMPLETED ||
+      ctx.lead.status === LiLeadStatus.NOT_ACCEPTED
+    ) return this.complete(scheduledActionId);
     // Grace-window close needs no provider call — handle it before the account check so
     // a disconnected seat can't block marking finished leads as completed.
     if ((job.name as LiJob) === LiJob.CompleteLead) return this.doCompleteLead(scheduledActionId, ctx);
@@ -93,6 +101,11 @@ export class LiOutreachProcessor extends WorkerHost {
     });
     await this.complete(actionId);
     await this.scheduler.schedule(ctx.lead.id, LiScheduledActionType.CHECK_ACCEPTANCE, undefined, new Date(Date.now() + FIRST_ACCEPTANCE_CHECK_MS));
+    // Follow-ups run on their own clock from the invite ("N hours after the previous
+    // step"), so an "Always" step lands on time whether or not the invite was
+    // accepted. Acceptance polling continues in parallel and each step re-checks the
+    // branch when it fires.
+    if (ctx.steps.some((s) => s.type === 'MESSAGE')) await this.scheduleNextMessage(ctx, 1);
   }
 
   private async doCheckAcceptance(actionId: string, attempts: number, ctx: LeadWithContext) {
@@ -109,17 +122,18 @@ export class LiOutreachProcessor extends WorkerHost {
             .withdrawConnection({ accountId: ctx.account.unipileAccountId!, invitationId: ctx.lead.unipileInvitationId })
             .catch((e) => this.logger.warn(`Withdraw invite for lead ${ctx.lead.id} failed: ${(e as Error).message}`));
         }
+        // The follow-up timeline (incl. any "if NOT accepted" branch) is already
+        // running from the invite, so nothing to schedule here.
         await this.prisma.liLead.update({ where: { id: ctx.lead.id }, data: { status: LiLeadStatus.NOT_ACCEPTED } });
-        await this.complete(actionId);
-        // Run the "if not accepted" branch of the sequence, if one is defined.
-        await this.scheduleNextMessage(ctx, 0);
-        return;
+        return this.complete(actionId);
       }
       return this.scheduler.rearm(actionId, new Date(Date.now() + RECHECK_INTERVAL_MS));
     }
     await this.prisma.liLead.update({ where: { id: ctx.lead.id }, data: { status: LiLeadStatus.CONNECTED, connectedAt: new Date(), currentStep: 1 } });
     await this.complete(actionId);
-    await this.scheduleNextMessage(ctx, 1);
+    // Follow-ups are already queued from the invite. Only close the lead out here
+    // when the sequence has no follow-up messages at all.
+    if (!ctx.steps.some((s) => s.type === 'MESSAGE')) await this.scheduleNextMessage(ctx, 1);
   }
 
   private async doSendMessage(actionId: string, stepOrder: number, ctx: LeadWithContext) {
@@ -128,6 +142,41 @@ export class LiOutreachProcessor extends WorkerHost {
 
     const step = ctx.steps.find((s) => s.order === stepOrder);
     if (!step) return this.complete(actionId);
+
+    // Accept branch, judged right now: e.g. "only if accepted" is skipped when the
+    // invite is still unaccepted, and the sequence moves straight to the next step
+    // (which may be the "only if NOT accepted" alternative).
+    let accepted = !!ctx.lead.connectedAt;
+    // Still waiting on the invite? Check live rather than trusting the last poll —
+    // otherwise a short wait (or a manual "Send next") could take the wrong branch
+    // just because the 3-hourly acceptance check hadn't run yet.
+    if (
+      !accepted &&
+      (step.condition ?? 'ANY') !== 'ANY' &&
+      ctx.lead.status === LiLeadStatus.CONNECTION_PENDING &&
+      ctx.lead.unipileMemberId
+    ) {
+      try {
+        accepted = await this.provider.isConnectionAccepted({
+          accountId: ctx.account.unipileAccountId!,
+          memberId: ctx.lead.unipileMemberId,
+        });
+        if (accepted) {
+          await this.prisma.liLead.update({
+            where: { id: ctx.lead.id },
+            data: { status: LiLeadStatus.CONNECTED, connectedAt: new Date() },
+          });
+        }
+      } catch (err) {
+        this.logger.warn(`Live acceptance check failed for lead ${ctx.lead.id}: ${(err as Error).message}`);
+      }
+    }
+    if (!stepAllowed(step.condition, accepted)) {
+      await this.complete(actionId);
+      await this.scheduleNextMessage(ctx, stepOrder);
+      return;
+    }
+
     const bodyRaw = pickVariant(step.body, step.variants);
     if (!bodyRaw) return this.complete(actionId);
 
@@ -158,22 +207,21 @@ export class LiOutreachProcessor extends WorkerHost {
     await this.scheduleNextMessage(ctx, stepOrder);
   }
 
+  /**
+   * Queue the next MESSAGE step on the timeline. Steps are scheduled purely by order
+   * + waitHours ("N hours after the previous step"); whether a step actually sends is
+   * decided when it fires (see doSendMessage), so a lead accepting late still gets
+   * the right branch.
+   */
   private async scheduleNextMessage(ctx: LeadWithContext, afterOrder: number) {
-    // The connection outcome drives which steps are eligible: accepted leads run
-    // ANY/IF_ACCEPTED steps, never-accepted leads run only IF_NOT_ACCEPTED steps.
-    const accepted = !!ctx.lead.connectedAt;
-    const eligible = ctx.steps.filter((s) => s.type === 'MESSAGE' && stepAllowed(s.condition, accepted));
-    const next = eligible.find((s) => s.order > afterOrder);
+    const assigned = await this.resolveAssignedMessages(ctx);
+    const messageSteps = ctx.steps.filter((s) => s.type === 'MESSAGE');
+    const next = messageSteps.find((s) => s.order > afterOrder);
     if (next) {
-      // Human-likeness cap (random follow-up count) applies to the accepted flow only;
-      // the not-accepted branch always runs its steps.
-      let withinCap = true;
-      if (accepted) {
-        const assigned = await this.resolveAssignedMessages(ctx);
-        const idx = eligible.findIndex((s) => s.order === next.order) + 1;
-        withinCap = idx <= assigned;
-      }
-      if (withinCap) {
+      // 1-based position among MESSAGE steps = its follow-up number. Only queue it if
+      // it's within this lead's randomly-assigned message count.
+      const idx = messageSteps.findIndex((s) => s.order === next.order) + 1;
+      if (idx <= assigned) {
         await this.scheduler.schedule(ctx.lead.id, LiScheduledActionType.SEND_MESSAGE, next.order, new Date(Date.now() + next.waitHours * 60 * 60 * 1000));
         return;
       }
@@ -298,10 +346,17 @@ export class LiOutreachProcessor extends WorkerHost {
 }
 
 /**
- * Whether a MESSAGE step is eligible for a lead, given the connection outcome.
- * `accepted` = the invite was accepted. LinkedIn only allows DMs to 1st-degree
- * connections, so ANY/IF_ACCEPTED run for accepted leads; IF_NOT_ACCEPTED is the
- * branch for leads that never accepted (delivery may be limited by LinkedIn).
+ * Whether a MESSAGE step should fire, evaluated at send time. Only two live states
+ * reach here — ACCEPTED (`accepted`) and still-PENDING (`!accepted`); a rejected /
+ * given-up invite (NOT_ACCEPTED) is terminal and short-circuits earlier in
+ * `process()`, so no further follow-ups go out once the invite is withdrawn.
+ *
+ *   ANY             → always, accepted or still pending (runs on its own schedule)
+ *   IF_ACCEPTED     → only once the invite has been accepted
+ *   IF_NOT_ACCEPTED → only while the invite is NOT YET accepted (pending)
+ *
+ * (LinkedIn only reliably delivers DMs to accepted connections; a refused send is
+ * logged and the sequence moves on.)
  */
 function stepAllowed(condition: string | null | undefined, accepted: boolean): boolean {
   switch (condition ?? 'ANY') {
@@ -309,7 +364,7 @@ function stepAllowed(condition: string | null | undefined, accepted: boolean): b
       return !accepted;
     case 'IF_ACCEPTED':
       return accepted;
-    default: // ANY
-      return accepted;
+    default: // ANY — always, whether or not the invite was accepted
+      return true;
   }
 }

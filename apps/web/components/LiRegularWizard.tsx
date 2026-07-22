@@ -382,12 +382,13 @@ export function LiRegularWizard({
                   <div className="font-medium text-slate-800">{outreachType === 'DIRECT_MESSAGES' && i === 0 ? 'First Message' : `Follow-up ${i + 1}`}</div>
                   <div className="flex items-center gap-3 text-sm">
                     {!(outreachType === 'DIRECT_MESSAGES' && i === 0) && (
-                      <span>Wait <input type="number" min={0} className="w-16 rounded border border-slate-300 px-2 py-0.5" value={f.waitHours} onChange={(e) => setFollowUps((fs) => fs.map((x, j) => j === i ? { ...x, waitHours: Number(e.target.value) } : x))} /> h</span>
+                      <span className="text-slate-500">Wait <input type="number" min={0} className="w-16 rounded border border-slate-300 px-2 py-0.5" value={f.waitHours} onChange={(e) => setFollowUps((fs) => fs.map((x, j) => j === i ? { ...x, waitHours: Number(e.target.value) } : x))} /> h after previous step</span>
                     )}
                     {followUps.length > 1 && <button className="text-rose-500" onClick={() => setFollowUps((fs) => fs.filter((_, j) => j !== i))}>Delete</button>}
                   </div>
                 </div>
-                {outreachType === 'WITH_CONNECTION' && (
+                {/* The accept-branch routing is internal agency strategy — admin only. */}
+                {outreachType === 'WITH_CONNECTION' && !isPortal && (
                   <div className="mb-2 flex items-center gap-2 text-sm">
                     <span className="text-slate-500">Send this step</span>
                     <select
@@ -395,9 +396,9 @@ export function LiRegularWizard({
                       value={f.condition}
                       onChange={(e) => setFollowUps((fs) => fs.map((x, j) => j === i ? { ...x, condition: e.target.value as 'ANY' | 'IF_ACCEPTED' | 'IF_NOT_ACCEPTED' } : x))}
                     >
-                      <option value="ANY">Always (after the invite is accepted)</option>
+                      <option value="ANY">Always — accepted or still pending</option>
                       <option value="IF_ACCEPTED">Only if the connection was accepted</option>
-                      <option value="IF_NOT_ACCEPTED">Only if the connection was NOT accepted</option>
+                      <option value="IF_NOT_ACCEPTED">Only if not yet accepted (still pending)</option>
                     </select>
                   </div>
                 )}
@@ -407,9 +408,14 @@ export function LiRegularWizard({
               </div>
             ))}
             <button className="btn-ghost w-full" onClick={() => setFollowUps((fs) => [...fs, { waitHours: 48, body: '', variants: [], condition: 'ANY' }])}>+ Add message</button>
-            {outreachType === 'WITH_CONNECTION' && (
+            {outreachType === 'WITH_CONNECTION' && !isPortal && (
               <p className="mt-2 text-xs text-slate-400">
-                Branch example: FU-1 = Always · FU-2 = “Only if accepted” · FU-3 = “Only if NOT accepted”. LinkedIn only delivers DMs to accepted connections, so the “NOT accepted” branch may not reach non-connections.
+                Follow-ups run on their own clock from the connection request — each wait is
+                counted from the previous step, and the condition is checked when the step fires:
+                FU-1 = <em>Always</em> · FU-2 = <em>Only if accepted</em> · FU-3 = <em>Only if not yet accepted</em>
+                (still pending → FU-2 is skipped and FU-3 goes out). Once the connection
+                window ends the invite is withdrawn and the lead stops receiving follow-ups.
+                Note: LinkedIn only reliably delivers DMs to accepted connections.
               </p>
             )}
             <p className="mt-2 text-xs text-slate-500">
