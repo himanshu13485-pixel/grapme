@@ -67,6 +67,12 @@ export class LiCampaignsController {
     return this.campaigns.deleteLead(id, leadId);
   }
 
+  /** Bulk-remove leads from the audience (admin cleanup, e.g. duplicates). */
+  @Post(':id/leads/delete')
+  deleteLeads(@Param('id') id: string, @Body() body: { leadIds?: string[] }) {
+    return this.campaigns.deleteLeads(id, body?.leadIds ?? []);
+  }
+
   @Get(':id/leads')
   leads(
     @Param('id') id: string,

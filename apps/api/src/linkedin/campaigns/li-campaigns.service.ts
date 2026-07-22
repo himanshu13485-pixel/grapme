@@ -307,6 +307,23 @@ export class LiCampaignsService {
     return { ok: true };
   }
 
+  /** Bulk-remove leads from a campaign's audience (admin cleanup, e.g. duplicates). */
+  async deleteLeads(campaignId: string, leadIds: string[]) {
+    await this.assertExists(campaignId);
+    const ids = [...new Set((leadIds ?? []).filter(Boolean))];
+    if (ids.length === 0) throw new BadRequestException('Select at least one lead to delete.');
+    // Only leads that actually belong to this campaign.
+    const leads = await this.prisma.liLead.findMany({
+      where: { id: { in: ids }, campaignId },
+      select: { id: true },
+    });
+    if (leads.length === 0) throw new NotFoundException('No matching leads found');
+    // Drop any queued work first so nothing fires for a deleted lead.
+    for (const l of leads) await this.scheduler.removeLeadJobs(l.id).catch(() => undefined);
+    const res = await this.prisma.liLead.deleteMany({ where: { id: { in: leads.map((l) => l.id) }, campaignId } });
+    return { ok: true, deleted: res.count };
+  }
+
   async leads(id: string, opts: { status?: LiLeadStatus; page?: number; pageSize?: number; search?: string }) {
     await this.assertExists(id);
     const page = Math.max(1, opts.page ?? 1);

@@ -153,6 +153,8 @@ function Details({ campaignId, base }: { campaignId: string; base: string }) {
   const [reloadKey, setReloadKey] = useState(0);
   const [q, setQ] = useState('');
   const [dq, setDq] = useState('');
+  // Admin-only bulk selection for removing targets (e.g. duplicates).
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   async function syncNow() {
     setSyncing(true);
@@ -210,11 +212,35 @@ function Details({ campaignId, base }: { campaignId: string; base: string }) {
     if (!confirm(`Remove "${name}" from this campaign's audience? Any pending connection/message for them is cancelled.`)) return;
     try {
       await api.del(`${base}/campaigns/${campaignId}/leads/${id}`);
+      setSelected((s) => { const n = new Set(s); n.delete(id); return n; });
       setReloadKey((k) => k + 1);
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Failed to remove lead');
     }
   }
+
+  async function deleteSelected() {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    if (!confirm(`Remove ${ids.length} target${ids.length === 1 ? '' : 's'} from this campaign's audience? Any pending connection/message for them is cancelled.`)) return;
+    try {
+      await api.post(`${base}/campaigns/${campaignId}/leads/delete`, { leadIds: ids });
+      setSelected(new Set());
+      setReloadKey((k) => k + 1);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Failed to remove leads');
+    }
+  }
+
+  const pageIds = data?.items.map((l) => l.id) ?? [];
+  const allOnPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
+  const toggleAllOnPage = () =>
+    setSelected((s) => {
+      const n = new Set(s);
+      if (allOnPageSelected) pageIds.forEach((id) => n.delete(id));
+      else pageIds.forEach((id) => n.add(id));
+      return n;
+    });
 
   const tabs = LEAD_TABS.map((t) => ({
     key: t.key, label: t.label,
@@ -228,6 +254,11 @@ function Details({ campaignId, base }: { campaignId: string; base: string }) {
         <h3 className="text-lg font-semibold text-slate-800">Target Audience</h3>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <input className="input w-full min-w-0 sm:w-48" placeholder="Search targets…" value={q} onChange={(e) => setQ(e.target.value)} />
+          {!isPortal && selected.size > 0 && (
+            <button className="btn-ghost whitespace-nowrap text-rose-600" onClick={deleteSelected} title="Remove the selected targets from this campaign">
+              🗑 Delete selected ({selected.size})
+            </button>
+          )}
           {!isPortal && (
             <button className="btn-ghost whitespace-nowrap" disabled={syncing} onClick={syncNow} title="Refresh names + check who accepted, from LinkedIn">
               {syncing ? 'Syncing…' : '↻ Sync from LinkedIn'}
@@ -257,13 +288,18 @@ function Details({ campaignId, base }: { campaignId: string; base: string }) {
         <table className="w-full text-sm">
           <thead className="border-b border-slate-100 text-left text-slate-400">
             <tr>
+              {!isPortal && (
+                <th className="w-8 p-3">
+                  <input type="checkbox" checked={allOnPageSelected} onChange={toggleAllOnPage} title="Select all on this page" />
+                </th>
+              )}
               <th className="p-3 font-medium">Name</th>
               <th className="p-3 font-medium">Profile</th>
               <th className="p-3 font-medium">Title</th>
               <th className="p-3 font-medium">Company</th>
               <th className="p-3 font-medium">Status</th>
               <th className="p-3 font-medium">Step</th>
-              <th className="p-3 font-medium text-right">Actions</th>
+              {!isPortal && <th className="p-3 font-medium text-right">Actions</th>}
             </tr>
           </thead>
           <tbody>
@@ -271,6 +307,15 @@ function Details({ campaignId, base }: { campaignId: string; base: string }) {
               const tc = parseLeadTitleCompany(l.title, l.company);
               return (
               <tr key={l.id} className="border-b border-slate-50">
+                {!isPortal && (
+                  <td className="p-3">
+                    <input
+                      type="checkbox"
+                      checked={selected.has(l.id)}
+                      onChange={() => setSelected((s) => { const n = new Set(s); if (n.has(l.id)) n.delete(l.id); else n.add(l.id); return n; })}
+                    />
+                  </td>
+                )}
                 <td className="p-3"><div className="max-w-[200px] truncate font-medium text-slate-800" title={l.fullName}>{l.fullName}</div></td>
                 <td className="p-3">
                   {l.profileUrl
@@ -281,13 +326,15 @@ function Details({ campaignId, base }: { campaignId: string; base: string }) {
                 <td className="p-3"><div className="max-w-[170px] truncate text-slate-600" title={tc.company}>{tc.company}</div></td>
                 <td className="p-3"><span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs">{STATUS_LABEL[l.status] ?? l.status}</span></td>
                 <td className="p-3 text-slate-500">{l.currentStep}</td>
-                <td className="p-3 text-right">
-                  <button className="text-xs font-medium text-rose-600 hover:underline" onClick={() => deleteLead(l.id, l.fullName)}>Delete</button>
-                </td>
+                {!isPortal && (
+                  <td className="p-3 text-right">
+                    <button className="text-xs font-medium text-rose-600 hover:underline" onClick={() => deleteLead(l.id, l.fullName)}>Delete</button>
+                  </td>
+                )}
               </tr>
               );
             })}
-            {data && data.items.length === 0 && <tr><td colSpan={7} className="p-8 text-center text-slate-400">{dq ? 'No targets match your search.' : 'No leads in this view.'}</td></tr>}
+            {data && data.items.length === 0 && <tr><td colSpan={isPortal ? 6 : 8} className="p-8 text-center text-slate-400">{dq ? 'No targets match your search.' : 'No leads in this view.'}</td></tr>}
           </tbody>
         </table>
       </div>
