@@ -27,11 +27,14 @@ export function renderTemplate(
   body: string,
   lead: { firstName?: string | null; lastName?: string | null; company?: string | null; title?: string | null },
 ): string {
-  return body
-    .replace(/\{first_name\}/gi, lead.firstName ?? '')
-    .replace(/\{last_name\}/gi, lead.lastName ?? '')
-    .replace(/\{company\}/gi, lead.company ?? '')
-    .replace(/\{title\}/gi, lead.title ?? '');
+  return (body ?? '')
+    // Tolerate the {{token}} form (and stray spaces). Without this the inner
+    // {token} matches and the outer braces survive → the lead reads "Hi {Rahul},".
+    .replace(/\{\{\s*(first_name|last_name|company|title)\s*\}\}/gi, '{$1}')
+    .replace(/\{\s*first_name\s*\}/gi, lead.firstName ?? '')
+    .replace(/\{\s*last_name\s*\}/gi, lead.lastName ?? '')
+    .replace(/\{\s*company\s*\}/gi, lead.company ?? '')
+    .replace(/\{\s*title\s*\}/gi, lead.title ?? '');
 }
 
 export function jitterMs(): number {

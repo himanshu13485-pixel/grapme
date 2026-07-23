@@ -15,7 +15,10 @@ const SAMPLE_LEAD: Record<string, string> = {
   title: 'CEO',
 };
 function fillTokens(text: string): string {
-  return (text ?? '').replace(/\{(first_name|last_name|company|title)\}/gi, (_m, k: string) => SAMPLE_LEAD[k.toLowerCase()] ?? _m);
+  return (text ?? '')
+    // Collapse the {{token}} form first, exactly like the sending engine does.
+    .replace(/\{\{\s*(first_name|last_name|company|title)\s*\}\}/gi, '{$1}')
+    .replace(/\{\s*(first_name|last_name|company|title)\s*\}/gi, (_m, k: string) => SAMPLE_LEAD[k.toLowerCase()] ?? _m);
 }
 function hourLabel(h: number): string {
   const ap = h < 12 ? 'AM' : 'PM';

@@ -168,9 +168,10 @@ export class LiCampaignsService {
       this.prisma.liSequenceStep.deleteMany({ where: { campaignId: id } }),
       this.prisma.liSequenceStep.createMany({
         data: dto.steps.map((s, i) => ({
-          campaignId: id, order: i + 1, type: s.type, condition: s.condition ?? 'ANY', waitHours: s.waitHours, body: s.body, note: s.note,
+          campaignId: id, order: i + 1, type: s.type, condition: s.condition ?? 'ANY', waitHours: s.waitHours,
+          body: normalizeTokens(s.body), note: normalizeTokens(s.note),
           // Keep only non-empty alternate wordings.
-          variants: (s.variants ?? []).map((v) => (v ?? '').trim()).filter((v) => v.length > 0),
+          variants: (s.variants ?? []).map((v) => normalizeTokens(v)?.trim() ?? '').filter((v) => v.length > 0),
         })),
       }),
     ]);
@@ -837,4 +838,14 @@ export class LiCampaignsService {
     const n = await this.prisma.liCampaign.count({ where: { id } });
     if (!n) throw new NotFoundException('Campaign not found');
   }
+}
+
+/**
+ * Personalisation tokens are single-braced ({first_name}). Authors often type the
+ * handlebars form {{first_name}} — which would render as "{Rahul}" because only the
+ * inner braces get substituted. Collapse it on save so what's stored is correct.
+ */
+function normalizeTokens(text?: string | null): string | null | undefined {
+  if (text == null) return text;
+  return text.replace(/\{\{\s*(first_name|last_name|company|title)\s*\}\}/gi, '{$1}');
 }
