@@ -5,6 +5,18 @@ import { api } from '@/lib/api';
 import { LiCampaignDetail } from '@/lib/linkedin';
 
 const DAY = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+/** Stand-in lead used to preview a message the way a real recipient will read it.
+ *  Mirrors renderTemplate() in the sending engine (same tokens, case-insensitive). */
+const SAMPLE_LEAD: Record<string, string> = {
+  first_name: 'Rahul',
+  last_name: 'Sharma',
+  company: 'Acme Exports',
+  title: 'CEO',
+};
+function fillTokens(text: string): string {
+  return (text ?? '').replace(/\{(first_name|last_name|company|title)\}/gi, (_m, k: string) => SAMPLE_LEAD[k.toLowerCase()] ?? _m);
+}
 function hourLabel(h: number): string {
   const ap = h < 12 ? 'AM' : 'PM';
   const x = h % 12 === 0 ? 12 : h % 12;
@@ -44,18 +56,52 @@ export function LiCampaignSummary({ campaignId, base = '/linkedin' }: { campaign
       <div className="space-y-4">
         <Section title={`Messages (${c.steps?.length ?? 0})`}>
           <ol className="space-y-2">
-            {(c.steps ?? []).map((s) => (
+            {(c.steps ?? []).map((s) => {
+              // Every wording this step can send: the main text plus its alternates.
+              const wordings = [s.body || s.note, ...(s.variants ?? [])]
+                .map((t) => (t ?? '').trim())
+                .filter(Boolean);
+              return (
               <li key={s.id} className="rounded-lg border border-slate-100 p-2 text-sm">
                 <div className="font-medium text-slate-700">
                   {s.type === 'CONNECTION_REQUEST' ? 'Connection request' : 'Message'}
-                  {s.waitHours > 0 && <span className="font-normal text-slate-400"> · wait {s.waitHours}h</span>}
-                  {s.variants && s.variants.length > 0 && <span className="ml-1 rounded-full bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-700">+{s.variants.length} wording{s.variants.length > 1 ? 's' : ''}</span>}
+                  {s.waitHours > 0 && <span className="font-normal text-slate-400"> · wait {s.waitHours}h after previous step</span>}
+                  {s.condition && s.condition !== 'ANY' && (
+                    <span className="ml-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                      {s.condition === 'IF_ACCEPTED' ? 'only if accepted' : 'only if not yet accepted'}
+                    </span>
+                  )}
+                  {wordings.length > 1 && (
+                    <span className="ml-1 rounded-full bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-700">
+                      {wordings.length} wordings · one picked at random
+                    </span>
+                  )}
                 </div>
-                <div className="line-clamp-3 text-slate-500">{s.body || s.note || <span className="italic text-slate-300">no text</span>}</div>
+                {wordings.length === 0 ? (
+                  <div className="italic text-slate-300">no text</div>
+                ) : (
+                  wordings.map((t, i) => (
+                    <div key={i} className="mt-1.5 rounded-md bg-slate-50 p-2">
+                      {wordings.length > 1 && (
+                        <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-violet-600">
+                          {i === 0 ? 'Wording 1' : `Wording ${i + 1}`}
+                        </div>
+                      )}
+                      <div className="whitespace-pre-wrap break-words text-slate-700">{fillTokens(t)}</div>
+                    </div>
+                  ))
+                )}
               </li>
-            ))}
+              );
+            })}
             {(c.steps ?? []).length === 0 && <li className="text-xs text-slate-400">No messages set.</li>}
           </ol>
+          {(c.steps ?? []).length > 0 && (
+            <p className="mt-2 text-[11px] text-slate-400">
+              Preview — tokens are filled with a sample lead ({SAMPLE_LEAD.first_name} {SAMPLE_LEAD.last_name}, {SAMPLE_LEAD.title} at {SAMPLE_LEAD.company}).
+              Each recipient sees their own details.
+            </p>
+          )}
         </Section>
 
         <Section title="Schedule & Limits">
