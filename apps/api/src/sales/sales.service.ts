@@ -5,7 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { Role, UserStatus } from '@prisma/client';
+import { EventType, MessageDirection, MessageStatus, Role, UserStatus } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { createHash, randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -219,13 +219,113 @@ export class SalesService {
 
   // ─────────────────────────── Sales-scoped (role SALES) ───────────────────────────
 
-  /** The salesperson's own clients (read-only). */
-  myClients(user: AuthUser) {
-    return this.prisma.client.findMany({
+  /**
+   * The salesperson's own clients, shaped like the admin Clients-Workspace cards:
+   * the same headline stats (Email sent/opens/contacts, LinkedIn invites/connected/
+   * leads) and cadence line, so the sales panel mirrors the admin view — read-only.
+   */
+  async myClients(user: AuthUser) {
+    const clients = await this.prisma.client.findMany({
       where: { tenantId: user.tenantId, salesPersonId: user.userId },
-      select: CLIENT_CARD_SELECT,
+      select: {
+        ...CLIENT_CARD_SELECT,
+        invoiceNo: true,
+        dailyBatchSize: true,
+        followUpCount: true,
+        monthlyQuota: true,
+        _count: { select: { contacts: true } },
+      },
       orderBy: { name: 'asc' },
     });
+    if (clients.length === 0) return [];
+
+    const stats = await Promise.all(
+      clients.map(async (c) => {
+        const [emailSent, emailOpens, liByStatus] = await Promise.all([
+          this.prisma.emailMessage.count({
+            where: {
+              emailAccount: { clientId: c.id },
+              direction: MessageDirection.OUTBOUND,
+              status: { in: [MessageStatus.SENT, MessageStatus.DELIVERED] },
+            },
+          }),
+          this.prisma.emailEvent.count({
+            where: { eventType: EventType.OPEN, message: { emailAccount: { clientId: c.id } } },
+          }),
+          this.prisma.liLead.groupBy({ by: ['status'], where: { campaign: { clientId: c.id } }, _count: { _all: true } }),
+        ]);
+        let liLeads = 0, liConnected = 0, liInvites = 0;
+        for (const g of liByStatus) {
+          const n = g._count._all;
+          liLeads += n;
+          if (['CONNECTED', 'MESSAGED', 'REPLIED'].includes(g.status)) liConnected += n;
+          if (['CONNECTION_PENDING', 'CONNECTED', 'MESSAGED', 'REPLIED'].includes(g.status)) liInvites += n;
+        }
+        return { id: c.id, emailSent, emailOpens, liLeads, liConnected, liInvites };
+      }),
+    );
+    const byId = new Map(stats.map((s) => [s.id, s]));
+    return clients.map((c) => {
+      const s = byId.get(c.id);
+      return {
+        ...c,
+        stats: {
+          emailSent: s?.emailSent ?? 0,
+          emailOpens: s?.emailOpens ?? 0,
+          contacts: c._count.contacts ?? 0,
+          liInvites: s?.liInvites ?? 0,
+          liConnected: s?.liConnected ?? 0,
+          liLeads: s?.liLeads ?? 0,
+        },
+      };
+    });
+  }
+
+  /** Mailboxes allocated to an owned client (read-only). */
+  async clientMailboxes(user: AuthUser, clientId: string) {
+    await this.assertOwnedClient(user, clientId);
+    return this.prisma.emailAccount.findMany({
+      where: { clientId },
+      select: { id: true, label: true, emailAddress: true, status: true, dailyLimit: true, rotationOrder: true },
+      orderBy: { rotationOrder: 'asc' },
+    });
+  }
+
+  /** The client's default email sequence (stages + gaps), read-only. */
+  async clientSequence(user: AuthUser, clientId: string) {
+    await this.assertOwnedClient(user, clientId);
+    return this.prisma.sequenceStep.findMany({
+      where: { clientId, cohortId: null },
+      select: { id: true, stageOrder: true, waitDays: true, monthOffset: true, templateId: true },
+      orderBy: { stageOrder: 'asc' },
+    });
+  }
+
+  async clientTemplates(user: AuthUser, clientId: string) {
+    await this.assertOwnedClient(user, clientId);
+    return this.prisma.emailTemplate.findMany({
+      where: { clientId },
+      select: { id: true, name: true, subject: true, updatedAt: true },
+      orderBy: { updatedAt: 'desc' },
+      take: 100,
+    });
+  }
+
+  /** LinkedIn seats + plan KPIs for the client's LinkedIn tab. */
+  async clientLinkedIn(user: AuthUser, clientId: string) {
+    await this.assertOwnedClient(user, clientId);
+    const [accounts, sub] = await Promise.all([
+      this.prisma.linkedInAccount.findMany({
+        where: { clientId },
+        select: { id: true, fullName: true, headline: true, status: true, connectionsCount: true, lastSyncedAt: true, avatarUrl: true },
+        orderBy: { createdAt: 'asc' },
+      }),
+      this.prisma.linkedInSubscription.findUnique({
+        where: { clientId },
+        select: { planName: true, seats: true, creditsBalance: true, campaignLimit: true, validityDays: true, validityStartAt: true },
+      }),
+    ]);
+    return { accounts, subscription: sub };
   }
 
   /** Read-only detail of ONE of the salesperson's own clients (403 otherwise). */

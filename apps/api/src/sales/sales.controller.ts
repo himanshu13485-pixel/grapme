@@ -129,6 +129,30 @@ export class SalesController {
   }
 
   @Roles(Role.SALES)
+  @Get('my/clients/:id/mailboxes')
+  clientMailboxes(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.sales.clientMailboxes(user, id);
+  }
+
+  @Roles(Role.SALES)
+  @Get('my/clients/:id/sequence')
+  clientSequence(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.sales.clientSequence(user, id);
+  }
+
+  @Roles(Role.SALES)
+  @Get('my/clients/:id/templates')
+  clientTemplates(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.sales.clientTemplates(user, id);
+  }
+
+  @Roles(Role.SALES)
+  @Get('my/clients/:id/linkedin')
+  clientLinkedIn(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.sales.clientLinkedIn(user, id);
+  }
+
+  @Roles(Role.SALES)
   @Get('my/clients/:id/li-leads')
   clientLiLeads(@CurrentUser() user: AuthUser, @Param('id') id: string, @Query('page') page?: string, @Query('pageSize') pageSize?: string) {
     return this.sales.clientLiLeads(user, id, page, pageSize);
