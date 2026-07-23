@@ -85,6 +85,19 @@ export class SalesController {
     return this.sales.myOverview(user);
   }
 
+  /** Admin-style activity dashboard, scoped to this salesperson's clients.
+   *  Optional narrowing: ?clientId=… ?campaignId=… ?liCampaignId=… */
+  @Roles(Role.SALES)
+  @Get('my/dashboard')
+  myDashboard(
+    @CurrentUser() user: AuthUser,
+    @Query('clientId') clientId?: string,
+    @Query('campaignId') campaignId?: string,
+    @Query('liCampaignId') liCampaignId?: string,
+  ) {
+    return this.sales.dashboard(user, { clientId, campaignId, liCampaignId });
+  }
+
   @Roles(Role.SALES)
   @Get('my/clients')
   myClients(@CurrentUser() user: AuthUser) {

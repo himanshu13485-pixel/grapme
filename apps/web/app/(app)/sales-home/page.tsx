@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { Channels } from '@/components/Channels';
+import { SalesActivityDashboard } from '@/components/SalesActivityDashboard';
 
 interface Overview {
   total: number;
@@ -32,6 +33,7 @@ export default function SalesHomePage() {
   const [ov, setOv] = useState<Overview | null>(null);
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
+  const [scopeClient, setScopeClient] = useState(''); // '' = all my clients
 
   useEffect(() => {
     Promise.all([
@@ -54,6 +56,23 @@ export default function SalesHomePage() {
         <Stat label="Expiring soon" value={ov?.expiringSoon} tone="amber" />
         <Stat label="Expired" value={ov?.expired} tone="rose" />
         <Stat label="Open tickets" value={ov?.openTickets} tone="brand" />
+      </div>
+
+      {/* Admin-style activity dashboard — overall, or narrowed to one client */}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold text-slate-800">Client activity</h2>
+        <select
+          className="input w-full max-w-xs"
+          value={scopeClient}
+          onChange={(e) => setScopeClient(e.target.value)}
+          title="Show activity for all your clients, or just one"
+        >
+          <option value="">All my clients</option>
+          {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+      </div>
+      <div className="mb-8">
+        <SalesActivityDashboard clientId={scopeClient || undefined} />
       </div>
 
       <div className="mb-3 flex items-center justify-between">

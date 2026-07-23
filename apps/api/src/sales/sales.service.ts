@@ -5,7 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { EventType, MessageDirection, MessageStatus, Role, UserStatus } from '@prisma/client';
+import { EventType, MessageDirection, MessageStatus, Prisma, Role, UserStatus } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { createHash, randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -17,6 +17,18 @@ import {
   CreateSalesPersonDto,
   UpdateSalesPersonDto,
 } from './dto/sales.dto';
+
+/** Zero-state for a salesperson with no assigned clients. */
+const EMPTY_DASHBOARD = {
+  email: {
+    activeCohorts: 0, sent: 0, delivered: 0, deliveryRate: 0, opens: 0, openRate: 0,
+    replies: 0, replyRate: 0, forwarded: 0, forwardRate: 0, bounces: 0, totalCampaigns: 0,
+  },
+  linkedin: {
+    accountsConnected: 0, invitesSent: 0, connected: 0, acceptanceRate: 0,
+    replies: 0, replyRate: 0, totalLeads: 0,
+  },
+};
 
 /** Parse page/pageSize query strings into Prisma skip/take + echo the resolved values. */
 function pageArgs(page?: string, pageSize?: string) {
@@ -279,6 +291,110 @@ export class SalesService {
         },
       };
     });
+  }
+
+  /**
+   * Admin-style activity dashboard, scoped to the salesperson's clients. Same metric
+   * definitions as the admin dashboard so the numbers agree. Narrow it with
+   * `clientId` (one client), `campaignId` (one email campaign) or `liCampaignId`
+   * (one LinkedIn campaign) — omit them all for the overall view.
+   */
+  async dashboard(
+    user: AuthUser,
+    opts: { clientId?: string; campaignId?: string; liCampaignId?: string },
+  ) {
+    let clientIds: string[];
+    if (opts.clientId) {
+      await this.assertOwnedClient(user, opts.clientId);
+      clientIds = [opts.clientId];
+    } else {
+      const rows = await this.prisma.client.findMany({
+        where: { tenantId: user.tenantId, salesPersonId: user.userId },
+        select: { id: true },
+      });
+      clientIds = rows.map((r) => r.id);
+    }
+    if (clientIds.length === 0) return EMPTY_DASHBOARD;
+
+    // Email — events on messages sent from this client's mailboxes.
+    const msgWhere: Prisma.EmailMessageWhereInput = {
+      emailAccount: { clientId: { in: clientIds } },
+      ...(opts.campaignId ? { campaignId: opts.campaignId } : {}),
+    };
+    const [eventGroups, opensWithIp, activeCohorts, totalCampaigns] = await Promise.all([
+      this.prisma.emailEvent.groupBy({ by: ['eventType'], where: { message: msgWhere }, _count: { _all: true } }),
+      this.prisma.emailEvent.findMany({
+        where: { message: msgWhere, eventType: EventType.OPEN },
+        select: { messageId: true, meta: true },
+        take: 20_000,
+      }),
+      this.prisma.cohort.count({ where: { clientId: { in: clientIds }, status: 'RUNNING' } }),
+      this.prisma.campaign.count({
+        where: { clientId: { in: clientIds }, ...(opts.campaignId ? { id: opts.campaignId } : {}) },
+      }),
+    ]);
+    const ev: Record<string, number> = {};
+    for (const g of eventGroups) ev[g.eventType] = g._count._all;
+
+    // "Forwarded" = a message opened from 2+ distinct IPs (same rule as the admin).
+    const ipsByMsg = new Map<string, Set<string>>();
+    for (const e of opensWithIp) {
+      const ip = (e.meta as { ip?: string } | null)?.ip;
+      if (!ip) continue;
+      if (!ipsByMsg.has(e.messageId)) ipsByMsg.set(e.messageId, new Set());
+      ipsByMsg.get(e.messageId)!.add(ip);
+    }
+    let forwarded = 0;
+    for (const ips of ipsByMsg.values()) if (ips.size >= 2) forwarded++;
+
+    const sent = ev[EventType.SENT] ?? 0;
+    const bounces = ev[EventType.BOUNCE] ?? 0;
+    const attempts = sent + bounces;
+    const pct = (n: number) => (sent ? Math.round((n / sent) * 1000) / 10 : 0);
+
+    // LinkedIn — leads across this client's campaigns.
+    const liWhere: Prisma.LiLeadWhereInput = opts.liCampaignId
+      ? { campaignId: opts.liCampaignId, campaign: { clientId: { in: clientIds } } }
+      : { campaign: { clientId: { in: clientIds } } };
+    const [liGroups, accountsConnected] = await Promise.all([
+      this.prisma.liLead.groupBy({ by: ['status'], where: liWhere, _count: { _all: true } }),
+      this.prisma.linkedInAccount.count({ where: { clientId: { in: clientIds }, status: 'CONNECTED' } }),
+    ]);
+    let totalLeads = 0, invitesSent = 0, connected = 0, liReplies = 0;
+    for (const g of liGroups) {
+      const n = g._count._all;
+      totalLeads += n;
+      if (['CONNECTION_PENDING', 'CONNECTED', 'MESSAGED', 'REPLIED'].includes(g.status)) invitesSent += n;
+      if (['CONNECTED', 'MESSAGED', 'REPLIED'].includes(g.status)) connected += n;
+      if (g.status === 'REPLIED') liReplies += n;
+    }
+    const rate = (n: number, d: number) => (d ? Math.round((n / d) * 1000) / 10 : 0);
+
+    return {
+      email: {
+        activeCohorts,
+        sent,
+        delivered: sent, // delivered = sent that didn't bounce
+        deliveryRate: attempts ? Math.round((sent / attempts) * 1000) / 10 : 0,
+        opens: ev[EventType.OPEN] ?? 0,
+        openRate: pct(ev[EventType.OPEN] ?? 0),
+        replies: ev[EventType.REPLY] ?? 0,
+        replyRate: pct(ev[EventType.REPLY] ?? 0),
+        forwarded,
+        forwardRate: pct(forwarded),
+        bounces,
+        totalCampaigns,
+      },
+      linkedin: {
+        accountsConnected,
+        invitesSent,
+        connected,
+        acceptanceRate: rate(connected, invitesSent),
+        replies: liReplies,
+        replyRate: rate(liReplies, connected),
+        totalLeads,
+      },
+    };
   }
 
   /** Mailboxes allocated to an owned client (read-only). */

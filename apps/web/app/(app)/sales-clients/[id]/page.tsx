@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
+import { SalesActivityDashboard } from '@/components/SalesActivityDashboard';
 
 /* ─────────────────────────── types ─────────────────────────── */
 interface ClientDetail {
@@ -122,6 +123,13 @@ type EmailTab = 'mailboxes' | 'sequence' | 'cohorts' | 'contacts' | 'templates' 
 
 function EmailSide({ id, stats }: { id: string; stats: Stats | null }) {
   const [tab, setTab] = useState<EmailTab>('mailboxes');
+  const [scopeCampaign, setScopeCampaign] = useState(''); // '' = whole client
+  const [allCampaigns, setAllCampaigns] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => {
+    api.get<Paged<{ id: string; name: string }>>(`/sales/my/clients/${id}/campaigns?page=1&pageSize=100`)
+      .then((r) => setAllCampaigns(r.items))
+      .catch(() => setAllCampaigns([]));
+  }, [id]);
   const mailboxes = useList<{ id: string; label: string; emailAddress: string; status: string; dailyLimit: number }>(`/sales/my/clients/${id}/mailboxes`);
   const sequence = useList<{ id: string; stageOrder: number; waitDays: number; monthOffset: number }>(`/sales/my/clients/${id}/sequence`);
   const templates = useList<{ id: string; name: string; subject: string; updatedAt: string }>(`/sales/my/clients/${id}/templates`);
@@ -137,6 +145,18 @@ function EmailSide({ id, stats }: { id: string; stats: Stats | null }) {
 
   return (
     <div>
+      {/* Activity — whole client, or one campaign */}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold text-slate-700">Activity</h3>
+        <select className="input w-full max-w-xs" value={scopeCampaign} onChange={(e) => setScopeCampaign(e.target.value)}>
+          <option value="">Whole client (all campaigns)</option>
+          {allCampaigns.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+      </div>
+      <div className="mb-6">
+        <SalesActivityDashboard clientId={id} campaignId={scopeCampaign || undefined} show="email" />
+      </div>
+
       <SubTabs tabs={tabs} active={tab} onChange={(k) => setTab(k as EmailTab)} />
       {tab === 'mailboxes' && (
         <Table head={['Label', 'Address', 'Daily limit', 'Status']} loading={mailboxes === null} empty={mailboxes?.length === 0} emptyText="No mailboxes connected yet.">
@@ -187,7 +207,14 @@ interface LiSub { planName: string | null; seats: number; creditsBalance: number
 function LinkedInSide({ id, stats }: { id: string; stats: Stats | null }) {
   const [tab, setTab] = useState<LiTab>('accounts');
   const [li, setLi] = useState<{ accounts: LiAccount[]; subscription: LiSub | null } | null>(null);
+  const [scopeCampaign, setScopeCampaign] = useState(''); // '' = whole client
+  const [liCampaignOptions, setLiCampaignOptions] = useState<{ id: string; name: string }[]>([]);
   useEffect(() => { api.get<{ accounts: LiAccount[]; subscription: LiSub | null }>(`/sales/my/clients/${id}/linkedin`).then(setLi).catch(() => setLi({ accounts: [], subscription: null })); }, [id]);
+  useEffect(() => {
+    api.get<Paged<{ id: string; name: string }>>(`/sales/my/clients/${id}/li-campaigns?page=1&pageSize=100`)
+      .then((r) => setLiCampaignOptions(r.items))
+      .catch(() => setLiCampaignOptions([]));
+  }, [id]);
 
   const sub = li?.subscription;
   const daysLeft = sub?.validityStartAt && sub.validityDays
@@ -202,12 +229,24 @@ function LinkedInSide({ id, stats }: { id: string; stats: Stats | null }) {
 
   return (
     <div>
-      {/* KPI tiles — same four as the admin LinkedIn tab */}
+      {/* Plan KPIs — same four as the admin LinkedIn tab */}
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Kpi label="Seats" value={sub?.seats} />
         <Kpi label="Credits" value={sub?.creditsBalance} />
         <Kpi label="Plan validity (days)" value={sub?.validityDays ?? undefined} sub={daysLeft != null ? `${daysLeft} days left` : undefined} />
         <Kpi label="Campaign limit" value={sub?.campaignLimit} sub={sub?.campaignLimit === 0 ? 'unlimited' : undefined} />
+      </div>
+
+      {/* Activity — whole client, or one campaign */}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold text-slate-700">Activity</h3>
+        <select className="input w-full max-w-xs" value={scopeCampaign} onChange={(e) => setScopeCampaign(e.target.value)}>
+          <option value="">Whole client (all campaigns)</option>
+          {liCampaignOptions.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+      </div>
+      <div className="mb-6">
+        <SalesActivityDashboard clientId={id} liCampaignId={scopeCampaign || undefined} show="linkedin" />
       </div>
 
       <SubTabs tabs={tabs} active={tab} onChange={(k) => setTab(k as LiTab)} />
