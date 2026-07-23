@@ -73,6 +73,12 @@ export class LiCampaignsController {
     return this.campaigns.deleteLeads(id, body?.leadIds ?? []);
   }
 
+  /** Admin test: fire this one lead's next action now (daily caps + warm-up still apply). */
+  @Post(':id/leads/:leadId/send-now')
+  sendNowForLead(@Param('id') id: string, @Param('leadId') leadId: string) {
+    return this.campaigns.sendNowForLead(id, leadId);
+  }
+
   /** Replicate a campaign (settings + audience criteria + sequence) as a new draft. */
   @Post(':id/duplicate')
   duplicate(@Param('id') id: string) {

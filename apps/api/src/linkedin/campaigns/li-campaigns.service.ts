@@ -398,6 +398,16 @@ export class LiCampaignsService {
     });
   }
 
+  /** Admin test: run ONE lead's next action right away (caps + warm-up still apply). */
+  async sendNowForLead(campaignId: string, leadId: string) {
+    const c = await this.prisma.liCampaign.findUnique({ where: { id: campaignId }, select: { status: true } });
+    if (!c) throw new NotFoundException('Campaign not found');
+    if (c.status !== LiCampaignStatus.RUNNING) {
+      throw new BadRequestException('Start the campaign first, then send.');
+    }
+    return this.scheduler.runNowForLead(campaignId, leadId);
+  }
+
   /** Bulk-remove leads from a campaign's audience (admin cleanup, e.g. duplicates). */
   async deleteLeads(campaignId: string, leadIds: string[]) {
     await this.assertExists(campaignId);

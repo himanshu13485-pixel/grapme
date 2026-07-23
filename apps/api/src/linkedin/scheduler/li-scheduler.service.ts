@@ -121,7 +121,27 @@ export class LiSchedulerService implements OnModuleInit {
 
     const direct = campaign.outreachType === 'DIRECT_MESSAGES';
     const freshLeads = await this.prisma.liLead.findMany({
-      where: { campaignId, status: LiLeadStatus.PENDING, scheduled: { none: {} } },
+      where: {
+        campaignId,
+        status: LiLeadStatus.PENDING,
+        // Leads with no ACTIVE action. This previously required *no action rows at
+        // all*, so a lead whose only attempt ended FAILED/CANCELLED (the seat was
+        // disconnected at the time, the campaign was paused, …) was never re-queued
+        // and had nothing for "Send next" to run — stuck at Pending/Step 0 forever.
+        // A lead that genuinely progressed is no longer status=PENDING, so this
+        // can't double-schedule one.
+        scheduled: {
+          none: {
+            status: {
+              in: [
+                LiScheduledActionStatus.PENDING,
+                LiScheduledActionStatus.QUEUED,
+                LiScheduledActionStatus.RUNNING,
+              ],
+            },
+          },
+        },
+      },
       select: { id: true },
     });
     if (freshLeads.length === 0) return 0;
@@ -217,6 +237,66 @@ export class LiSchedulerService implements OnModuleInit {
       data: { status: LiScheduledActionStatus.PENDING, runAt: now, jobId: null },
     });
     await this.attachJob(action.id, action.type, action.leadId, action.stepOrder ?? undefined, now);
+    return { ok: true };
+  }
+
+  /**
+   * Admin "Send now" for ONE lead: run its next action immediately. If the lead has
+   * never started (or its only attempt died), its first action is created on the
+   * spot. Working hours are bypassed (this is a deliberate manual trigger), but the
+   * daily connection/message caps and the warm-up ramp are NOT — the processor
+   * re-arms to tomorrow if today's allowance is already used up.
+   */
+  async runNowForLead(campaignId: string, leadId: string): Promise<{ ok: boolean; message?: string }> {
+    if (!this.queue) return { ok: false, message: 'Sending engine is off (no Redis).' };
+    const lead = await this.prisma.liLead.findFirst({
+      where: { id: leadId, campaignId },
+      select: { id: true, status: true },
+    });
+    if (!lead) return { ok: false, message: 'Lead not found in this campaign.' };
+
+    const now = new Date();
+    const action = await this.prisma.liScheduledAction.findFirst({
+      where: { leadId, status: { in: [LiScheduledActionStatus.PENDING, LiScheduledActionStatus.QUEUED] } },
+      orderBy: { runAt: 'asc' },
+      select: { id: true, type: true, stepOrder: true, jobId: true },
+    });
+    if (action) {
+      if (action.jobId) await this.queue.remove(action.jobId).catch(() => undefined);
+      await this.prisma.liScheduledAction.update({
+        where: { id: action.id },
+        data: { status: LiScheduledActionStatus.PENDING, runAt: now, jobId: null },
+      });
+      await this.attachJob(action.id, action.type, leadId, action.stepOrder ?? undefined, now);
+      return { ok: true };
+    }
+
+    // Nothing queued for this lead — kick off its first action if it hasn't begun.
+    if (lead.status !== LiLeadStatus.PENDING) {
+      return { ok: false, message: 'This lead has no pending action left.' };
+    }
+    const campaign = await this.prisma.liCampaign.findUnique({
+      where: { id: campaignId },
+      include: { steps: true, linkedInAccount: true },
+    });
+    if (!campaign || campaign.status !== LiCampaignStatus.RUNNING) {
+      return { ok: false, message: 'Start the campaign first.' };
+    }
+    if (campaign.steps.length === 0) return { ok: false, message: 'Add a message sequence first.' };
+    if (campaign.linkedInAccount?.status !== 'CONNECTED') {
+      return { ok: false, message: "The campaign's LinkedIn account isn't connected — reconnect the seat first." };
+    }
+    const direct = campaign.outreachType === 'DIRECT_MESSAGES';
+    const created = await this.prisma.liScheduledAction.create({
+      data: {
+        leadId,
+        type: direct ? LiScheduledActionType.SEND_MESSAGE : LiScheduledActionType.SEND_CONNECTION,
+        stepOrder: direct ? 1 : null,
+        runAt: now,
+        status: LiScheduledActionStatus.PENDING,
+      },
+    });
+    await this.attachJob(created.id, created.type, leadId, created.stepOrder ?? undefined, now);
     return { ok: true };
   }
 

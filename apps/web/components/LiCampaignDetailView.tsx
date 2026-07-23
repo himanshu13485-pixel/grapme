@@ -155,6 +155,7 @@ function Details({ campaignId, base }: { campaignId: string; base: string }) {
   const [dq, setDq] = useState('');
   // Admin-only bulk selection for removing targets (e.g. duplicates).
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [sendingNow, setSendingNow] = useState<string | null>(null);
 
   async function syncNow() {
     setSyncing(true);
@@ -217,6 +218,19 @@ function Details({ campaignId, base }: { campaignId: string; base: string }) {
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Failed to remove lead');
     }
+  }
+
+  async function sendNow(id: string, name: string) {
+    setSendingNow(id);
+    try {
+      const r = await api.post<{ ok: boolean; message?: string }>(`${base}/campaigns/${campaignId}/leads/${id}/send-now`, {});
+      alert(r.ok
+        ? `Queued the next action for ${name} to run now.\n\nIt still respects the daily cap and warm-up — if today's allowance is used up it will go tomorrow.`
+        : (r.message ?? 'Nothing to send for this lead.'));
+      setReloadKey((k) => k + 1);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Could not send now');
+    } finally { setSendingNow(null); }
   }
 
   async function deleteSelected() {
@@ -328,7 +342,17 @@ function Details({ campaignId, base }: { campaignId: string; base: string }) {
                 <td className="p-3 text-slate-500">{l.currentStep}</td>
                 {!isPortal && (
                   <td className="p-3 text-right">
-                    <button className="text-xs font-medium text-rose-600 hover:underline" onClick={() => deleteLead(l.id, l.fullName)}>Delete</button>
+                    <div className="flex items-center justify-end gap-3">
+                      <button
+                        className="whitespace-nowrap text-xs font-medium text-brand-600 hover:underline disabled:opacity-40"
+                        disabled={sendingNow === l.id}
+                        onClick={() => sendNow(l.id, l.fullName)}
+                        title="Run this lead's next action immediately (daily cap + warm-up still apply)"
+                      >
+                        {sendingNow === l.id ? '…' : '⚡ Send now'}
+                      </button>
+                      <button className="text-xs font-medium text-rose-600 hover:underline" onClick={() => deleteLead(l.id, l.fullName)}>Delete</button>
+                    </div>
                   </td>
                 )}
               </tr>
