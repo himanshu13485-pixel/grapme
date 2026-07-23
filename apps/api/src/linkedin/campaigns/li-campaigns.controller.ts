@@ -73,6 +73,12 @@ export class LiCampaignsController {
     return this.campaigns.deleteLeads(id, body?.leadIds ?? []);
   }
 
+  /** Replicate a campaign (settings + audience criteria + sequence) as a new draft. */
+  @Post(':id/duplicate')
+  duplicate(@Param('id') id: string) {
+    return this.campaigns.duplicate(id);
+  }
+
   @Get(':id/leads')
   leads(
     @Param('id') id: string,

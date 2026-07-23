@@ -307,6 +307,96 @@ export class LiCampaignsService {
     return { ok: true };
   }
 
+  /**
+   * Replicate a campaign: same settings, audience criteria and message sequence,
+   * as a fresh DRAFT. Deliberately NOT copied — the audience leads, run state
+   * (warm-up/drip stamps) and status — so the copy starts clean and is launched
+   * only after review.
+   */
+  async duplicate(campaignId: string) {
+    const src = await this.prisma.liCampaign.findUnique({
+      where: { id: campaignId },
+      include: { audienceSpec: true, steps: { orderBy: { order: 'asc' } } },
+    });
+    if (!src) throw new NotFoundException('Campaign not found');
+
+    // "Name", "Name (copy)", "Name (copy 2)" … so repeated clones don't collide.
+    const base = src.name.replace(/\s*\(copy(?: \d+)?\)\s*$/i, '').trim();
+    const siblings = await this.prisma.liCampaign.findMany({
+      where: { clientId: src.clientId, deletedAt: null, name: { startsWith: base } },
+      select: { name: true },
+    });
+    let name = `${base} (copy)`;
+    for (let n = 2; siblings.some((s) => s.name === name); n++) name = `${base} (copy ${n})`;
+
+    return this.prisma.liCampaign.create({
+      data: {
+        tenantId: src.tenantId,
+        clientId: src.clientId,
+        linkedInAccountId: src.linkedInAccountId,
+        name,
+        status: LiCampaignStatus.DRAFT,
+        type: src.type,
+        mode: src.mode,
+        outreachType: src.outreachType,
+        timezone: src.timezone,
+        run247: src.run247,
+        workStartHour: src.workStartHour,
+        workEndHour: src.workEndHour,
+        workDays: src.workDays,
+        dailyConnectionLimit: src.dailyConnectionLimit,
+        dailyMessageLimit: src.dailyMessageLimit,
+        jitterMinSeconds: src.jitterMinSeconds,
+        jitterMaxSeconds: src.jitterMaxSeconds,
+        followUpMin: src.followUpMin,
+        followUpMax: src.followUpMax,
+        graceHours: src.graceHours,
+        warmupEnabled: src.warmupEnabled,
+        warmupStartLimit: src.warmupStartLimit,
+        warmupDays: src.warmupDays,
+        connectionWindowDays: src.connectionWindowDays,
+        dripEnabled: src.dripEnabled,
+        dripDailyTarget: src.dripDailyTarget,
+        dripBuffer: src.dripBuffer,
+        businessProfileId: src.businessProfileId,
+        strategyId: src.strategyId,
+        // Message sequence, including per-step accept-branch condition + variants.
+        steps: {
+          create: src.steps.map((s) => ({
+            order: s.order,
+            type: s.type,
+            condition: s.condition,
+            waitHours: s.waitHours,
+            body: s.body,
+            note: s.note,
+            variants: s.variants,
+          })),
+        },
+        // Target-audience criteria (the search spec, not the sourced leads).
+        ...(src.audienceSpec
+          ? {
+              audienceSpec: {
+                create: {
+                  countries: src.audienceSpec.countries,
+                  cities: src.audienceSpec.cities,
+                  industries: src.audienceSpec.industries,
+                  companySizes: src.audienceSpec.companySizes,
+                  departments: src.audienceSpec.departments,
+                  jobTitles: src.audienceSpec.jobTitles,
+                  seniorities: src.audienceSpec.seniorities,
+                  companyKeywordsInclude: src.audienceSpec.companyKeywordsInclude,
+                  companyKeywordsExclude: src.audienceSpec.companyKeywordsExclude,
+                  personKeywordsInclude: src.audienceSpec.personKeywordsInclude,
+                  personKeywordsExclude: src.audienceSpec.personKeywordsExclude,
+                },
+              },
+            }
+          : {}),
+      },
+      select: { id: true, name: true },
+    });
+  }
+
   /** Bulk-remove leads from a campaign's audience (admin cleanup, e.g. duplicates). */
   async deleteLeads(campaignId: string, leadIds: string[]) {
     await this.assertExists(campaignId);

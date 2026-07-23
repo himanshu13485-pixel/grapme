@@ -272,6 +272,14 @@ function CampaignsTab({ clientId }: { clientId: string }) {
       alert(r.ok ? 'Next scheduled action queued to send now (subject to the daily cap).' : (r.message ?? 'Nothing pending to send.'));
     } catch (e: any) { alert(e?.message ?? 'Failed'); }
   }
+  async function replicate(id: string, name: string) {
+    if (!confirm(`Create a copy of "${name}"?\n\nSettings, audience criteria and the message sequence are copied. The audience leads are NOT — the copy starts as a Draft so you can review and launch it.`)) return;
+    try {
+      const r = await api.post<{ id: string; name: string }>(`/linkedin/campaigns/${id}/duplicate`, {});
+      await load();
+      alert(`Created "${r.name}" as a Draft.`);
+    } catch (e: any) { alert(e?.message ?? 'Could not replicate the campaign'); }
+  }
 
   const emptyMsg = view === 'deleted' ? 'No deleted campaigns.' : view === 'archived' ? 'No archived campaigns.' : view === 'completed' ? 'No completed campaigns.' : 'No campaigns yet.';
 
@@ -328,6 +336,7 @@ function CampaignsTab({ clientId }: { clientId: string }) {
                     ) : (
                       <button className="btn-primary px-2 py-1" onClick={() => act(c.id, 'resume')}>▶ Start</button>
                     )}
+                    <button className="btn-ghost px-2 py-1 text-sm" onClick={() => replicate(c.id, c.name)} title="Create a copy with the same settings, audience criteria and messages">⧉ Replicate</button>
                     {(c.status === 'DRAFT' || c.status === 'PAUSED' || c.status === 'COMPLETED') && (
                       <button className="btn-ghost px-2 py-1 text-sm" onClick={() => act(c.id, 'archive')}>Archive</button>
                     )}
