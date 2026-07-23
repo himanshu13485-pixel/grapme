@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { api } from '@/lib/api';
+import { api, setToken, setRefreshToken } from '@/lib/api';
 import { usePlans } from '@/lib/plans';
 import { useAuth } from '@/lib/auth';
 import { PageHeader, EmptyState, Pagination, Modal } from '@/components/ui';
@@ -50,6 +50,22 @@ export default function RegisteredClientsPage() {
       alert(`Confirmation email sent to ${u.email}.`);
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Failed to send');
+    }
+  }
+
+  /** Swap this browser's session for the client's, then land on their portal. */
+  async function loginAs(u: Registration) {
+    if (!confirm(
+      `Log in as "${u.email}"?\n\nYou'll see the client portal exactly as they do. This signs you out of the admin panel in this browser — sign out and back in to return.`,
+    )) return;
+    try {
+      const res = await api.post<{ accessToken: string; refreshToken: string }>(`/auth/client/${u.id}/impersonate`, {});
+      setToken(res.accessToken);
+      setRefreshToken(res.refreshToken);
+      // Full reload so every provider picks up the new identity cleanly.
+      window.location.href = '/client-home';
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Could not log in as this client');
     }
   }
 
@@ -164,7 +180,16 @@ export default function RegisteredClientsPage() {
                     <td className="px-4 py-3 whitespace-nowrap text-slate-500">{u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : 'Never'}</td>
                     {isSuper && (
                       <td className="px-4 py-3 text-right">
-                        <button className="text-xs font-medium text-rose-600 hover:underline" onClick={() => del(u)}>Delete</button>
+                        <div className="flex items-center justify-end gap-3">
+                          <button
+                            className="whitespace-nowrap text-xs font-medium text-brand-600 hover:underline"
+                            onClick={() => loginAs(u)}
+                            title="Open the client portal signed in as this client"
+                          >
+                            ↪ Login as
+                          </button>
+                          <button className="text-xs font-medium text-rose-600 hover:underline" onClick={() => del(u)}>Delete</button>
+                        </div>
                       </td>
                     )}
                   </tr>

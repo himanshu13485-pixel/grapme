@@ -129,6 +129,22 @@ export class AuthController {
     return this.auth.resendClientVerification(user, userId);
   }
 
+  /**
+   * Admin "Log in as client" — returns a real session for that client login so the
+   * admin can view the portal exactly as they see it. This replaces the admin's own
+   * session in that browser; sign out to come back as admin.
+   */
+  @Roles(Role.SUPER_ADMIN, Role.SUB_ADMIN)
+  @HttpCode(200)
+  @Post('client/:userId/impersonate')
+  impersonateClient(
+    @CurrentUser() user: AuthUser,
+    @Param('userId') userId: string,
+    @Req() req: Request,
+  ) {
+    return this.auth.impersonateClient(user, userId, this.sessionCtx(req));
+  }
+
   /** Client confirms an admin-initiated change to their portal login email. */
   @Public()
   @Throttle({ default: { limit: 10, ttl: 60_000 } })

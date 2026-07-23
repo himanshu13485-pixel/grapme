@@ -180,6 +180,7 @@ model Tenant {
   liAudiencePresets LiAudiencePreset[]
   supportTickets    SupportTicket[]
   broadcasts        Broadcast[]
+  internalNotes     InternalNote[]
 }
 
 // Uploaded images (e.g. for email templates), served publicly by id so mail
@@ -402,7 +403,9 @@ model User {
   supportMessages  SupportMessage[]
 
   // Admin broadcasts delivered to this (client) user.
-  broadcastReceipts BroadcastRecipient[]
+  broadcastReceipts    BroadcastRecipient[]
+  // Internal Work notes shared with this admin / sub-admin.
+  internalNoteReceipts InternalNoteRecipient[]
 
   @@index([tenantId])
   @@index([role])
@@ -1572,4 +1575,53 @@ model BroadcastRecipient {
 
   @@index([userId, readAt])
   @@index([broadcastId])
+}
+
+// ───────────────── Internal Work (admin-only notes / discussion) ─────────────────
+// A private board for the agency: notes about a client, hand-offs and internal
+// discussion between admins and sub-admins. Same composer as an admin Broadcast
+// (title + rich body + drafts + in-app/email), but clients NEVER see these.
+enum InternalNoteAudience {
+  ALL_STAFF // every admin + sub-admin
+  USER // one specific admin / sub-admin
+}
+
+model InternalNote {
+  id              String               @id @default(uuid())
+  tenantId        String
+  title           String
+  bodyHtml        String
+  clientId        String? // the client this note is about (optional)
+  clientName      String? // denormalized so the list still reads well if the client goes
+  audience        InternalNoteAudience @default(ALL_STAFF)
+  targetUserId    String? // when audience = USER
+  audienceLabel   String? // denormalized human label for the list
+  status          String               @default("DRAFT") // DRAFT | POSTED
+  postedAt        DateTime?
+  showInApp       Boolean              @default(true)
+  sendEmail       Boolean              @default(false)
+  createdByUserId String
+  createdByName   String?
+  recipientCount  Int                  @default(0)
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  tenant     Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  recipients InternalNoteRecipient[]
+
+  @@index([tenantId, createdAt])
+}
+
+model InternalNoteRecipient {
+  id        String    @id @default(uuid())
+  noteId    String
+  userId    String
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  note InternalNote @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+  @@index([noteId])
 }

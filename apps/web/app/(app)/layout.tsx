@@ -28,6 +28,7 @@ const NAV: NavItem[] = [
   { href: '/clients', label: 'Clients Workspace', icon: '🏢', admin: true, module: 'clients' },
   { href: '/support', label: 'Client Support', icon: '🎧', module: 'support', supportBadge: true },
   { href: '/broadcasts', label: 'Notifications', icon: '📢', admin: true, module: 'broadcasts' },
+  { href: '/internal-work', label: 'Internal Work', icon: '🗒', admin: true, module: 'internal-work' },
   { href: '/sales-persons', label: 'Sales Persons', icon: '🧑‍💼', admin: true, module: 'sales-persons' },
   { href: '/live-clients', label: 'Live Clients', icon: '🟢', admin: true, module: 'live-clients' },
   { href: '/blog', label: 'Blog', icon: '📝', admin: true, module: 'blog' },

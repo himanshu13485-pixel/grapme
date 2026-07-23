@@ -16,6 +16,7 @@ import { createHash, randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailerService } from '../sending/mailer.service';
 import { ApprovalsService } from '../approvals/approvals.service';
+import { ActivityService } from '../common/services/activity.service';
 import {
   LoginDto,
   RegisterDto,
@@ -41,6 +42,7 @@ export class AuthService {
     private config: ConfigService,
     private mailer: MailerService,
     private approvals: ApprovalsService,
+    private activity: ActivityService,
   ) {}
 
   private sha256(value: string): string {
@@ -534,6 +536,36 @@ export class AuthService {
    * Admin: re-send the confirmation email to an unverified client login (from
    * Registered Clients, when the original never arrived). Issues a fresh 24h token.
    */
+  /**
+   * "Log in as client": issue a real session for a CLIENT login so an admin can see
+   * the portal exactly as that client does. Admins only, same tenant, CLIENT role
+   * only — an admin can never impersonate another admin. Recorded in the activity
+   * log. Note this REPLACES the admin's own session in that browser; they sign out
+   * and back in to return to the admin panel.
+   */
+  async impersonateClient(admin: AuthUser, userId: string, ctx?: SessionCtx) {
+    if (admin.role !== Role.SUPER_ADMIN && admin.role !== Role.SUB_ADMIN) {
+      throw new ForbiddenException('Admins only');
+    }
+    const target = await this.prisma.user.findFirst({
+      where: { id: userId, tenantId: admin.tenantId, role: Role.CLIENT },
+    });
+    if (!target) throw new NotFoundException('Client login not found');
+    if (target.status === 'SUSPENDED') {
+      throw new BadRequestException('This client login is suspended.');
+    }
+    await this.activity.log({
+      tenantId: admin.tenantId,
+      actorId: admin.userId,
+      action: 'IMPERSONATE_CLIENT',
+      entityType: 'User',
+      entityId: target.id,
+      after: { email: target.email },
+    });
+    this.logger.warn(`${admin.email} logged in as client ${target.email}`);
+    return this.issueSession(target, ctx);
+  }
+
   async resendClientVerification(admin: AuthUser, userId: string) {
     if (admin.role !== Role.SUPER_ADMIN && admin.role !== Role.SUB_ADMIN) {
       throw new ForbiddenException('Admins only');
