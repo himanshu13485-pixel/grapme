@@ -486,6 +486,7 @@ export function LiRegularWizard({
               💡 Add alternate wordings to any step — each lead gets one at random, so no message repeats to your
               whole audience (looks human, safer for the account).
             </p>
+            <SequenceSummary outreachType={outreachType} note={note} noteVariants={noteVariants} followUps={followUps} />
           </Step>
         )}
 
@@ -670,4 +671,111 @@ function VariantsEditor({ variants, onChange, rows = 3 }: { variants: string[]; 
 }
 function Row({ k, v }: { k: string; v: string }) {
   return <div className="flex justify-between border-b border-slate-100 py-2 last:border-0"><span className="text-slate-500">{k}</span><span className="max-w-[60%] text-right font-medium text-slate-800">{v}</span></div>;
+}
+
+const CONDITION_LABEL: Record<StepCondition, string> = {
+  IF_ACCEPTED: 'only if accepted',
+  ANY: 'always (accepted or pending)',
+  IF_NOT_ACCEPTED: 'only if still pending',
+};
+function stepTiming(withConn: boolean, i: number, waitHours: number): string {
+  if (!withConn && i === 0) return 'sent first';
+  if (withConn && i === 0) return `~${waitHours}h after acceptance`;
+  return `${waitHours}h after previous step`;
+}
+function countWordings(primary: string, variants: string[]): number {
+  return (primary.trim() ? 1 : 0) + variants.filter((v) => v.trim()).length;
+}
+
+/** One numbered row in the flow summary. Rendered as a div so it can nest in groups. */
+function SummaryRow({ n, title, meta, timing, done }: { n: number; title: string; meta?: string; timing?: string; done?: boolean }) {
+  return (
+    <div className="flex items-start gap-3">
+      <span className={`mt-0.5 grid h-6 w-6 flex-none place-items-center rounded-full text-xs font-semibold ${done ? 'bg-emerald-100 text-emerald-700' : 'bg-brand-100 text-brand-700'}`}>{n}</span>
+      <div className="min-w-0">
+        <div className="text-sm font-medium text-slate-800">
+          {title}{timing && <span className="ml-2 text-xs font-normal text-slate-400">· {timing}</span>}
+        </div>
+        {meta && <div className="text-xs text-slate-500">{meta}</div>}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Live, numbered summary of the outreach flow. Step numbers match the engine's
+ * currentStep (connection = 1, FU-1 = 2, …). Random-choice groups render as a single
+ * "one of these at random" block, and the possible step-number paths are listed
+ * (e.g. Step-1/2/3 or Step-1/2/4).
+ */
+function SequenceSummary({ outreachType, note, noteVariants, followUps }: {
+  outreachType: 'WITH_CONNECTION' | 'DIRECT_MESSAGES';
+  note: string;
+  noteVariants: string[];
+  followUps: FollowUp[];
+}) {
+  const withConn = outreachType === 'WITH_CONNECTION';
+  const orderOf = (i: number) => i + 1 + (withConn ? 1 : 0);
+  const fuTitle = (i: number) => withConn ? `Follow-up ${i + 1}` : (i === 0 ? 'First message' : `Follow-up ${i}`);
+  const fuMeta = (f: FollowUp) => {
+    const w = countWordings(f.body, f.variants);
+    const cond = withConn ? CONDITION_LABEL[f.condition] : 'always';
+    return `${cond}${w > 1 ? ` · ${w} wording variants` : ''}`;
+  };
+
+  // Group consecutive random-alternative follow-ups into units of indices.
+  const units: number[][] = [];
+  if (followUps.length) {
+    let cur = [0];
+    for (let i = 1; i < followUps.length; i++) {
+      if (withConn && followUps[i - 1].randomWithNext) cur.push(i);
+      else { units.push(cur); cur = [i]; }
+    }
+    units.push(cur);
+  }
+  const completedStep = (withConn ? followUps.length + 1 : Math.max(1, followUps.length)) + 1;
+
+  // Possible step-number paths: connection + one pick per unit (capped for display).
+  const paths = units.reduce<number[][]>(
+    (acc, unit) => acc.flatMap((a) => unit.map((i) => [...a, orderOf(i)])),
+    withConn ? [[1]] : [[]],
+  );
+
+  return (
+    <div className="mt-4 rounded-xl border border-brand-200 bg-brand-50/40 p-4">
+      <div className="mb-3 text-sm font-semibold text-slate-700">Flow summary</div>
+      <div className="space-y-2">
+        {withConn && (
+          <SummaryRow n={1} title="Connection request"
+            meta={countWordings(note, noteVariants) > 1 ? `${countWordings(note, noteVariants)} wording variants` : (note.trim() ? 'with note' : 'no note')}
+            timing="sent first" />
+        )}
+        {units.map((unit, ui) => unit.length === 1 ? (
+          <SummaryRow key={unit[0]} n={orderOf(unit[0])} title={fuTitle(unit[0])} meta={fuMeta(followUps[unit[0]])} timing={stepTiming(withConn, unit[0], followUps[unit[0]].waitHours)} />
+        ) : (
+          <div key={`g${ui}`} className="rounded-lg border border-violet-200 bg-violet-50/60 p-2">
+            <div className="mb-1.5 text-xs font-medium text-violet-700">🎲 One of these, picked at random per lead:</div>
+            <div className="space-y-1.5">
+              {unit.map((i, k) => (
+                <div key={i}>
+                  {k > 0 && <div className="my-1 text-center text-xs font-medium text-violet-400">— or —</div>}
+                  <SummaryRow n={orderOf(i)} title={fuTitle(i)} meta={fuMeta(followUps[i])} timing={stepTiming(withConn, i, followUps[i].waitHours)} />
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+        <SummaryRow n={completedStep} title="Completed" timing="grace window passes with no reply" done />
+      </div>
+      {paths.length > 1 && paths.length <= 8 && (
+        <div className="mt-3 text-xs text-slate-500">
+          Possible paths:{' '}
+          {paths.map((p, i) => (
+            <span key={i}>{i > 0 && ' or '}<span className="font-medium text-slate-700">Step-{p.join('/')}</span></span>
+          ))}
+        </div>
+      )}
+      <div className="mt-2 text-xs text-slate-500">↩ The flow stops immediately at any stage if the lead replies.</div>
+    </div>
+  );
 }

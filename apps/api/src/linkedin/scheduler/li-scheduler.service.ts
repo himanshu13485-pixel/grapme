@@ -154,7 +154,22 @@ export class LiSchedulerService implements OnModuleInit {
     const jMin = Math.max(0, campaign.jitterMinSeconds ?? 20);
     const jMax = Math.max(jMin, campaign.jitterMaxSeconds ?? 90);
     const wobble = () => (jMin + Math.random() * (jMax - jMin)) * (Math.random() < 0.5 ? -1 : 1);
-    let index = 0;
+    // Continue TODAY's cadence rather than restarting at slot 0 (=now) on every call.
+    // Without this, each fresh batch (import / source / drip top-up) fires its first
+    // invite immediately, bunching sends near "now" instead of spreading across the
+    // window. Offset by first-actions already placed for today so new leads fill the
+    // remaining slots and overflow rolls into the next day's window.
+    const firstType = direct ? LiScheduledActionType.SEND_MESSAGE : LiScheduledActionType.SEND_CONNECTION;
+    const placedToday = await this.prisma.liScheduledAction.count({
+      where: {
+        type: firstType,
+        ...(direct ? { stepOrder: 1 } : {}),
+        status: { not: LiScheduledActionStatus.CANCELLED },
+        runAt: { gte: this.startOfToday(), lt: this.tomorrow() },
+        lead: { campaignId },
+      },
+    });
+    let index = placedToday;
     for (const lead of freshLeads) {
       const day = Math.floor(index / limit);
       const slot = index % limit;
