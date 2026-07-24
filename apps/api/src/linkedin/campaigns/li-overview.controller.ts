@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Query } from '@nestjs/common';
+import { Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { LiCampaignStatus, LiLeadStatus, Role } from '@prisma/client';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
@@ -44,12 +44,22 @@ export class LiOverviewController {
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
     @Query('all') all?: string,
+    @Query('step') step?: string,
+    @Query('sentFrom') sentFrom?: string,
+    @Query('sentTo') sentTo?: string,
   ) {
     return this.campaigns.globalLeads(u.tenantId, {
-      clientSearch: client, status,
+      clientSearch: client, status, sentFrom, sentTo,
+      step: step != null && step !== '' ? Number(step) : undefined,
       page: page ? Number(page) : undefined,
       pageSize: pageSize ? Number(pageSize) : undefined,
       all: all === 'true',
     });
+  }
+
+  /** Per-lead action timeline for the directory's Log button. */
+  @Get('leads/:campaignId/:leadId/log')
+  leadLog(@Param('campaignId') campaignId: string, @Param('leadId') leadId: string) {
+    return this.campaigns.leadLog(campaignId, leadId);
   }
 }

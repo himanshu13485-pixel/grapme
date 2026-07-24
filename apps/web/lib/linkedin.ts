@@ -199,6 +199,7 @@ export interface LiLead {
   profileUrl?: string | null;
   status: string;
   currentStep: number;
+  lastActionAt?: string | null;
   sentiment?: string | null;
 }
 

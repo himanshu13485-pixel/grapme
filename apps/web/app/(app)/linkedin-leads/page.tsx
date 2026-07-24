@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import { PageHeader, EmptyState, Pagination, StatusBadge } from '@/components/ui';
 import { parseLeadTitleCompany } from '@/lib/linkedin';
 import { downloadCsv } from '@/lib/csv';
+import { LiLeadLogModal } from '@/components/LiLeadLogModal';
 
 interface LeadRow {
   id: string;
@@ -16,6 +17,7 @@ interface LeadRow {
   status: string;
   currentStep: number;
   createdAt: string;
+  lastActionAt?: string | null;
   campaign: { id: string; name: string; status: string };
   client?: { id: string; name: string; company?: string | null; invoice?: string | null } | null;
 }
@@ -34,6 +36,10 @@ export default function LinkedInLeadsPage() {
   const [q, setQ] = useState('');
   const [dq, setDq] = useState('');
   const [status, setStatus] = useState('');
+  const [fStep, setFStep] = useState('');
+  const [fFrom, setFFrom] = useState('');
+  const [fTo, setFTo] = useState('');
+  const [logLead, setLogLead] = useState<{ campaignId: string; id: string; name: string } | null>(null);
   const [exporting, setExporting] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -92,17 +98,20 @@ export default function LinkedInLeadsPage() {
     return next;
   });
 
-  useEffect(() => { setPage(1); }, [dq, status]);
+  useEffect(() => { setPage(1); }, [dq, status, fStep, fFrom, fTo]);
 
   useEffect(() => {
     const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
     if (dq) params.set('client', dq);
     if (status) params.set('status', status);
+    if (fStep !== '') params.set('step', fStep);
+    if (fFrom) params.set('sentFrom', fFrom);
+    if (fTo) params.set('sentTo', fTo);
     api.get<{ items: LeadRow[]; total: number }>(`/linkedin/overview/leads?${params}`)
       .then((r) => { setItems(r.items); setTotal(r.total); })
       .catch(() => {})
       .finally(() => setLoaded(true));
-  }, [page, dq, status]);
+  }, [page, dq, status, fStep, fFrom, fTo]);
 
   return (
     <div>
@@ -118,6 +127,24 @@ export default function LinkedInLeadsPage() {
           <option value="MESSAGED">Messaged</option>
           <option value="REPLIED">Replied</option>
         </select>
+        <select className="input w-32" value={fStep} onChange={(e) => setFStep(e.target.value)} title="Filter by step reached">
+          <option value="">Any step</option>
+          <option value="0">Step 0</option>
+          <option value="1">Step 1</option>
+          <option value="2">Step 2</option>
+          <option value="3">Step 3</option>
+          <option value="4">Step 4</option>
+          <option value="5">Step 5</option>
+        </select>
+        <div className="flex items-center gap-1.5 text-sm text-slate-500">
+          <span>Sent</span>
+          <input type="date" className="input w-36" value={fFrom} onChange={(e) => setFFrom(e.target.value)} title="Sent on / after" />
+          <span>–</span>
+          <input type="date" className="input w-36" value={fTo} onChange={(e) => setFTo(e.target.value)} title="Sent on / before" />
+          {(fStep || fFrom || fTo) && (
+            <button className="text-slate-400 hover:text-slate-600" onClick={() => { setFStep(''); setFFrom(''); setFTo(''); }} title="Clear filters">✕</button>
+          )}
+        </div>
         <div className="relative">
           <button className="btn-ghost whitespace-nowrap" disabled={exporting || total === 0} onClick={() => setMenuOpen((o) => !o)}>
             {exporting ? 'Exporting…' : '⭳ Download ▾'}
@@ -163,6 +190,9 @@ export default function LinkedInLeadsPage() {
                   <th className="px-4 py-3">Campaign</th>
                   <th className="px-4 py-3">Campaign status</th>
                   <th className="px-4 py-3">Lead status</th>
+                  <th className="px-4 py-3">Step</th>
+                  <th className="px-4 py-3">Last activity</th>
+                  <th className="px-4 py-3 text-right">Log</th>
                 </tr>
               </thead>
               <tbody>
@@ -193,6 +223,11 @@ export default function LinkedInLeadsPage() {
                       </td>
                       <td className="px-4 py-3"><StatusBadge status={l.campaign.status} /></td>
                       <td className="px-4 py-3"><span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs">{STATUS_LABEL[l.status] ?? l.status}</span></td>
+                      <td className="px-4 py-3 text-slate-500">{l.currentStep}</td>
+                      <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-500">{l.lastActionAt ? new Date(l.lastActionAt).toLocaleString() : '—'}</td>
+                      <td className="px-4 py-3 text-right">
+                        <button className="text-xs font-medium text-slate-600 hover:underline" onClick={() => setLogLead({ campaignId: l.campaign.id, id: l.id, name: l.fullName })} title="See when each step was sent">Log</button>
+                      </td>
                     </tr>
                   );
                 })}
@@ -200,6 +235,13 @@ export default function LinkedInLeadsPage() {
             </table>
           </div>
           <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPage={setPage} />
+          {logLead && (
+            <LiLeadLogModal
+              logUrl={`/linkedin/overview/leads/${logLead.campaignId}/${logLead.id}/log`}
+              name={logLead.name}
+              onClose={() => setLogLead(null)}
+            />
+          )}
         </>
       )}
     </div>

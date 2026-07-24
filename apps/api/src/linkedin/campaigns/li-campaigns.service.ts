@@ -425,15 +425,18 @@ export class LiCampaignsService {
     return { ok: true, deleted: res.count };
   }
 
-  async leads(id: string, opts: { status?: LiLeadStatus; page?: number; pageSize?: number; search?: string }) {
+  async leads(id: string, opts: { status?: LiLeadStatus; page?: number; pageSize?: number; search?: string; step?: number; sentFrom?: string; sentTo?: string }) {
     await this.assertExists(id);
     const page = Math.max(1, opts.page ?? 1);
     const pageSize = Math.min(100, Math.max(1, opts.pageSize ?? 25));
     // Expand a picked stage to its cumulative set (Connected = connected-or-beyond, …).
     const pipeline = opts.status ? LiCampaignsService.LEAD_PIPELINE[opts.status] : undefined;
+    const sentRange = dateRange(opts.sentFrom, opts.sentTo);
     const where: Prisma.LiLeadWhereInput = {
       campaignId: id,
       ...(pipeline ? { status: { in: pipeline } } : opts.status ? { status: opts.status } : {}),
+      ...(opts.step != null && !Number.isNaN(opts.step) ? { currentStep: opts.step } : {}),
+      ...(sentRange ? { lastActionAt: sentRange } : {}),
       ...(opts.search
         ? { OR: [
             { fullName: { contains: opts.search, mode: 'insensitive' } },
@@ -813,23 +816,26 @@ export class LiCampaignsService {
   }
 
   /** Admin cross-client leads view (leads sourced via drip / import / audience). */
-  async globalLeads(tenantId: string, opts: { clientSearch?: string; status?: LiLeadStatus; page?: number; pageSize?: number; all?: boolean }) {
+  async globalLeads(tenantId: string, opts: { clientSearch?: string; status?: LiLeadStatus; page?: number; pageSize?: number; all?: boolean; step?: number; sentFrom?: string; sentTo?: string }) {
     // `all` (CSV export) returns every matching row, capped for safety.
     const page = opts.all ? 1 : Math.max(1, opts.page ?? 1);
     const pageSize = opts.all ? 10000 : Math.min(100, Math.max(1, opts.pageSize ?? 25));
     const clientIds = await this.clientIdsForSearch(tenantId, opts.clientSearch);
     if (clientIds && clientIds.length === 0) return { items: [], total: 0, page, pageSize };
 
+    const sentRange = dateRange(opts.sentFrom, opts.sentTo);
     const where: Prisma.LiLeadWhereInput = {
       campaign: { tenantId, ...(clientIds ? { clientId: { in: clientIds } } : {}) },
       ...(opts.status ? { status: opts.status } : {}),
+      ...(opts.step != null && !Number.isNaN(opts.step) ? { currentStep: opts.step } : {}),
+      ...(sentRange ? { lastActionAt: sentRange } : {}),
     };
     const [total, rows] = await this.prisma.$transaction([
       this.prisma.liLead.count({ where }),
       this.prisma.liLead.findMany({
         where, orderBy: { createdAt: 'desc' }, skip: (page - 1) * pageSize, take: pageSize,
         select: {
-          id: true, fullName: true, title: true, company: true, profileUrl: true, status: true, currentStep: true, createdAt: true,
+          id: true, fullName: true, title: true, company: true, profileUrl: true, status: true, currentStep: true, createdAt: true, lastActionAt: true,
           campaign: { select: { id: true, name: true, status: true, clientId: true } },
         },
       }),
@@ -837,11 +843,59 @@ export class LiCampaignsService {
     const cmap = await this.clientMap(rows.map((r) => r.campaign.clientId));
     const items = rows.map((l) => ({
       id: l.id, fullName: l.fullName, title: l.title, company: l.company, profileUrl: l.profileUrl,
-      status: l.status, currentStep: l.currentStep, createdAt: l.createdAt,
+      status: l.status, currentStep: l.currentStep, createdAt: l.createdAt, lastActionAt: l.lastActionAt,
       campaign: { id: l.campaign.id, name: l.campaign.name, status: l.campaign.status },
       client: cmap.get(l.campaign.clientId) ?? null,
     }));
     return { items, total, page, pageSize };
+  }
+
+  /**
+   * Per-lead action timeline — when each step was actually sent. Powers the "Log"
+   * button. Shows the connection request, each follow-up message, and the moment
+   * the connection was accepted; internal acceptance polls are omitted as noise.
+   */
+  async leadLog(campaignId: string, leadId: string) {
+    const lead = await this.prisma.liLead.findFirst({
+      where: { id: leadId, campaignId },
+      select: { id: true, fullName: true, status: true, currentStep: true, connectedAt: true, lastReplyAt: true },
+    });
+    if (!lead) throw new NotFoundException('Lead not found');
+
+    // Map a step order to a human label ("Connection request" / "Follow-up N").
+    const steps = await this.prisma.liSequenceStep.findMany({
+      where: { campaignId }, orderBy: { order: 'asc' }, select: { order: true, type: true },
+    });
+    const messageOrders = steps.filter((s) => s.type === 'MESSAGE').map((s) => s.order);
+    const labelFor = (type: string, stepOrder: number | null): string => {
+      if (type === 'SEND_CONNECTION') return 'Connection request';
+      if (type === 'SEND_MESSAGE') {
+        const idx = stepOrder != null ? messageOrders.indexOf(stepOrder) : -1;
+        return idx >= 0 ? `Follow-up ${idx + 1}` : 'Message';
+      }
+      return type;
+    };
+
+    const actions = await this.prisma.liScheduledAction.findMany({
+      where: { leadId, type: { in: ['SEND_CONNECTION', 'SEND_MESSAGE'] } },
+      orderBy: { runAt: 'asc' },
+      select: { type: true, stepOrder: true, status: true, runAt: true, updatedAt: true, lastError: true },
+    });
+
+    const entries = actions.map((a) => ({
+      label: labelFor(a.type, a.stepOrder),
+      status: a.status, // DONE = sent · PENDING/QUEUED/RUNNING = scheduled · FAILED · CANCELLED
+      // When it happened: completion time for a finished action, else the due time.
+      at: a.status === 'DONE' ? a.updatedAt : a.runAt,
+      scheduledFor: a.runAt,
+      error: a.lastError,
+    }));
+    // Fold in the acceptance moment so the timeline reads naturally.
+    if (lead.connectedAt) entries.push({ label: 'Connection accepted', status: 'DONE', at: lead.connectedAt, scheduledFor: lead.connectedAt, error: null });
+    if (lead.lastReplyAt) entries.push({ label: 'Reply received', status: 'DONE', at: lead.lastReplyAt, scheduledFor: lead.lastReplyAt, error: null });
+    entries.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
+
+    return { lead: { id: lead.id, fullName: lead.fullName, status: lead.status, currentStep: lead.currentStep }, entries };
   }
 
   private async assertExists(id: string) {
@@ -858,4 +912,12 @@ export class LiCampaignsService {
 function normalizeTokens(text?: string | null): string | null | undefined {
   if (text == null) return text;
   return text.replace(/\{\{\s*(first_name|last_name|company|title)\s*\}\}/gi, '{$1}');
+}
+
+/** Inclusive date range → Prisma DateTime filter (end date covers the whole day). */
+function dateRange(from?: string, to?: string): Prisma.DateTimeFilter | null {
+  const r: Prisma.DateTimeFilter = {};
+  if (from) { const d = new Date(from); if (!Number.isNaN(d.getTime())) r.gte = d; }
+  if (to) { const d = new Date(to); if (!Number.isNaN(d.getTime())) r.lte = new Date(d.getTime() + 86_400_000 - 1); }
+  return r.gte || r.lte ? r : null;
 }

@@ -92,12 +92,22 @@ export class LiCampaignsController {
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
     @Query('search') search?: string,
+    @Query('step') step?: string,
+    @Query('sentFrom') sentFrom?: string,
+    @Query('sentTo') sentTo?: string,
   ) {
     return this.campaigns.leads(id, {
-      status, search,
+      status, search, sentFrom, sentTo,
+      step: step != null && step !== '' ? Number(step) : undefined,
       page: page ? Number(page) : undefined,
       pageSize: pageSize ? Number(pageSize) : undefined,
     });
+  }
+
+  /** Per-lead action timeline (when each step was sent). */
+  @Get(':id/leads/:leadId/log')
+  leadLog(@Param('id') id: string, @Param('leadId') leadId: string) {
+    return this.campaigns.leadLog(id, leadId);
   }
 
   @Post(':id/generate-audience')

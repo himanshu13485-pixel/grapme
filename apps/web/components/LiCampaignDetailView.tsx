@@ -5,6 +5,7 @@ import { api } from '@/lib/api';
 import { EmptyState, Tabs, Pagination } from '@/components/ui';
 import { LiImportLeadsModal } from '@/components/LiImportLeadsModal';
 import { LiCampaignSummary } from '@/components/LiCampaignSummary';
+import { LiLeadLogModal } from '@/components/LiLeadLogModal';
 import { ConnectionPerformanceChart, EngagementVolumeChart } from '@/components/LiCampaignCharts';
 import { LiCampaignDetail, LiCampaignStats, LiLeadsPage, parseLeadTitleCompany } from '@/lib/linkedin';
 
@@ -156,6 +157,11 @@ function Details({ campaignId, base }: { campaignId: string; base: string }) {
   // Admin-only bulk selection for removing targets (e.g. duplicates).
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [sendingNow, setSendingNow] = useState<string | null>(null);
+  // Step + sent-date filters and the per-lead activity log.
+  const [fStep, setFStep] = useState('');
+  const [fFrom, setFFrom] = useState('');
+  const [fTo, setFTo] = useState('');
+  const [logLead, setLogLead] = useState<{ id: string; name: string } | null>(null);
 
   async function syncNow() {
     setSyncing(true);
@@ -206,8 +212,11 @@ function Details({ campaignId, base }: { campaignId: string; base: string }) {
     const qs = new URLSearchParams({ page: String(page) });
     if (status) qs.set('status', status);
     if (dq) qs.set('search', dq);
+    if (fStep !== '') qs.set('step', fStep);
+    if (fFrom) qs.set('sentFrom', fFrom);
+    if (fTo) qs.set('sentTo', fTo);
     api.get<LiLeadsPage>(`${base}/campaigns/${campaignId}/leads?${qs}`).then(setData);
-  }, [campaignId, base, tab, page, dq, reloadKey]);
+  }, [campaignId, base, tab, page, dq, fStep, fFrom, fTo, reloadKey]);
 
   async function deleteLead(id: string, name: string) {
     if (!confirm(`Remove "${name}" from this campaign's audience? Any pending connection/message for them is cancelled.`)) return;
@@ -289,6 +298,27 @@ function Details({ campaignId, base }: { campaignId: string; base: string }) {
           <button className="btn-ghost whitespace-nowrap" onClick={() => setImporting(true)}>⭳ Import leads</button>
         </div>
       </div>
+      {/* Step + sent-date filters (admin) */}
+      {!isPortal && (
+        <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
+          <select className="input w-32" value={fStep} onChange={(e) => { setFStep(e.target.value); setPage(1); }} title="Filter by step reached">
+            <option value="">Any step</option>
+            <option value="0">Step 0 (not started)</option>
+            <option value="1">Step 1</option>
+            <option value="2">Step 2</option>
+            <option value="3">Step 3</option>
+            <option value="4">Step 4</option>
+            <option value="5">Step 5</option>
+          </select>
+          <span className="text-slate-400">Sent between</span>
+          <input type="date" className="input w-40" value={fFrom} onChange={(e) => { setFFrom(e.target.value); setPage(1); }} />
+          <span className="text-slate-400">and</span>
+          <input type="date" className="input w-40" value={fTo} onChange={(e) => { setFTo(e.target.value); setPage(1); }} />
+          {(fStep || fFrom || fTo) && (
+            <button className="text-xs text-slate-400 hover:text-slate-600" onClick={() => { setFStep(''); setFFrom(''); setFTo(''); setPage(1); }}>✕ Clear</button>
+          )}
+        </div>
+      )}
       {importing && (
         <LiImportLeadsModal
           campaignId={campaignId}
@@ -313,6 +343,7 @@ function Details({ campaignId, base }: { campaignId: string; base: string }) {
               <th className="p-3 font-medium">Company</th>
               <th className="p-3 font-medium">Status</th>
               <th className="p-3 font-medium">Step</th>
+              <th className="p-3 font-medium">Last activity</th>
               {!isPortal && <th className="p-3 font-medium text-right">Actions</th>}
             </tr>
           </thead>
@@ -340,9 +371,13 @@ function Details({ campaignId, base }: { campaignId: string; base: string }) {
                 <td className="p-3"><div className="max-w-[170px] truncate text-slate-600" title={tc.company}>{tc.company}</div></td>
                 <td className="p-3"><span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs">{STATUS_LABEL[l.status] ?? l.status}</span></td>
                 <td className="p-3 text-slate-500">{l.currentStep}</td>
+                <td className="p-3 whitespace-nowrap text-xs text-slate-500">{l.lastActionAt ? new Date(l.lastActionAt).toLocaleString() : '—'}</td>
                 {!isPortal && (
                   <td className="p-3 text-right">
                     <div className="flex items-center justify-end gap-3">
+                      <button className="whitespace-nowrap text-xs font-medium text-slate-600 hover:underline" onClick={() => setLogLead({ id: l.id, name: l.fullName })} title="See when each step was sent">
+                        Log
+                      </button>
                       <button
                         className="whitespace-nowrap text-xs font-medium text-brand-600 hover:underline disabled:opacity-40"
                         disabled={sendingNow === l.id}
@@ -358,11 +393,18 @@ function Details({ campaignId, base }: { campaignId: string; base: string }) {
               </tr>
               );
             })}
-            {data && data.items.length === 0 && <tr><td colSpan={isPortal ? 6 : 8} className="p-8 text-center text-slate-400">{dq ? 'No targets match your search.' : 'No leads in this view.'}</td></tr>}
+            {data && data.items.length === 0 && <tr><td colSpan={isPortal ? 7 : 9} className="p-8 text-center text-slate-400">{dq ? 'No targets match your search.' : 'No leads in this view.'}</td></tr>}
           </tbody>
         </table>
       </div>
       {data && <Pagination page={data.page} pageSize={data.pageSize} total={data.total} onPage={setPage} />}
+      {logLead && (
+        <LiLeadLogModal
+          logUrl={`${base}/campaigns/${campaignId}/leads/${logLead.id}/log`}
+          name={logLead.name}
+          onClose={() => setLogLead(null)}
+        />
+      )}
     </div>
   );
 }
