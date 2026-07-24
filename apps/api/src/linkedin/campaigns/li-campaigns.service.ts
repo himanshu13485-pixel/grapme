@@ -170,6 +170,8 @@ export class LiCampaignsService {
         data: dto.steps.map((s, i) => ({
           campaignId: id, order: i + 1, type: s.type, condition: s.condition ?? 'ANY', waitHours: s.waitHours,
           body: normalizeTokens(s.body), note: normalizeTokens(s.note),
+          // Random-choice group id (MESSAGE steps only; one of a group is sent per lead).
+          randomGroup: s.randomGroup ?? null,
           // Keep only non-empty alternate wordings.
           variants: (s.variants ?? []).map((v) => normalizeTokens(v)?.trim() ?? '').filter((v) => v.length > 0),
         })),
@@ -371,6 +373,7 @@ export class LiCampaignsService {
             body: s.body,
             note: s.note,
             variants: s.variants,
+            randomGroup: s.randomGroup,
           })),
         },
         // Target-audience criteria (the search spec, not the sourced leads).

@@ -1344,6 +1344,11 @@ model LiSequenceStep {
   // lead at send time from [body/note, ...variants], so no single string repeats to
   // the whole audience. Empty = single fixed wording (back-compat).
   variants   String[]        @default([])
+  // Random-choice grouping: MESSAGE steps sharing the same non-null randomGroup are
+  // alternatives — exactly ONE of the group is sent per lead (picked at random, using
+  // that member's own waitHours). Null = a normal, always-sent step. Lets a sequence
+  // offer e.g. "FU-2 (24h) OR FU-3 (48h) — pick one" for a more human, varied cadence.
+  randomGroup Int?
   createdAt  DateTime        @default(now())
   updatedAt  DateTime        @updatedAt
 

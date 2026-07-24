@@ -31,6 +31,8 @@ export class LiSequenceStepDto {
   @IsInt() @Min(0) waitHours!: number;
   @IsOptional() @IsString() body?: string;
   @IsOptional() @IsString() note?: string;
+  // Random-choice group: MESSAGE steps sharing a value are alternatives (one sent/lead).
+  @IsOptional() @IsInt() @Min(1) randomGroup?: number;
   // Up to 2 alternate wordings (a lead gets one at random from body/note + these).
   @IsOptional() @IsArray() @IsString({ each: true }) @ArrayMaxSize(2) variants?: string[];
 }

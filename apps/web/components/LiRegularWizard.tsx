@@ -14,6 +14,17 @@ const DEPT_SUGGEST = ['Sales', 'Marketing', 'Human Resources', 'Finance', 'Engin
 const TITLE_SUGGEST = ['CEO', 'CTO', 'CFO', 'VP of Sales', 'Marketing Manager', 'Product Manager', 'Sales Manager', 'Founder'];
 const DAYS = [['Mon', 1], ['Tue', 2], ['Wed', 3], ['Thu', 4], ['Fri', 5], ['Sat', 6], ['Sun', 0]] as const;
 
+type StepCondition = 'ANY' | 'IF_ACCEPTED' | 'IF_NOT_ACCEPTED';
+interface FollowUp {
+  waitHours: number;
+  body: string;
+  variants: string[];
+  condition: StepCondition;
+  // "Send only one of this step and the next, at random." Consecutive flagged steps
+  // form one random-choice group; buildSteps turns this into shared randomGroup ids.
+  randomWithNext: boolean;
+}
+
 type Audience = Record<string, string[]>;
 const emptyAudience: Audience = {
   countries: [], cities: [], industries: [], companySizes: [], departments: [], jobTitles: [], seniorities: [],
@@ -56,8 +67,8 @@ export function LiRegularWizard({
   const [audience, setAudience] = useState<Audience>(emptyAudience);
   const [note, setNote] = useState('');
   const [noteVariants, setNoteVariants] = useState<string[]>([]);
-  const [followUps, setFollowUps] = useState<{ waitHours: number; body: string; variants: string[]; condition: 'ANY' | 'IF_ACCEPTED' | 'IF_NOT_ACCEPTED' }[]>([
-    { waitHours: 24, body: 'Hi {first_name}, thanks for connecting. Would love to share how we help teams like {company}.', variants: [], condition: 'ANY' },
+  const [followUps, setFollowUps] = useState<FollowUp[]>([
+    { waitHours: 2, body: 'Hi {first_name}, thanks for connecting. Would love to share how we help teams like {company}.', variants: [], condition: 'IF_ACCEPTED', randomWithNext: false },
   ]);
   const [sched, setSched] = useState({
     timezone: 'Asia/Kolkata', run247: false, workStartHour: 9, workEndHour: 18,
@@ -124,7 +135,15 @@ export function LiRegularWizard({
       const conn = c.steps.find((s) => s.type === 'CONNECTION_REQUEST');
       setNote(conn?.note ?? '');
       setNoteVariants(conn?.variants ?? []);
-      const msgs = c.steps.filter((s) => s.type === 'MESSAGE').map((s) => ({ waitHours: s.waitHours, body: s.body ?? '', variants: s.variants ?? [], condition: (s.condition ?? 'ANY') as 'ANY' | 'IF_ACCEPTED' | 'IF_NOT_ACCEPTED' }));
+      const msgSteps = c.steps.filter((s) => s.type === 'MESSAGE');
+      const msgs: FollowUp[] = msgSteps.map((s, i) => ({
+        waitHours: s.waitHours,
+        body: s.body ?? '',
+        variants: s.variants ?? [],
+        condition: (s.condition ?? 'IF_ACCEPTED') as StepCondition,
+        // Grouped with the next step if they share a non-null randomGroup.
+        randomWithNext: s.randomGroup != null && msgSteps[i + 1]?.randomGroup === s.randomGroup,
+      }));
       if (msgs.length) setFollowUps(msgs);
       setSched((prev) => ({
         ...prev,
@@ -201,11 +220,38 @@ export function LiRegularWizard({
   }
 
   const cleanVariants = (v: string[]) => v.map((x) => (x ?? '').trim()).filter(Boolean).slice(0, 2);
+  // Turn each follow-up's "pick one at random with the next" flag into shared randomGroup
+  // ids: a run of consecutive flagged steps (+ the step after it) becomes one group.
+  // Only meaningful for WITH_CONNECTION follow-ups.
+  function randomGroups(): (number | null)[] {
+    const groups: (number | null)[] = followUps.map(() => null);
+    if (outreachType !== 'WITH_CONNECTION') return groups;
+    let gid = 0;
+    for (let i = 0; i < followUps.length - 1; i++) {
+      if (followUps[i].randomWithNext) {
+        if (groups[i] == null) { gid += 1; groups[i] = gid; }
+        groups[i + 1] = groups[i];
+      }
+    }
+    return groups;
+  }
   function buildSteps() {
     const steps: any[] = [];
     if (outreachType === 'WITH_CONNECTION') steps.push({ type: 'CONNECTION_REQUEST', waitHours: 0, note: note || undefined, variants: cleanVariants(noteVariants) });
-    followUps.forEach((f, i) => steps.push({ type: 'MESSAGE', condition: outreachType === 'WITH_CONNECTION' ? f.condition : 'ANY', waitHours: outreachType === 'DIRECT_MESSAGES' && i === 0 ? 0 : Number(f.waitHours), body: f.body, variants: cleanVariants(f.variants) }));
+    const groups = randomGroups();
+    followUps.forEach((f, i) => steps.push({
+      type: 'MESSAGE',
+      condition: outreachType === 'WITH_CONNECTION' ? f.condition : 'ANY',
+      waitHours: outreachType === 'DIRECT_MESSAGES' && i === 0 ? 0 : Number(f.waitHours),
+      body: f.body,
+      variants: cleanVariants(f.variants),
+      randomGroup: groups[i] ?? undefined,
+    }));
     return steps;
+  }
+  // Distinct follow-up "touches": a random-choice group counts once (one send per lead).
+  function messageTouches() {
+    return followUps.filter((_, i) => !(outreachType === 'WITH_CONNECTION' && i > 0 && followUps[i - 1].randomWithNext)).length;
   }
 
   async function next() {
@@ -379,7 +425,12 @@ export function LiRegularWizard({
             {followUps.map((f, i) => (
               <div key={i} className="mb-3 rounded-xl border border-slate-200 p-4">
                 <div className="mb-2 flex items-center justify-between">
-                  <div className="font-medium text-slate-800">{outreachType === 'DIRECT_MESSAGES' && i === 0 ? 'First Message' : `Follow-up ${i + 1}`}</div>
+                  <div className="flex items-center gap-2 font-medium text-slate-800">
+                    {outreachType === 'DIRECT_MESSAGES' && i === 0 ? 'First Message' : `Follow-up ${i + 1}`}
+                    {outreachType === 'WITH_CONNECTION' && !isPortal && (f.randomWithNext || (i > 0 && followUps[i - 1].randomWithNext)) && (
+                      <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-700" title="Only one step of this random group is sent per lead">🎲 random pick</span>
+                    )}
+                  </div>
                   <div className="flex items-center gap-3 text-sm">
                     {!(outreachType === 'DIRECT_MESSAGES' && i === 0) && (
                       <span className="text-slate-500">Wait <input type="number" min={0} className="w-16 rounded border border-slate-300 px-2 py-0.5" value={f.waitHours} onChange={(e) => setFollowUps((fs) => fs.map((x, j) => j === i ? { ...x, waitHours: Number(e.target.value) } : x))} /> h after previous step</span>
@@ -387,19 +438,32 @@ export function LiRegularWizard({
                     {followUps.length > 1 && <button className="text-rose-500" onClick={() => setFollowUps((fs) => fs.filter((_, j) => j !== i))}>Delete</button>}
                   </div>
                 </div>
-                {/* The accept-branch routing is internal agency strategy — admin only. */}
+                {/* Accept-branch routing + random grouping are internal agency strategy — admin only. */}
                 {outreachType === 'WITH_CONNECTION' && !isPortal && (
-                  <div className="mb-2 flex items-center gap-2 text-sm">
-                    <span className="text-slate-500">Send this step</span>
-                    <select
-                      className="rounded border border-slate-300 px-2 py-1"
-                      value={f.condition}
-                      onChange={(e) => setFollowUps((fs) => fs.map((x, j) => j === i ? { ...x, condition: e.target.value as 'ANY' | 'IF_ACCEPTED' | 'IF_NOT_ACCEPTED' } : x))}
-                    >
-                      <option value="ANY">Always — accepted or still pending</option>
-                      <option value="IF_ACCEPTED">Only if the connection was accepted</option>
-                      <option value="IF_NOT_ACCEPTED">Only if not yet accepted (still pending)</option>
-                    </select>
+                  <div className="mb-2 space-y-2 text-sm">
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-500">Send this step</span>
+                      <select
+                        className="rounded border border-slate-300 px-2 py-1"
+                        value={f.condition}
+                        onChange={(e) => setFollowUps((fs) => fs.map((x, j) => j === i ? { ...x, condition: e.target.value as StepCondition } : x))}
+                      >
+                        <option value="IF_ACCEPTED">Only if the connection was accepted</option>
+                        <option value="ANY">Always — accepted or still pending</option>
+                        <option value="IF_NOT_ACCEPTED">Only if not yet accepted (still pending)</option>
+                      </select>
+                    </div>
+                    {i < followUps.length - 1 && (
+                      <label className="flex items-start gap-2 text-slate-600">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5"
+                          checked={f.randomWithNext}
+                          onChange={(e) => setFollowUps((fs) => fs.map((x, j) => j === i ? { ...x, randomWithNext: e.target.checked } : x))}
+                        />
+                        <span>🎲 Send <strong>only one</strong> of this and the next follow-up, picked at random per lead (each keeps its own wait).</span>
+                      </label>
+                    )}
                   </div>
                 )}
                 <textarea className="input" rows={3} value={f.body} onChange={(e) => setFollowUps((fs) => fs.map((x, j) => j === i ? { ...x, body: e.target.value } : x))} />
@@ -407,15 +471,15 @@ export function LiRegularWizard({
                 <VariantsEditor variants={f.variants} onChange={(v) => setFollowUps((fs) => fs.map((x, j) => j === i ? { ...x, variants: v } : x))} />
               </div>
             ))}
-            <button className="btn-ghost w-full" onClick={() => setFollowUps((fs) => [...fs, { waitHours: 48, body: '', variants: [], condition: 'ANY' }])}>+ Add message</button>
+            <button className="btn-ghost w-full" onClick={() => setFollowUps((fs) => [...fs, { waitHours: 48, body: '', variants: [], condition: 'IF_ACCEPTED', randomWithNext: false }])}>+ Add message</button>
             {outreachType === 'WITH_CONNECTION' && !isPortal && (
               <p className="mt-2 text-xs text-slate-400">
-                Follow-ups run on their own clock from the connection request — each wait is
-                counted from the previous step, and the condition is checked when the step fires:
-                FU-1 = <em>Always</em> · FU-2 = <em>Only if accepted</em> · FU-3 = <em>Only if not yet accepted</em>
-                (still pending → FU-2 is skipped and FU-3 goes out). Once the connection
-                window ends the invite is withdrawn and the lead stops receiving follow-ups.
-                Note: LinkedIn only reliably delivers DMs to accepted connections.
+                Follow-ups begin <strong>after the invite is accepted</strong> — LinkedIn only delivers
+                DMs to accepted connections — and each wait is counted from the previous step
+                (e.g. FU-1 = 2h after acceptance). Tick <em>random pick</em> to send only one of two
+                steps at random (e.g. FU-2 at 24h <em>or</em> FU-3 at 48h) for a more human, varied
+                cadence. Invites not accepted within the connection window are withdrawn and the lead
+                is marked <strong>Not accepted</strong> (no follow-ups).
               </p>
             )}
             <p className="mt-2 text-xs text-slate-500">
@@ -516,8 +580,8 @@ export function LiRegularWizard({
               </div>
               <div className="mt-2 text-xs text-slate-500">
                 {sched.followUpMin > 0 && sched.followUpMax >= sched.followUpMin
-                  ? `Each lead randomly gets ${sched.followUpMin}–${sched.followUpMax} of your ${followUps.length} message(s).`
-                  : `Every lead gets all ${followUps.length} message(s).`}
+                  ? `Each lead randomly gets ${sched.followUpMin}–${sched.followUpMax} of your ${messageTouches()} follow-up(s).`
+                  : `Every lead gets all ${messageTouches()} follow-up(s).`}
                 {' '}After the last message, a lead is marked <strong>Completed</strong> if there&apos;s no reply within {sched.graceHours}h (≈{Math.round(sched.graceHours / 24)}d).
                 {' '}A connection invite not accepted within <strong>{sched.connectionWindowDays} day{sched.connectionWindowDays === 1 ? '' : 's'}</strong> is withdrawn and the lead marked <strong>Not accepted</strong>.
               </div>

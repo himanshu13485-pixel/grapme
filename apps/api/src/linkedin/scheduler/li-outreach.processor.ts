@@ -101,11 +101,9 @@ export class LiOutreachProcessor extends WorkerHost {
     });
     await this.complete(actionId);
     await this.scheduler.schedule(ctx.lead.id, LiScheduledActionType.CHECK_ACCEPTANCE, undefined, new Date(Date.now() + FIRST_ACCEPTANCE_CHECK_MS));
-    // Follow-ups run on their own clock from the invite ("N hours after the previous
-    // step"), so an "Always" step lands on time whether or not the invite was
-    // accepted. Acceptance polling continues in parallel and each step re-checks the
-    // branch when it fires.
-    if (ctx.steps.some((s) => s.type === 'MESSAGE')) await this.scheduleNextMessage(ctx, 1);
+    // Follow-ups only begin once the invite is ACCEPTED — LinkedIn won't deliver DMs
+    // to non-connections — so nothing is scheduled here. The acceptance poll (above)
+    // and the 30-min sync sweep both kick off the first message on acceptance.
   }
 
   private async doCheckAcceptance(actionId: string, attempts: number, ctx: LeadWithContext) {
@@ -122,8 +120,8 @@ export class LiOutreachProcessor extends WorkerHost {
             .withdrawConnection({ accountId: ctx.account.unipileAccountId!, invitationId: ctx.lead.unipileInvitationId })
             .catch((e) => this.logger.warn(`Withdraw invite for lead ${ctx.lead.id} failed: ${(e as Error).message}`));
         }
-        // The follow-up timeline (incl. any "if NOT accepted" branch) is already
-        // running from the invite, so nothing to schedule here.
+        // Never accepted → no follow-ups were ever scheduled (the timeline only starts
+        // on acceptance), so there's nothing to cancel. Just mark the lead out.
         await this.prisma.liLead.update({ where: { id: ctx.lead.id }, data: { status: LiLeadStatus.NOT_ACCEPTED } });
         return this.complete(actionId);
       }
@@ -131,9 +129,12 @@ export class LiOutreachProcessor extends WorkerHost {
     }
     await this.prisma.liLead.update({ where: { id: ctx.lead.id }, data: { status: LiLeadStatus.CONNECTED, connectedAt: new Date(), currentStep: 1 } });
     await this.complete(actionId);
-    // Follow-ups are already queued from the invite. Only close the lead out here
-    // when the sequence has no follow-up messages at all.
-    if (!ctx.steps.some((s) => s.type === 'MESSAGE')) await this.scheduleNextMessage(ctx, 1);
+    // Acceptance is the starting gun for the follow-up timeline (FU-1 = N hours after
+    // acceptance). Guard against the 30-min sync sweep having already kicked it off.
+    const alreadyQueued = await this.prisma.liScheduledAction.count({
+      where: { leadId: ctx.lead.id, type: LiScheduledActionType.SEND_MESSAGE, status: { not: LiScheduledActionStatus.CANCELLED } },
+    });
+    if (alreadyQueued === 0) await this.scheduleNextMessage(ctx, 1);
   }
 
   private async doSendMessage(actionId: string, stepOrder: number, ctx: LeadWithContext) {
@@ -208,23 +209,25 @@ export class LiOutreachProcessor extends WorkerHost {
   }
 
   /**
-   * Queue the next MESSAGE step on the timeline. Steps are scheduled purely by order
-   * + waitHours ("N hours after the previous step"); whether a step actually sends is
-   * decided when it fires (see doSendMessage), so a lead accepting late still gets
-   * the right branch.
+   * Queue the next MESSAGE "unit" on the timeline. A unit is either a single step or a
+   * random-choice group (steps sharing a randomGroup); for a group, exactly ONE member
+   * is picked at random and scheduled with its own waitHours ("N hours after the
+   * previous step"). Whether a step actually sends is decided when it fires (see
+   * doSendMessage). `afterOrder` is the order of the step just handled — units are
+   * matched by their lowest member order, so the current unit is naturally skipped.
    */
   private async scheduleNextMessage(ctx: LeadWithContext, afterOrder: number) {
     const assigned = await this.resolveAssignedMessages(ctx);
-    const messageSteps = ctx.steps.filter((s) => s.type === 'MESSAGE');
-    const next = messageSteps.find((s) => s.order > afterOrder);
-    if (next) {
-      // 1-based position among MESSAGE steps = its follow-up number. Only queue it if
-      // it's within this lead's randomly-assigned message count.
-      const idx = messageSteps.findIndex((s) => s.order === next.order) + 1;
-      if (idx <= assigned) {
-        await this.scheduler.schedule(ctx.lead.id, LiScheduledActionType.SEND_MESSAGE, next.order, new Date(Date.now() + next.waitHours * 60 * 60 * 1000));
-        return;
-      }
+    const units = messageUnits(ctx.steps);
+    const nextIdx = units.findIndex((u) => u.minOrder > afterOrder);
+    if (nextIdx >= 0 && nextIdx + 1 <= assigned) {
+      const unit = units[nextIdx];
+      // Random group → one member goes out (picked per-lead); single step → itself.
+      const chosen = unit.steps.length === 1
+        ? unit.steps[0]
+        : unit.steps[Math.floor(Math.random() * unit.steps.length)];
+      await this.scheduler.schedule(ctx.lead.id, LiScheduledActionType.SEND_MESSAGE, chosen.order, new Date(Date.now() + chosen.waitHours * 60 * 60 * 1000));
+      return;
     }
     // No further messages for this lead → open the grace window, then mark completed.
     const graceMs = Math.max(0, ctx.campaign.graceHours ?? 96) * 60 * 60 * 1000;
@@ -232,13 +235,13 @@ export class LiOutreachProcessor extends WorkerHost {
   }
 
   /**
-   * Draw (once, then persist) how many MESSAGE steps THIS lead receives, from the
-   * campaign's [followUpMin, followUpMax]. 0/0 (feature off) → all configured steps.
-   * Clamped to the number of steps that actually exist.
+   * Draw (once, then persist) how many follow-up TOUCHES this lead receives, from the
+   * campaign's [followUpMin, followUpMax]. A random-choice group counts as one touch.
+   * 0/0 (feature off) → all configured units. Clamped to the units that exist.
    */
   private async resolveAssignedMessages(ctx: LeadWithContext): Promise<number> {
     if (ctx.lead.assignedMessages != null) return ctx.lead.assignedMessages;
-    const total = ctx.steps.filter((s) => s.type === 'MESSAGE').length;
+    const total = messageUnits(ctx.steps).length;
     const min = ctx.campaign.followUpMin ?? 0;
     const max = ctx.campaign.followUpMax ?? 0;
     let assigned = total;
@@ -367,4 +370,32 @@ function stepAllowed(condition: string | null | undefined, accepted: boolean): b
     default: // ANY — always, whether or not the invite was accepted
       return true;
   }
+}
+
+interface MessageStep { order: number; waitHours: number; randomGroup: number | null }
+interface MessageUnit { minOrder: number; steps: MessageStep[] }
+
+/**
+ * Collapse a campaign's MESSAGE steps into ordered "units". A step with a null
+ * randomGroup is its own unit; steps sharing a non-null randomGroup collapse into one
+ * unit (a random-choice group — exactly one member is sent per lead). Units are
+ * returned sorted by their lowest member order, so the sequence walks them in place.
+ */
+function messageUnits(steps: readonly { type: string; order: number; waitHours: number; randomGroup?: number | null }[]): MessageUnit[] {
+  const msgs = steps
+    .filter((s) => s.type === 'MESSAGE')
+    .map((s) => ({ order: s.order, waitHours: s.waitHours, randomGroup: s.randomGroup ?? null }))
+    .sort((a, b) => a.order - b.order);
+  const units: MessageUnit[] = [];
+  const groups = new Map<number, MessageUnit>();
+  for (const s of msgs) {
+    if (s.randomGroup != null) {
+      const existing = groups.get(s.randomGroup);
+      if (existing) { existing.steps.push(s); existing.minOrder = Math.min(existing.minOrder, s.order); }
+      else { const u = { minOrder: s.order, steps: [s] }; groups.set(s.randomGroup, u); units.push(u); }
+    } else {
+      units.push({ minOrder: s.order, steps: [s] });
+    }
+  }
+  return units.sort((a, b) => a.minOrder - b.minOrder);
 }

@@ -146,6 +146,8 @@ export interface LiSequenceStep {
   waitHours: number;
   body?: string | null;
   note?: string | null;
+  // Random-choice group: MESSAGE steps sharing a value are alternatives (one sent/lead).
+  randomGroup?: number | null;
   // Up to 2 alternate wordings; a lead gets one at random from [body/note, ...variants].
   variants?: string[];
 }
