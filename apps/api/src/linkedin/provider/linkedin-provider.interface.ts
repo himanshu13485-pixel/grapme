@@ -31,6 +31,8 @@ export interface ProviderMember {
   location?: string;
   profileUrl?: string;
   avatarUrl?: string;
+  /** LinkedIn connection count, if the profile exposes it (undefined = hidden/unknown). */
+  connectionsCount?: number;
 }
 
 export interface ProviderMessage {

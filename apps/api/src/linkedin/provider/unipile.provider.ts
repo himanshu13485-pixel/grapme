@@ -95,6 +95,7 @@ export class UnipileProvider implements LinkedInProvider {
       location: p?.location,
       profileUrl,
       avatarUrl: p?.profile_picture_url,
+      connectionsCount: firstNumber(p?.connections_count, p?.connection_count, p?.connections, p?.network_info?.connections_count),
     };
   }
 
@@ -276,6 +277,15 @@ export class UnipileProvider implements LinkedInProvider {
     const m = profileUrl.match(/\/in\/([^/?#]+)/i);
     return m ? decodeURIComponent(m[1]) : profileUrl;
   }
+}
+
+/** First arg that parses to a finite number (Unipile spells connection count a few ways). */
+function firstNumber(...vals: unknown[]): number | undefined {
+  for (const v of vals) {
+    const n = typeof v === 'string' ? Number(v.replace(/[^\d.]/g, '')) : Number(v);
+    if (Number.isFinite(n) && n > 0) return Math.round(n);
+  }
+  return undefined;
 }
 
 /** True when a Unipile error means "this account no longer exists" (deleted/unlinked). */

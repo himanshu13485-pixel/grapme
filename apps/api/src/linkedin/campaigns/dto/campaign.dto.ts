@@ -78,6 +78,9 @@ export class UpdateLiScheduleDto {
   @IsOptional() @IsInt() @Min(0) @Max(10) followUpMin?: number;
   @IsOptional() @IsInt() @Min(0) @Max(10) followUpMax?: number;
   @IsOptional() @IsInt() @Min(0) @Max(720) graceHours?: number;
+  // Lead-quality gate: only send invites to profiles with at least this many LinkedIn
+  // connections (0 = off). Unknown/hidden counts pass.
+  @IsOptional() @IsInt() @Min(0) @Max(100000) minConnections?: number;
 }
 
 export class ImportLiLeadDto {

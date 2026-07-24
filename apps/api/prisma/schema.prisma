@@ -1290,6 +1290,10 @@ model LiCampaign {
   // How long to wait for a connection to be accepted before giving up: the invite
   // is withdrawn and the lead marked NOT_ACCEPTED. 1–30 days.
   connectionWindowDays Int                 @default(5)
+  // Lead-quality gate: skip (EXCLUDE) leads whose LinkedIn connection count is below
+  // this before sending an invite — the engine already fetches the profile at contact
+  // time, so it costs nothing. 0 = off. Leads with a hidden/unknown count still pass.
+  minConnections       Int                 @default(0)
   // Background drip-sourcer: auto-refill the Target Audience from LinkedIn search.
   dripEnabled          Boolean             @default(false)
   dripDailyTarget      Int                 @default(25) // max leads to source per day
@@ -1375,6 +1379,9 @@ model LiLead {
   // How many MESSAGE steps THIS lead will receive, drawn once from the campaign's
   // [followUpMin, followUpMax] at first schedule. Null until resolved (= all steps).
   assignedMessages    Int?
+  // LinkedIn connection count, captured when the engine resolves the profile at contact
+  // time. Null = unknown/hidden. Used by the campaign's minConnections quality gate.
+  connectionsCount    Int?
   sentiment           LiSentiment?
   intent              String?
   connectedAt         DateTime?

@@ -88,6 +88,16 @@ export class LiOutreachProcessor extends WorkerHost {
 
     const step1 = ctx.steps.find((s) => s.order === 1);
     const memberId = await this.ensureMemberId(ctx);
+    // Lead-quality gate: skip profiles below the campaign's minimum connection count.
+    // ensureMemberId just fetched the profile, so the count is free. Unknown/hidden
+    // counts pass. Cancel (not complete) the action so a skipped lead doesn't burn one
+    // of today's invite slots — the daily cap counts DONE invites only.
+    const minConn = ctx.campaign.minConnections ?? 0;
+    if (minConn > 0 && ctx.lead.connectionsCount != null && ctx.lead.connectionsCount < minConn) {
+      await this.prisma.liLead.update({ where: { id: ctx.lead.id }, data: { status: LiLeadStatus.EXCLUDED } });
+      this.logger.log(`Lead ${ctx.lead.id} excluded: ${ctx.lead.connectionsCount} connections < min ${minConn}`);
+      return this.cancel(actionId);
+    }
     const noteRaw = pickVariant(step1?.note, step1?.variants);
     const note = noteRaw ? renderTemplate(noteRaw, ctx.lead) : undefined;
     const { invitationId } = await this.provider.sendConnection({ accountId: ctx.account.unipileAccountId!, memberId, note });
@@ -281,10 +291,12 @@ export class LiOutreachProcessor extends WorkerHost {
         company: ctx.lead.company ?? member.company,
         location: ctx.lead.location ?? member.location,
         avatarUrl: ctx.lead.avatarUrl ?? member.avatarUrl,
+        connectionsCount: member.connectionsCount ?? ctx.lead.connectionsCount ?? undefined,
       },
     });
     ctx.lead.unipileMemberId = member.memberId;
     ctx.lead.firstName = name.firstName ?? ctx.lead.firstName;
+    ctx.lead.connectionsCount = member.connectionsCount ?? ctx.lead.connectionsCount;
     return member.memberId;
   }
 

@@ -358,6 +358,7 @@ export class LiCampaignsService {
         warmupStartLimit: src.warmupStartLimit,
         warmupDays: src.warmupDays,
         connectionWindowDays: src.connectionWindowDays,
+        minConnections: src.minConnections,
         dripEnabled: src.dripEnabled,
         dripDailyTarget: src.dripDailyTarget,
         dripBuffer: src.dripBuffer,
