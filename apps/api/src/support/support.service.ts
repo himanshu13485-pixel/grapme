@@ -171,7 +171,7 @@ export class SupportService {
   async myReply(user: AuthUser, id: string, dto: ReplyDto) {
     const ticket = await this.prisma.supportTicket.findFirst({
       where: { id, tenantId: user.tenantId, userId: user.userId },
-      select: { id: true, subject: true, status: true, clientId: true },
+      select: { id: true, subject: true, status: true, clientId: true, client: { select: { name: true } } },
     });
     if (!ticket) throw new NotFoundException('Ticket not found');
     if (ticket.status === SupportStatus.CLOSED)
@@ -198,10 +198,12 @@ export class SupportService {
       }),
     ]);
     const salesPersonId = await this.clientSalesPersonId(ticket.clientId);
+    // Name the client (company/person) so staff know which account the reply is about.
+    const regarding = ticket.client?.name?.trim();
     await this.routeToStaff(
       user,
       { id: ticket.id, subject: ticket.subject, salesPersonId },
-      `New reply on ticket "${ticket.subject}"`,
+      regarding ? `New reply on ticket "${ticket.subject}" — ${regarding}` : `New reply on ticket "${ticket.subject}"`,
       dto.message,
       attachment,
     );

@@ -174,6 +174,10 @@ export class UpdatesService {
       : null;
 
     const actorIsClient = actor.role === Role.CLIENT;
+    // The company/person this thread is about (its client workspace) — so every alert
+    // says which account it relates to, not just the thread title.
+    const regarding = client?.name?.trim() || null;
+    const subjectWithClient = regarding ? `${title} — ${regarding}` : title;
     // Bell → everyone on the board except the actor (both sides stay in the loop).
     const bellUserIds = new Set<string>();
     admins.forEach((a) => bellUserIds.add(a.id));
@@ -182,8 +186,9 @@ export class UpdatesService {
     bellUserIds.delete(actor.userId);
     const link = `/updates?thread=${threadId}`;
     if (bellUserIds.size) {
+      const bellBody = (regarding ? `[${regarding}] ` : '') + preview;
       await this.prisma.notification.createMany({
-        data: [...bellUserIds].map((userId) => ({ userId, type: 'update', title, body: preview.slice(0, 280), link })),
+        data: [...bellUserIds].map((userId) => ({ userId, type: 'update', title, body: bellBody.slice(0, 280), link })),
       });
     }
 
@@ -193,16 +198,22 @@ export class UpdatesService {
       const emailTargets = actorIsClient
         ? ([...admins.map((a) => a.email), salesPerson?.email].filter(Boolean) as string[])
         : ([client?.email, clientOwner?.email].filter(Boolean) as string[]);
+      // Lead with a "Regarding: <client>" banner so the recipient knows which account.
+      const banner = regarding
+        ? `<p style="margin:0 0 14px;padding:8px 12px;background:#f0fdfa;border:1px solid #99f6e4;border-radius:8px;color:#0f766e;font-size:13px"><strong>Regarding:</strong> ${escapeHtml(regarding)}</p>`
+        : '';
       // Use the sanitized rich body for the email so bold/italic/lists/links render;
       // fall back to escaped plain text (e.g. for replies, which are plain).
-      const emailBody = bodyHtml ?? `<p style="white-space:pre-wrap;margin:0">${escapeHtml(preview)}</p>`;
-      await this.emailCopy(thread.tenantId, emailTargets, title, emailBody, link);
+      const emailBody = banner + (bodyHtml ?? `<p style="white-space:pre-wrap;margin:0">${escapeHtml(preview)}</p>`);
+      await this.emailCopy(thread.tenantId, emailTargets, subjectWithClient, emailBody, link);
     }
 
-    // WhatsApp → recorded stub only (no send until a provider is wired).
+    // WhatsApp → recorded stub only (no send until a provider is wired). Prefix with the
+    // client so the message names the company/person too.
     if (thread.notifyWhatsapp) {
       const mobile = actorIsClient ? '(agency)' : client?.mobile ?? '(no number on file)';
-      this.logger.log(`[whatsapp-stub] would notify ${mobile} — "${title}". Wire WHATSAPP_TOKEN/PHONE_ID to enable.`);
+      const waText = regarding ? `[${regarding}] ${title}` : title;
+      this.logger.log(`[whatsapp-stub] would notify ${mobile} — "${waText}". Wire WHATSAPP_TOKEN/PHONE_ID to enable.`);
     }
   }
 
