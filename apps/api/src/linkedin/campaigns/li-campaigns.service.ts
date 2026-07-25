@@ -625,6 +625,12 @@ export class LiCampaignsService {
     return this.scheduler.syncConnections(id);
   }
 
+  /** Admin: re-spread this campaign's pending invites across working days (fix pile-ups). */
+  async respaceSchedule(id: string) {
+    await this.assertExists(id);
+    return this.scheduler.respaceCampaign(id);
+  }
+
   /**
    * Suspend a client's LinkedIn outreach — pause every RUNNING campaign (cancels its
    * scheduled actions via the scheduler). Called when a client's plan validity expires

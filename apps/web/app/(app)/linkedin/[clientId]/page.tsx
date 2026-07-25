@@ -280,6 +280,13 @@ function CampaignsTab({ clientId }: { clientId: string }) {
       alert(`Created "${r.name}" as a Draft.`);
     } catch (e: any) { alert(e?.message ?? 'Could not replicate the campaign'); }
   }
+  async function respace(id: string) {
+    if (!confirm('Re-space this campaign’s pending connection requests evenly across working days?\n\nThis redistributes invites that are still waiting to send (fixes single-day pile-ups). Nothing is sent now, and already-sent invites are untouched.')) return;
+    try {
+      const r = await api.post<{ ok: boolean; respaced: number; message?: string }>(`/linkedin/campaigns/${id}/respace`, {});
+      alert(r.ok ? `Re-spaced ${r.respaced} pending invite${r.respaced === 1 ? '' : 's'} across your working days.` : (r.message ?? 'Could not re-space.'));
+    } catch (e: any) { alert(e?.message ?? 'Failed'); }
+  }
 
   const emptyMsg = view === 'deleted' ? 'No deleted campaigns.' : view === 'archived' ? 'No archived campaigns.' : view === 'completed' ? 'No completed campaigns.' : 'No campaigns yet.';
 
@@ -330,6 +337,9 @@ function CampaignsTab({ clientId }: { clientId: string }) {
                     )}
                     {c.status === 'RUNNING' && (
                       <button className="btn-ghost px-2 py-1 text-sm" onClick={() => sendNext(c.id)} title="Send the next scheduled action immediately (test)">⚡ Send next</button>
+                    )}
+                    {(c.status === 'RUNNING' || c.status === 'PAUSED') && (
+                      <button className="btn-ghost px-2 py-1 text-sm" onClick={() => respace(c.id)} title="Re-spread pending invites evenly across working days (fix pile-ups)">↔ Re-space</button>
                     )}
                     {c.status === 'RUNNING' ? (
                       <button className="btn-ghost px-2 py-1" onClick={() => act(c.id, 'pause')}>⏸ Pause</button>

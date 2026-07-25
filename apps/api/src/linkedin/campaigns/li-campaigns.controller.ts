@@ -174,4 +174,10 @@ export class LiCampaignsController {
   sync(@Param('id') id: string) {
     return this.campaigns.syncConnections(id);
   }
+
+  /** Admin: re-spread pending invites across working days (fix single-day pile-ups). */
+  @Post(':id/respace')
+  respace(@Param('id') id: string) {
+    return this.campaigns.respaceSchedule(id);
+  }
 }

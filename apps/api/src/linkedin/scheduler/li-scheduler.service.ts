@@ -147,41 +147,123 @@ export class LiSchedulerService implements OnModuleInit {
     if (freshLeads.length === 0) return 0;
 
     const limit = Math.max(1, direct ? campaign.dailyMessageLimit : this.effectiveConnectionCap(campaign));
-    // Spread the daily cap EVENLY across the send window (not a burst), with a small
-    // ± random wobble per slot for a human feel. Actions past the window roll forward.
-    const windowSecs = campaign.run247 ? 86_400 : Math.max(1, campaign.workEndHour - campaign.workStartHour) * 3600;
-    const baseSpacing = windowSecs / limit;
-    const jMin = Math.max(0, campaign.jitterMinSeconds ?? 20);
-    const jMax = Math.max(jMin, campaign.jitterMaxSeconds ?? 90);
-    const wobble = () => (jMin + Math.random() * (jMax - jMin)) * (Math.random() < 0.5 ? -1 : 1);
-    // Continue TODAY's cadence rather than restarting at slot 0 (=now) on every call.
-    // Without this, each fresh batch (import / source / drip top-up) fires its first
-    // invite immediately, bunching sends near "now" instead of spreading across the
-    // window. Offset by first-actions already placed for today so new leads fill the
-    // remaining slots and overflow rolls into the next day's window.
-    const firstType = direct ? LiScheduledActionType.SEND_MESSAGE : LiScheduledActionType.SEND_CONNECTION;
-    const placedToday = await this.prisma.liScheduledAction.count({
+    // Continue TODAY's cadence rather than restarting at slot 0 (=now) on every call:
+    // offset by first-actions already placed today so a fresh batch (import / source /
+    // drip top-up) fills the remaining slots instead of bunching near "now".
+    const placedToday = await this.firstActionsPlacedToday(campaignId, direct);
+    const times = this.allocateSlotTimes(campaign, limit, freshLeads.length, placedToday);
+    for (let i = 0; i < freshLeads.length; i++) {
+      const lead = freshLeads[i];
+      if (direct) await this.schedule(lead.id, LiScheduledActionType.SEND_MESSAGE, 1, times[i]);
+      else await this.schedule(lead.id, LiScheduledActionType.SEND_CONNECTION, undefined, times[i]);
+    }
+    return freshLeads.length;
+  }
+
+  /** Count first-invite actions already scheduled for today (used to continue the cadence). */
+  private firstActionsPlacedToday(campaignId: string, direct: boolean): Promise<number> {
+    return this.prisma.liScheduledAction.count({
       where: {
-        type: firstType,
+        type: direct ? LiScheduledActionType.SEND_MESSAGE : LiScheduledActionType.SEND_CONNECTION,
         ...(direct ? { stepOrder: 1 } : {}),
         status: { not: LiScheduledActionStatus.CANCELLED },
         runAt: { gte: this.startOfToday(), lt: this.tomorrow() },
         lead: { campaignId },
       },
     });
-    let index = placedToday;
-    for (const lead of freshLeads) {
-      const day = Math.floor(index / limit);
-      const slot = index % limit;
-      // Anchor each day to the START of its send window; never schedule in the past.
-      const winStart = this.nextAllowedSlot(campaign, new Date(this.startOfToday().getTime() + day * 864e5));
-      const anchor = day === 0 ? Math.max(winStart.getTime(), Date.now()) : winStart.getTime();
-      const runAt = new Date(anchor + Math.max(0, slot * baseSpacing + wobble()) * 1000);
-      if (direct) await this.schedule(lead.id, LiScheduledActionType.SEND_MESSAGE, 1, runAt);
-      else await this.schedule(lead.id, LiScheduledActionType.SEND_CONNECTION, undefined, runAt);
-      index++;
+  }
+
+  /**
+   * Working-day-aware send-time allocator. Returns `count` times, giving each WORKING
+   * day exactly `limit` slots spread evenly across the send window (with a small ±
+   * jitter), and SKIPPING non-working days — so a weekend's allotment never collapses
+   * onto the next working day and overloads it. Day 0 (today) starts past both the
+   * already-used slots (`placedToday`) and any now-elapsed time, so nothing bunches or
+   * schedules in the past. Shared by fresh enqueue and the re-space action.
+   */
+  private allocateSlotTimes(
+    campaign: { run247: boolean; timezone: string; workStartHour: number; workEndHour: number; workDays: number[]; jitterMinSeconds?: number | null; jitterMaxSeconds?: number | null },
+    limit: number,
+    count: number,
+    placedToday: number,
+  ): Date[] {
+    const windowSecs = campaign.run247 ? 86_400 : Math.max(1, campaign.workEndHour - campaign.workStartHour) * 3600;
+    const baseSpacing = windowSecs / limit;
+    const jMin = Math.max(0, campaign.jitterMinSeconds ?? 20);
+    const jMax = Math.max(jMin, campaign.jitterMaxSeconds ?? 90);
+    const wobble = () => (jMin + Math.random() * (jMax - jMin)) * (Math.random() < 0.5 ? -1 : 1);
+    const now = Date.now();
+    const midnightOf = (d: Date) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
+    const times: Date[] = [];
+    let probe = this.startOfToday();
+    let dayIdx = 0;
+    while (times.length < count) {
+      const winStart = this.nextAllowedSlot(campaign, probe); // next working day's window open
+      const winStartMs = winStart.getTime();
+      let startSlot = 0;
+      if (dayIdx === 0) {
+        const elapsed = Math.ceil((now - winStartMs) / (baseSpacing * 1000));
+        startSlot = Math.max(placedToday, Math.max(0, elapsed));
+      }
+      for (let slot = startSlot; slot < limit && times.length < count; slot++) {
+        const t = winStartMs + (slot * baseSpacing + wobble()) * 1000;
+        times.push(new Date(Math.max(t, now))); // never in the past
+      }
+      probe = new Date(midnightOf(winStart).getTime() + 864e5); // day after; skips off-days
+      dayIdx++;
     }
-    return freshLeads.length;
+    return times;
+  }
+
+  /**
+   * Re-space a campaign's still-pending first invites across working days using the
+   * current pacing rules — fixes queues built by older logic that piled invites onto a
+   * single day. Only touches PENDING/QUEUED connection requests (direct: first messages)
+   * that haven't sent; follow-ups (anchored to acceptance) are left alone.
+   */
+  async respaceCampaign(campaignId: string): Promise<{ ok: boolean; respaced: number; message?: string }> {
+    if (!this.queue) return { ok: false, respaced: 0, message: 'Sending engine is off (no Redis).' };
+    const campaign = await this.prisma.liCampaign.findUnique({
+      where: { id: campaignId },
+      include: { linkedInAccount: true },
+    });
+    if (!campaign) return { ok: false, respaced: 0, message: 'Campaign not found.' };
+    const direct = campaign.outreachType === 'DIRECT_MESSAGES';
+    const firstType = direct ? LiScheduledActionType.SEND_MESSAGE : LiScheduledActionType.SEND_CONNECTION;
+    const actions = await this.prisma.liScheduledAction.findMany({
+      where: {
+        type: firstType,
+        ...(direct ? { stepOrder: 1 } : {}),
+        status: { in: [LiScheduledActionStatus.PENDING, LiScheduledActionStatus.QUEUED] },
+        lead: { campaignId },
+      },
+      orderBy: { runAt: 'asc' },
+      select: { id: true, jobId: true, leadId: true, stepOrder: true },
+    });
+    if (actions.length === 0) return { ok: true, respaced: 0, message: 'No pending invites to re-space.' };
+
+    const limit = Math.max(1, direct ? campaign.dailyMessageLimit : this.effectiveConnectionCap(campaign));
+    // Count invites already SENT today so re-spacing doesn't overfill today.
+    const sentToday = await this.prisma.liScheduledAction.count({
+      where: {
+        type: firstType, ...(direct ? { stepOrder: 1 } : {}),
+        status: LiScheduledActionStatus.DONE,
+        runAt: { gte: this.startOfToday(), lt: this.tomorrow() },
+        lead: { campaignId },
+      },
+    });
+    const times = this.allocateSlotTimes(campaign, limit, actions.length, sentToday);
+    for (let i = 0; i < actions.length; i++) {
+      const a = actions[i];
+      if (a.jobId) await this.queue.remove(a.jobId).catch(() => undefined);
+      await this.prisma.liScheduledAction.update({
+        where: { id: a.id },
+        data: { status: LiScheduledActionStatus.PENDING, runAt: times[i], jobId: null },
+      });
+      await this.attachJob(a.id, firstType, a.leadId, a.stepOrder ?? undefined, times[i]);
+    }
+    this.logger.log(`Re-spaced ${actions.length} pending invites for campaign ${campaignId}`);
+    return { ok: true, respaced: actions.length };
   }
 
   async pauseCampaign(campaignId: string) {
