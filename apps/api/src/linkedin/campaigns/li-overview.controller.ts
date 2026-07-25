@@ -1,5 +1,5 @@
 import { Controller, Get, Param, Post, Query } from '@nestjs/common';
-import { LiCampaignStatus, LiLeadStatus, Role } from '@prisma/client';
+import { LiCampaignStatus, LiLeadStatus, LiScheduledActionStatus, LiScheduledActionType, Role } from '@prisma/client';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser, AuthUser } from '../../common/decorators/current-user.decorator';
 import { LiCampaignsService } from './li-campaigns.service';
@@ -61,5 +61,26 @@ export class LiOverviewController {
   @Get('leads/:campaignId/:leadId/log')
   leadLog(@Param('campaignId') campaignId: string, @Param('leadId') leadId: string) {
     return this.campaigns.leadLog(campaignId, leadId);
+  }
+
+  /** Cross-client LinkedIn activity log (scheduled actions), defaults to today. */
+  @Get('actions')
+  actions(
+    @CurrentUser() u: AuthUser,
+    @Query('client') client?: string,
+    @Query('status') status?: LiScheduledActionStatus,
+    @Query('type') type?: LiScheduledActionType,
+    @Query('step') step?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ) {
+    return this.campaigns.globalActions(u.tenantId, {
+      clientSearch: client, status, type, from, to,
+      step: step != null && step !== '' ? Number(step) : undefined,
+      page: page ? Number(page) : undefined,
+      pageSize: pageSize ? Number(pageSize) : undefined,
+    });
   }
 }

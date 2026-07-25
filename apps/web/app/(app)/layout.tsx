@@ -45,6 +45,7 @@ const NAV: NavItem[] = [
   { href: '/linkedin-schedule', label: 'LinkedIn Campaigns Schedule', icon: '🗓', admin: true, module: 'linkedin-schedule' },
   { href: '/linkedin-inbox', label: 'LinkedIn Inbox', icon: '📨', admin: true, module: 'linkedin-inbox', group: 'linkedin' },
   { href: '/linkedin-leads', label: 'LinkedIn Leads', icon: '🧲', admin: true, module: 'linkedin-leads', group: 'linkedin' },
+  { href: '/linkedin-log', label: 'LinkedIn Log', icon: '🧾', admin: true, module: 'linkedin-log', group: 'linkedin' },
   // ── Main Menu (collapsed folder: Approvals → WhatsApp) ──
   { href: '/validity', label: 'Subscription Management', icon: '🔁', admin: true, module: 'validity', group: 'main' },
   { href: '/approvals', label: 'Approvals', icon: '✓', admin: true, module: 'approvals', group: 'main' },

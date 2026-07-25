@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { ApprovalEntity, ApprovalStatus, LiCampaignStatus, LiCreditReason, LiLeadStatus, Prisma } from '@prisma/client';
+import { ApprovalEntity, ApprovalStatus, LiCampaignStatus, LiCreditReason, LiLeadStatus, LiScheduledActionStatus, LiScheduledActionType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LiSchedulerService } from '../scheduler/li-scheduler.service';
 import { normalizeProfileUrl } from '../scheduler/li-queue.constants';
@@ -855,6 +855,60 @@ export class LiCampaignsService {
   }
 
   /**
+   * Cross-client LinkedIn activity log: every scheduled outreach action (connection
+   * requests + follow-up messages) across all campaigns, with its step, status, planned
+   * and actual send time. Read-only over our own DB — no provider calls. Defaults to
+   * today's activity (by scheduled time) when no date range is given.
+   */
+  async globalActions(tenantId: string, opts: {
+    clientSearch?: string; status?: LiScheduledActionStatus; type?: LiScheduledActionType;
+    step?: number; from?: string; to?: string; page?: number; pageSize?: number;
+  }) {
+    const page = Math.max(1, opts.page ?? 1);
+    const pageSize = Math.min(100, Math.max(1, opts.pageSize ?? 25));
+    const clientIds = await this.clientIdsForSearch(tenantId, opts.clientSearch);
+    if (clientIds && clientIds.length === 0) return { items: [], total: 0, page, pageSize };
+
+    // Default view = today's activity (planned or sent today), unless a range is given.
+    const range = dateRange(opts.from, opts.to) ?? defaultTodayRange();
+    // Only the meaningful outreach steps — acceptance polls / completions are internal noise.
+    const typeFilter = opts.type
+      ? { type: opts.type }
+      : { type: { in: [LiScheduledActionType.SEND_CONNECTION, LiScheduledActionType.SEND_MESSAGE] } };
+    const where: Prisma.LiScheduledActionWhereInput = {
+      lead: { campaign: { tenantId, ...(clientIds ? { clientId: { in: clientIds } } : {}) } },
+      ...typeFilter,
+      ...(opts.status ? { status: opts.status } : {}),
+      ...(opts.step != null && !Number.isNaN(opts.step) ? { stepOrder: opts.step } : {}),
+      ...(range ? { runAt: range } : {}),
+    };
+    const [total, rows] = await this.prisma.$transaction([
+      this.prisma.liScheduledAction.count({ where }),
+      this.prisma.liScheduledAction.findMany({
+        where, orderBy: { runAt: 'desc' }, skip: (page - 1) * pageSize, take: pageSize,
+        select: {
+          id: true, type: true, status: true, stepOrder: true, runAt: true, updatedAt: true, lastError: true,
+          lead: { select: { id: true, fullName: true, currentStep: true, profileUrl: true, campaign: { select: { id: true, name: true, clientId: true } } } },
+        },
+      }),
+    ]);
+    const cmap = await this.clientMap(rows.map((r) => r.lead.campaign.clientId));
+    const items = rows.map((a) => ({
+      id: a.id,
+      type: a.type,
+      status: a.status,
+      stepOrder: a.stepOrder,
+      runAt: a.runAt,
+      doneAt: a.status === LiScheduledActionStatus.DONE ? a.updatedAt : null,
+      error: a.lastError,
+      lead: { id: a.lead.id, fullName: a.lead.fullName, currentStep: a.lead.currentStep, profileUrl: a.lead.profileUrl },
+      campaign: { id: a.lead.campaign.id, name: a.lead.campaign.name },
+      client: cmap.get(a.lead.campaign.clientId) ?? null,
+    }));
+    return { items, total, page, pageSize };
+  }
+
+  /**
    * Per-lead action timeline — when each step was actually sent. Powers the "Log"
    * button. Shows the connection request, each follow-up message, and the moment
    * the connection was accepted; internal acceptance polls are omitted as noise.
@@ -924,4 +978,10 @@ function dateRange(from?: string, to?: string): Prisma.DateTimeFilter | null {
   if (from) { const d = new Date(from); if (!Number.isNaN(d.getTime())) r.gte = d; }
   if (to) { const d = new Date(to); if (!Number.isNaN(d.getTime())) r.lte = new Date(d.getTime() + 86_400_000 - 1); }
   return r.gte || r.lte ? r : null;
+}
+
+/** Whole of the current (server-local) day → Prisma DateTime filter. */
+function defaultTodayRange(): Prisma.DateTimeFilter {
+  const start = new Date(); start.setHours(0, 0, 0, 0);
+  return { gte: start, lte: new Date(start.getTime() + 86_400_000 - 1) };
 }
