@@ -343,6 +343,7 @@ function Details({ campaignId, base }: { campaignId: string; base: string }) {
               <th className="p-3 font-medium">Company</th>
               <th className="p-3 font-medium">Status</th>
               <th className="p-3 font-medium">Step</th>
+              {!isPortal && <th className="p-3 font-medium">Connections</th>}
               <th className="p-3 font-medium">Last activity</th>
               {!isPortal && <th className="p-3 font-medium text-right">Actions</th>}
             </tr>
@@ -371,6 +372,7 @@ function Details({ campaignId, base }: { campaignId: string; base: string }) {
                 <td className="p-3"><div className="max-w-[170px] truncate text-slate-600" title={tc.company}>{tc.company}</div></td>
                 <td className="p-3"><span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs">{STATUS_LABEL[l.status] ?? l.status}</span></td>
                 <td className="p-3 text-slate-500">{l.currentStep}</td>
+                {!isPortal && <td className="p-3 text-slate-600">{l.connectionsCount != null ? l.connectionsCount.toLocaleString() : <span className="text-slate-300" title="Hidden or not yet fetched">—</span>}</td>}
                 <td className="p-3 whitespace-nowrap text-xs text-slate-500">{l.lastActionAt ? new Date(l.lastActionAt).toLocaleString() : '—'}</td>
                 {!isPortal && (
                   <td className="p-3 text-right">
@@ -393,7 +395,7 @@ function Details({ campaignId, base }: { campaignId: string; base: string }) {
               </tr>
               );
             })}
-            {data && data.items.length === 0 && <tr><td colSpan={isPortal ? 7 : 9} className="p-8 text-center text-slate-400">{dq ? 'No targets match your search.' : 'No leads in this view.'}</td></tr>}
+            {data && data.items.length === 0 && <tr><td colSpan={isPortal ? 7 : 10} className="p-8 text-center text-slate-400">{dq ? 'No targets match your search.' : 'No leads in this view.'}</td></tr>}
           </tbody>
         </table>
       </div>

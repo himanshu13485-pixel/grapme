@@ -13,7 +13,7 @@ interface ActionRow {
   runAt: string;
   doneAt: string | null;
   error: string | null;
-  lead: { id: string; fullName: string; currentStep: number; profileUrl?: string | null };
+  lead: { id: string; fullName: string; currentStep: number; profileUrl?: string | null; connectionsCount?: number | null };
   campaign: { id: string; name: string };
   client?: { id: string; name: string; company?: string | null; invoice?: string | null } | null;
 }
@@ -133,9 +133,10 @@ export default function LinkedInLogPage() {
                   <th className="px-4 py-3">Client</th>
                   <th className="px-4 py-3">Campaign</th>
                   <th className="px-4 py-3">Step</th>
+                  <th className="px-4 py-3">Connections</th>
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3">Scheduled</th>
-                  <th className="px-4 py-3">Sent</th>
+                  <th className="px-4 py-3">Sent / reason</th>
                 </tr>
               </thead>
               <tbody>
@@ -159,15 +160,18 @@ export default function LinkedInLogPage() {
                     <td className="px-4 py-3">
                       <span className="font-medium text-slate-700">{actionLabel(a.type, a.stepOrder)}</span>
                     </td>
+                    <td className="px-4 py-3 text-slate-600">
+                      {a.lead.connectionsCount != null ? a.lead.connectionsCount.toLocaleString() : <span className="text-slate-300" title="Hidden or not yet fetched">—</span>}
+                    </td>
                     <td className="px-4 py-3">
                       <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS[a.status].cls}`}>{STATUS[a.status].label}</span>
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-500">{new Date(a.runAt).toLocaleString()}</td>
-                    <td className="px-4 py-3 whitespace-nowrap text-xs">
+                    <td className="px-4 py-3 text-xs">
                       {a.doneAt
-                        ? <span className="text-slate-600">{new Date(a.doneAt).toLocaleString()}</span>
+                        ? <span className="whitespace-nowrap text-slate-600">{new Date(a.doneAt).toLocaleString()}</span>
                         : a.error
-                          ? <span className="text-rose-500" title={a.error}>failed</span>
+                          ? <span className={a.status === 'CANCELLED' ? 'text-slate-500' : 'text-rose-500'} title={a.error}>{a.error}</span>
                           : <span className="text-slate-300">—</span>}
                     </td>
                   </tr>

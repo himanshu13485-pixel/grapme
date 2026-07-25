@@ -16,6 +16,7 @@ interface LeadRow {
   profileUrl?: string | null;
   status: string;
   currentStep: number;
+  connectionsCount?: number | null;
   createdAt: string;
   lastActionAt?: string | null;
   campaign: { id: string; name: string; status: string };
@@ -191,6 +192,7 @@ export default function LinkedInLeadsPage() {
                   <th className="px-4 py-3">Campaign status</th>
                   <th className="px-4 py-3">Lead status</th>
                   <th className="px-4 py-3">Step</th>
+                  <th className="px-4 py-3">Connections</th>
                   <th className="px-4 py-3">Last activity</th>
                   <th className="px-4 py-3 text-right">Log</th>
                 </tr>
@@ -224,6 +226,7 @@ export default function LinkedInLeadsPage() {
                       <td className="px-4 py-3"><StatusBadge status={l.campaign.status} /></td>
                       <td className="px-4 py-3"><span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs">{STATUS_LABEL[l.status] ?? l.status}</span></td>
                       <td className="px-4 py-3 text-slate-500">{l.currentStep}</td>
+                      <td className="px-4 py-3 text-slate-600">{l.connectionsCount != null ? l.connectionsCount.toLocaleString() : <span className="text-slate-300" title="Hidden or not yet fetched">—</span>}</td>
                       <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-500">{l.lastActionAt ? new Date(l.lastActionAt).toLocaleString() : '—'}</td>
                       <td className="px-4 py-3 text-right">
                         <button className="text-xs font-medium text-slate-600 hover:underline" onClick={() => setLogLead({ campaignId: l.campaign.id, id: l.id, name: l.fullName })} title="See when each step was sent">Log</button>

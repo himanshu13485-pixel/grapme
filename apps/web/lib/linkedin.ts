@@ -206,6 +206,7 @@ export interface LiLead {
   currentStep: number;
   lastActionAt?: string | null;
   sentiment?: string | null;
+  connectionsCount?: number | null;
 }
 
 export interface LiLeadsPage {

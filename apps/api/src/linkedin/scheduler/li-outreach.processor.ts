@@ -94,9 +94,12 @@ export class LiOutreachProcessor extends WorkerHost {
     // of today's invite slots — the daily cap counts DONE invites only.
     const minConn = ctx.campaign.minConnections ?? 0;
     if (minConn > 0 && ctx.lead.connectionsCount != null && ctx.lead.connectionsCount < minConn) {
+      const reason = `Excluded: ${ctx.lead.connectionsCount} connections (min ${minConn})`;
       await this.prisma.liLead.update({ where: { id: ctx.lead.id }, data: { status: LiLeadStatus.EXCLUDED } });
-      this.logger.log(`Lead ${ctx.lead.id} excluded: ${ctx.lead.connectionsCount} connections < min ${minConn}`);
-      return this.cancel(actionId);
+      // Record the reason on the (cancelled) action so it surfaces in the activity log.
+      await this.prisma.liScheduledAction.update({ where: { id: actionId }, data: { status: LiScheduledActionStatus.CANCELLED, lastError: reason } });
+      this.logger.log(`Lead ${ctx.lead.id} ${reason}`);
+      return;
     }
     const noteRaw = pickVariant(step1?.note, step1?.variants);
     const note = noteRaw ? renderTemplate(noteRaw, ctx.lead) : undefined;

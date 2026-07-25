@@ -845,7 +845,7 @@ export class LiCampaignsService {
       this.prisma.liLead.findMany({
         where, orderBy: { createdAt: 'desc' }, skip: (page - 1) * pageSize, take: pageSize,
         select: {
-          id: true, fullName: true, title: true, company: true, profileUrl: true, status: true, currentStep: true, createdAt: true, lastActionAt: true,
+          id: true, fullName: true, title: true, company: true, profileUrl: true, status: true, currentStep: true, createdAt: true, lastActionAt: true, connectionsCount: true,
           campaign: { select: { id: true, name: true, status: true, clientId: true } },
         },
       }),
@@ -853,7 +853,7 @@ export class LiCampaignsService {
     const cmap = await this.clientMap(rows.map((r) => r.campaign.clientId));
     const items = rows.map((l) => ({
       id: l.id, fullName: l.fullName, title: l.title, company: l.company, profileUrl: l.profileUrl,
-      status: l.status, currentStep: l.currentStep, createdAt: l.createdAt, lastActionAt: l.lastActionAt,
+      status: l.status, currentStep: l.currentStep, createdAt: l.createdAt, lastActionAt: l.lastActionAt, connectionsCount: l.connectionsCount,
       campaign: { id: l.campaign.id, name: l.campaign.name, status: l.campaign.status },
       client: cmap.get(l.campaign.clientId) ?? null,
     }));
@@ -894,7 +894,7 @@ export class LiCampaignsService {
         where, orderBy: { runAt: 'desc' }, skip: (page - 1) * pageSize, take: pageSize,
         select: {
           id: true, type: true, status: true, stepOrder: true, runAt: true, updatedAt: true, lastError: true,
-          lead: { select: { id: true, fullName: true, currentStep: true, profileUrl: true, campaign: { select: { id: true, name: true, clientId: true } } } },
+          lead: { select: { id: true, fullName: true, currentStep: true, profileUrl: true, connectionsCount: true, campaign: { select: { id: true, name: true, clientId: true } } } },
         },
       }),
     ]);
@@ -907,7 +907,7 @@ export class LiCampaignsService {
       runAt: a.runAt,
       doneAt: a.status === LiScheduledActionStatus.DONE ? a.updatedAt : null,
       error: a.lastError,
-      lead: { id: a.lead.id, fullName: a.lead.fullName, currentStep: a.lead.currentStep, profileUrl: a.lead.profileUrl },
+      lead: { id: a.lead.id, fullName: a.lead.fullName, currentStep: a.lead.currentStep, profileUrl: a.lead.profileUrl, connectionsCount: a.lead.connectionsCount },
       campaign: { id: a.lead.campaign.id, name: a.lead.campaign.name },
       client: cmap.get(a.lead.campaign.clientId) ?? null,
     }));
