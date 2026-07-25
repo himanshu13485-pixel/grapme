@@ -53,6 +53,12 @@ export function LiLeadLogModal({ logUrl, name, onClose }: { logUrl: string; name
             {data.entries.map((e, i) => {
               const s = STATUS[e.status] ?? STATUS.PENDING;
               const when = e.status === 'DONE' ? e.at : e.scheduledFor;
+              // For a sent action, also surface the time it was originally scheduled
+              // when that differs (>1 min) from when it actually went out — makes
+              // pacing/bursts and deferrals visible instead of hidden.
+              const drift = e.status === 'DONE' && e.scheduledFor
+                ? Math.abs(new Date(e.at).getTime() - new Date(e.scheduledFor).getTime())
+                : 0;
               return (
                 <li key={i} className="relative">
                   <span className={`absolute -left-[1.42rem] top-1.5 h-2.5 w-2.5 rounded-full ${s.dot}`} />
@@ -62,6 +68,9 @@ export function LiLeadLogModal({ logUrl, name, onClose }: { logUrl: string; name
                   </div>
                   <div className="text-xs text-slate-500">
                     {e.status === 'DONE' ? 'on ' : 'due '}{new Date(when).toLocaleString()}
+                    {drift > 60_000 && (
+                      <span className="text-slate-400"> · was scheduled for {new Date(e.scheduledFor).toLocaleTimeString()}</span>
+                    )}
                   </div>
                   {e.error && <div className="mt-0.5 text-xs text-rose-600">{e.error}</div>}
                 </li>
