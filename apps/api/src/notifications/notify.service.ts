@@ -159,7 +159,7 @@ export class NotifyService {
       if (!wantsWhatsapp(u)) continue;
       try {
         const text = this.whatsappText(payload);
-        const res = await this.whatsapp.send(u.contactMobile as string, text, { async: true });
+        const res = await this.whatsapp.send(u.tenantId, u.contactMobile as string, text, { async: true });
         if (!res.ok) {
           this.logger.warn(`notifyMany: whatsapp to ${u.contactMobile} failed: ${res.error}`);
         }

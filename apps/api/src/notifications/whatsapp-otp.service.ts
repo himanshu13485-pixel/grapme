@@ -38,7 +38,7 @@ export class WhatsappOtpService {
   async status(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { contactMobile: true, whatsappVerifiedAt: true, notifyWhatsapp: true },
+      select: { contactMobile: true, whatsappVerifiedAt: true, notifyWhatsapp: true, tenantId: true },
     });
 
     return {
@@ -47,7 +47,7 @@ export class WhatsappOtpService {
       verifiedAt: user?.whatsappVerifiedAt ?? null,
       notifyWhatsapp: !!user?.notifyWhatsapp,
       cooldown: await this.cooldownRemaining(userId),
-      configured: this.portal.configured,
+      configured: await this.portal.isConfigured(user?.tenantId),
     };
   }
 
@@ -55,12 +55,18 @@ export class WhatsappOtpService {
   async issue(userId: string): Promise<OtpResult> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { contactMobile: true },
+      select: { contactMobile: true, tenantId: true },
     });
     const phone = user?.contactMobile?.trim();
 
     if (!phone) {
       return { ok: false, error: 'No WhatsApp number on this account. Add one to your profile first.' };
+    }
+
+    // Resolved up front so the message carries the workspace's own brand name.
+    const cfg = await this.portal.configFor(user?.tenantId);
+    if (!cfg) {
+      return { ok: false, error: 'WhatsApp is not set up for this workspace yet.' };
     }
 
     const wait = await this.cooldownRemaining(userId);
@@ -82,7 +88,7 @@ export class WhatsappOtpService {
       },
     });
 
-    const res = await this.portal.send(phone, this.messageFor(code));
+    const res = await this.portal.send(user?.tenantId, phone, this.messageFor(code, cfg.brand));
 
     if (!res.ok) {
       // Don't leave a code the user can never receive.
@@ -169,8 +175,7 @@ export class WhatsappOtpService {
     return Math.max(0, WhatsappOtpService.RESEND_COOLDOWN_SECONDS - elapsed);
   }
 
-  private messageFor(code: string): string {
-    const brand = process.env.APP_NAME || 'Grapme';
+  private messageFor(code: string, brand: string): string {
     const ttl = WhatsappOtpService.TTL_MINUTES;
 
     return (

@@ -157,19 +157,57 @@ To enable it:
 The API then rewrites the wizard URL onto your domain automatically. Leave
 `UNIPILE_HOSTED_AUTH_DOMAIN` blank to keep Unipile's default domain.
 
+> **If the wizard still shows unipile.com**, the running container probably
+> predates this feature. `up -d` reuses the image already on the server — it does
+> **not** fetch a newer one. Wait for the GitHub Actions build to go green, then:
+>
+> ```bash
+> docker compose -f docker-compose.prod.yml pull && docker compose -f docker-compose.prod.yml up -d
+> ```
+>
+> Generate a **fresh** connect link afterwards; links minted by the old code keep
+> pointing at Unipile's domain. To confirm the new code is live:
+>
+> ```bash
+> docker compose -f docker-compose.prod.yml exec api grep -c brandHostedAuthUrl apps/api/dist/src/linkedin/provider/unipile.provider.js
+> ```
+>
+> The same applies to any new feature: `git pull` on the server updates the
+> compose file and `.env`, but the app code comes from the pre-built image.
+
 ## 7. Enabling WhatsApp alerts (self-hosted portal)
 
 Alerts can also go out over WhatsApp, through our **own portal** (one WhatsApp
-number per project) — no Meta Business API and no per-message fee. Like LinkedIn,
-this is **env-only**: no code changes, no rebuild.
+number per project) — no Meta Business API and no per-message fee.
 
 Users must **verify their number first** (My Account → WhatsApp): the API sends a
 6-digit code to that number and only messages numbers that have been confirmed.
 The whole feature is optional — skipping it just means no WhatsApp alerts; in-app
 and email notifications are unaffected.
 
-In the portal, create a project, link its WhatsApp number, then copy the
-project's API key from **Integration details** on the project card. Add to `.env`:
+### Set it up in the app (recommended)
+
+Credentials live **per workspace**, so each one can send from its own WhatsApp
+number. Nothing to touch on the server:
+
+1. In the portal, **Add a project**, scan the QR with the number that workspace
+   should send from, then open **Integration details** on the project card and
+   copy the **API key**.
+2. In GrapMe, sign in as an admin → **WhatsApp notifications**.
+3. Paste the portal URL (just the address — `https://wa.yourdomain.com`, no path)
+   and the API key, tick **Enable WhatsApp notifications**, and **Save**.
+4. Click **Test connection**. Green confirms the key works *and* the number is
+   paired; if it reports the number isn't connected, scan the QR again in the
+   portal.
+
+The key is encrypted at rest with `CREDENTIAL_ENCRYPTION_KEY` (the same key that
+protects mailbox passwords) and is never sent back to the browser — the page only
+ever shows its last four characters.
+
+### Server-wide fallback (optional)
+
+If you'd rather configure it once for every workspace, set these in `.env`
+instead. Any workspace that hasn't saved its own credentials uses them:
 
 ```bash
 # Portal's public base URL, no trailing slash. Must be reachable from the API
@@ -187,19 +225,23 @@ Restart the API (env-only, reuses the existing image):
 docker compose -f docker-compose.prod.yml up -d
 ```
 
+A workspace that saves its own credentials overrides this, and one that ticks
+**Enable** off stops sending entirely rather than falling back.
+
 Deep links inside WhatsApp alerts reuse `WEB_PUBLIC_URL`, which is already set —
 there's no extra URL to configure.
 
 **How to verify it works:** sign in → **My Account** → the WhatsApp card should
 show *Not verified* with a **Send code** button (if it says WhatsApp isn't
-configured, the two env keys didn't reach the container). Send the code, enter
-it, and the card flips to *Verified* — which also switches WhatsApp alerts on for
-that user. They can opt out again in notification settings.
+configured, neither the workspace settings nor the env fallback are set). Send
+the code, enter it, and the card flips to *Verified* — which also switches
+WhatsApp alerts on for that user. They can opt out again in notification
+settings.
 
-Leave both `WA_PORTAL_*` values blank to keep WhatsApp off entirely.
+Leave both `WA_PORTAL_*` blank and save nothing in the app to keep WhatsApp off.
 
-> **Never commit the portal API key.** Keep it only in the server's `.env`;
-> `.env.production.example` documents the keys with placeholders.
+> **Never commit the portal API key.** Keep it in the app's settings page or the
+> server's `.env`; `.env.production.example` documents the keys with placeholders.
 
 ---
 
