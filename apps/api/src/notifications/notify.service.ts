@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailerService } from '../sending/mailer.service';
+import { WhatsappPortalService } from './whatsapp-portal.service';
 
 export interface NotifyPayload {
   /** Notification "type" key stored on the bell row, e.g. 'support'. */
@@ -29,10 +30,10 @@ export interface NotifyChannels {
 /**
  * Central notification helper. For a given user it ALWAYS creates an in-app bell
  * alert, and — respecting that user's per-user preferences — also sends a branded
- * email (if notifyEmail) and a WhatsApp message (if notifyWhatsapp + a phone on
- * file). WhatsApp is a recorded stub in this project (no provider wired), so it
- * only logs. Every external send is best-effort: wrapped in try/catch and logged,
- * so a failing email/WhatsApp/bell insert can NEVER 500 the user's action.
+ * email (if notifyEmail) and a WhatsApp message (if notifyWhatsapp + a *verified*
+ * phone on file). WhatsApp goes through our self-hosted portal. Every external
+ * send is best-effort: wrapped in try/catch and logged, so a failing
+ * email/WhatsApp/bell insert can NEVER 500 the user's action.
  *
  * NOTE: this is for *alerts*. Transactional mail (verification, password reset,
  * welcome) must bypass this and always send — see AuthService / SalesService.
@@ -44,6 +45,7 @@ export class NotifyService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly mailer: MailerService,
+    private readonly whatsapp: WhatsappPortalService,
   ) {}
 
   /** Notify a single user (best-effort; never throws). */
@@ -71,6 +73,7 @@ export class NotifyService {
       notifyEmail: boolean;
       notifyWhatsapp: boolean;
       contactMobile: string | null;
+      whatsappVerifiedAt: Date | null;
     }[] = [];
     try {
       users = await this.prisma.user.findMany({
@@ -83,6 +86,7 @@ export class NotifyService {
           notifyEmail: true,
           notifyWhatsapp: true,
           contactMobile: true,
+          whatsappVerifiedAt: true,
         },
       });
     } catch (err) {
@@ -106,11 +110,13 @@ export class NotifyService {
       this.logger.warn(`notifyMany: bell insert failed: ${err}`);
     }
 
-    // 2) Email (per preference) + 3) WhatsApp stub (per preference). Grouped so we
-    // resolve each tenant's sending mailbox once.
+    // 2) Email (per preference) + 3) WhatsApp (per preference). Emails are grouped
+    // so we resolve each tenant's sending mailbox once.
     const wantsEmail = (u: (typeof users)[number]) => ch.email && u.notifyEmail && !!u.email;
+    // Deliberately strict: only message people who both asked for alerts AND
+    // proved the number is theirs. Keeps us far away from spam-report territory.
     const wantsWhatsapp = (u: (typeof users)[number]) =>
-      ch.whatsapp && u.notifyWhatsapp && !!u.contactMobile;
+      ch.whatsapp && u.notifyWhatsapp && !!u.contactMobile && !!u.whatsappVerifiedAt;
 
     const emailByTenant = new Map<string, typeof users>();
     for (const u of users) {
@@ -147,18 +153,42 @@ export class NotifyService {
       }
     }
 
-    // WhatsApp — recorded stub only (no provider wired). Best-effort log.
+    // 3) WhatsApp — sent through our self-hosted portal. Queued (async) at the
+    // portal so a burst of alerts can never stall the request that triggered it.
     for (const u of users) {
       if (!wantsWhatsapp(u)) continue;
       try {
-        const text = payload.whatsappText ?? payload.title;
-        this.logger.log(
-          `[whatsapp-stub] would notify ${u.contactMobile} — "${text}". Wire WHATSAPP_TOKEN/PHONE_ID to enable.`,
-        );
-      } catch {
-        /* never throws */
+        const text = this.whatsappText(payload);
+        const res = await this.whatsapp.send(u.contactMobile as string, text, { async: true });
+        if (!res.ok) {
+          this.logger.warn(`notifyMany: whatsapp to ${u.contactMobile} failed: ${res.error}`);
+        }
+      } catch (err) {
+        this.logger.warn(`notifyMany: whatsapp to ${u.contactMobile} errored: ${err}`);
       }
     }
+  }
+
+  /** The message body we put on WhatsApp: title, short body, then the deep link. */
+  private whatsappText(payload: NotifyPayload): string {
+    if (payload.whatsappText) return payload.whatsappText;
+
+    const parts = [payload.title];
+    const body = (payload.body ?? '').replace(/<[^>]*>/g, '').trim();
+    if (body) parts.push(body);
+
+    if (payload.link) parts.push(`${this.webBaseUrl()}${payload.link}`);
+
+    return parts.join('\n\n');
+  }
+
+  /** Public base URL of the web app, for deep links in emails and WhatsApp. */
+  private webBaseUrl(): string {
+    return (
+      process.env.WEB_PUBLIC_URL ||
+      process.env.CORS_ORIGIN ||
+      'http://localhost:3000'
+    ).replace(/\/+$/, '');
   }
 
   /** Resolve the tenant's outbound mailbox (explicit report mailbox, else the oldest). */
@@ -176,7 +206,7 @@ export class NotifyService {
 
   /** Branded email body matching the Updates/auth email style. */
   private emailHtml(payload: NotifyPayload): string {
-    const webUrl = (process.env.WEB_PUBLIC_URL || process.env.CORS_ORIGIN || 'http://localhost:3000').replace(/\/$/, '');
+    const webUrl = this.webBaseUrl();
     const bodyHtml = payload.emailHtml ?? `<p style="white-space:pre-wrap;margin:0">${escapeHtml(payload.body ?? '')}</p>`;
     const button = payload.link
       ? `<p style="margin:22px 0">

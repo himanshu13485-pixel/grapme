@@ -8,7 +8,8 @@ import { LiInbox } from '@/components/LiInbox';
 import { LiRegularWizard } from '@/components/LiRegularWizard';
 import { LiAiWizard } from '@/components/LiAiWizard';
 import { LiCampaignDetailView } from '@/components/LiCampaignDetailView';
-import { LiSubscription, LiKnowledgeStats, LiCampaign, LinkedInAccount, accountHealth, timeAgo, purgeCountdown } from '@/lib/linkedin';
+import { LiSubscription, LiKnowledgeStats, LiCampaign, accountHealth, timeAgo, purgeCountdown } from '@/lib/linkedin';
+import { LinkedInAccounts, useLinkedInAccounts } from '@/components/LinkedInAccounts';
 import { validityInfo } from '@/components/Validity';
 
 const BASE = '/linkedin/portal';
@@ -16,17 +17,17 @@ const BASE = '/linkedin/portal';
 export function ClientLinkedIn({ clientId }: { clientId: string }) {
   const [sub, setSub] = useState<LiSubscription | null>(null);
   const [stats, setStats] = useState<LiKnowledgeStats | null>(null);
-  const [accounts, setAccounts] = useState<LinkedInAccount[]>([]);
   const [view, setView] = useState('campaigns');
 
-  const loadAccounts = useCallback(() => {
-    api.get<LinkedInAccount[]>(`${BASE}/clients/${clientId}/linkedin-accounts`).then(setAccounts).catch(() => {});
-  }, [clientId]);
+  // Accounts (seats) live in the shared hook so the health strip + tab count stay
+  // live across every tab, and the Accounts tab reuses the same connect/poll logic.
+  const li = useLinkedInAccounts({ base: BASE, clientId, mode: 'popup' });
+  const accounts = li.accounts;
+
   useEffect(() => {
     api.get<LiSubscription>(`${BASE}/clients/${clientId}/subscription`).then(setSub).catch(() => {});
     api.get<LiKnowledgeStats>(`${BASE}/clients/${clientId}/knowledge-stats`).then(setStats).catch(() => {});
-    loadAccounts();
-  }, [clientId, loadAccounts]);
+  }, [clientId]);
 
   const connected = accounts.filter((a) => a.status === 'CONNECTED').length;
   const attention = accounts.filter((a) => accountHealth(a.status).attention).length;
@@ -70,88 +71,11 @@ export function ClientLinkedIn({ clientId }: { clientId: string }) {
       {view === 'campaigns' && <ClientCampaigns clientId={clientId} />}
       {view === 'schedule' && <ClientSchedule clientId={clientId} />}
       {view === 'inbox' && <LiInbox clientId={clientId} base={BASE} />}
-      {view === 'accounts' && <ClientAccounts clientId={clientId} accounts={accounts} seats={sub?.seats} reload={loadAccounts} />}
+      {view === 'accounts' && <LinkedInAccounts li={li} mode="popup" seats={sub?.seats} />}
     </div>
   );
 }
 
-/** The client's LinkedIn accounts (seats) — connect new ones up to the plan's seat limit. */
-function ClientAccounts({ clientId, accounts, seats, reload }: { clientId: string; accounts: LinkedInAccount[]; seats?: number; reload: () => void }) {
-  const [busy, setBusy] = useState(false);
-  const atLimit = seats != null && accounts.length >= seats;
-
-  async function connect() {
-    setBusy(true);
-    // Open the tab synchronously (inside the click) so popup blockers allow it,
-    // then point it at the Unipile URL once we have it.
-    const w = typeof window !== 'undefined' ? window.open('', '_blank') : null;
-    try {
-      const res = await api.post<{ accountId: string; url: string }>(
-        `${BASE}/clients/${clientId}/linkedin-accounts/connect`,
-        { successRedirect: typeof window !== 'undefined' ? window.location.href : undefined },
-      );
-      reload();
-      if (res.url) {
-        if (w) w.location.href = res.url;              // new tab → Unipile (returns to portal after auth)
-        else window.location.href = res.url;           // popup blocked → same tab fallback
-      } else if (w) { w.close(); }
-    } catch (e: any) {
-      if (w) w.close();
-      alert(e.message ?? 'Could not start the connection');
-    } finally { setBusy(false); }
-  }
-
-  async function remove(id: string) {
-    if (!confirm('Remove this LinkedIn seat? Any campaigns using it will also be removed.')) return;
-    try { await api.del(`${BASE}/linkedin-accounts/${id}`); reload(); }
-    catch (e: any) { alert(e.message ?? 'Could not remove the account'); }
-  }
-
-  return (
-    <div>
-      <div className="mb-3 flex items-center justify-between">
-        <div className="text-sm text-slate-500">
-          {accounts.length}{seats != null ? ` of ${seats}` : ''} seat{accounts.length === 1 ? '' : 's'} used
-        </div>
-        <button className="btn-primary" disabled={busy || atLimit} onClick={connect} title={atLimit ? 'Seat limit reached — contact your account team to add seats' : undefined}>
-          {busy ? 'Starting…' : '+ Connect Account'}
-        </button>
-      </div>
-      {accounts.length === 0 ? (
-        <EmptyState message="No LinkedIn accounts connected yet. Click “Connect Account” to link a LinkedIn profile." />
-      ) : (
-      <div className="card divide-y divide-slate-100">
-      {accounts.map((a) => {
-        const h = accountHealth(a.status, a.deactivated);
-        return (
-          <div key={a.id} className="flex items-center justify-between p-4">
-            <div className="flex items-center gap-3">
-              <img src={a.avatarUrl || 'https://placehold.co/40x40/ede9fe/6d28d9?text=in'} alt="" className="h-10 w-10 rounded-full bg-brand-50 object-cover" />
-              <div>
-                <div className="font-medium text-slate-800">{a.fullName ?? 'Pending connection…'}</div>
-                <div className="line-clamp-1 text-xs text-slate-500">
-                  {a.headline ?? (a.status === 'CONNECTED' ? 'LinkedIn account' : 'Awaiting LinkedIn auth')}
-                  {a.connectionsCount != null && ` · ${a.connectionsCount} connections`}
-                  {a.status === 'CONNECTED' && ` · synced ${timeAgo(a.lastSyncedAt)}`}
-                </div>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className={`inline-flex items-center gap-1.5 rounded-full bg-slate-50 px-2.5 py-1 text-xs font-medium ${h.text}`}>
-                <span className={`h-2 w-2 rounded-full ${h.dot}`} />{h.label}
-              </span>
-              {a.status !== 'CONNECTED' && (
-                <button className="text-sm text-rose-500 hover:text-rose-700" onClick={() => remove(a.id)}>Remove</button>
-              )}
-            </div>
-          </div>
-        );
-      })}
-      </div>
-      )}
-    </div>
-  );
-}
 
 function ClientCampaigns({ clientId }: { clientId: string }) {
   const [campaigns, setCampaigns] = useState<LiCampaign[]>([]);

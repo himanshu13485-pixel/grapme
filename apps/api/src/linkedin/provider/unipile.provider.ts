@@ -50,7 +50,34 @@ export class UnipileProvider implements LinkedInProvider {
       // (flips PENDING → CONNECTED). Requires a public base URL.
       ...(this.accountNotifyUrl() ? { notify_url: this.accountNotifyUrl() } : {}),
     });
-    return { url: res.url, requestId: params.name };
+    return { url: this.brandHostedAuthUrl(res.url), requestId: params.name };
+  }
+
+  /**
+   * White-label the hosted-auth wizard onto your own domain, if configured.
+   *
+   * Unipile's only white-label lever is a custom domain: you create a CNAME
+   * (e.g. auth.yourdomain.com → account.unipile.com), Unipile support validates it
+   * and issues the SSL cert (needs an active subscription), and then — per their
+   * docs — you rewrite the URL the API returns to use that domain. There is no API
+   * parameter for it, so we swap the host here. The wizard's own logo/name are still
+   * Unipile's; only the domain the client sees becomes yours.
+   *
+   * Blank UNIPILE_HOSTED_AUTH_DOMAIN → return the URL untouched (default Unipile domain).
+   */
+  private brandHostedAuthUrl(url: string): string {
+    const domain = (this.config.get<string>('UNIPILE_HOSTED_AUTH_DOMAIN') ?? '')
+      .trim()
+      .replace(/^https?:\/\//i, '')
+      .replace(/\/+$/, '');
+    if (!domain) return url;
+    try {
+      const u = new URL(url);
+      u.host = domain; // keep the path + query (auth token/state) intact, swap only the host
+      return u.toString();
+    } catch {
+      return url; // never break connect over a cosmetic host swap
+    }
   }
 
   /** Public webhook URL Unipile calls when a hosted-auth account connects. */

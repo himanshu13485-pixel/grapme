@@ -46,6 +46,8 @@ services:
       JWT_ACCESS_TTL: 15m
       JWT_REFRESH_TTL: 7d
       CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY}
+      # Public base URL of THIS api service. Also builds the Unipile hosted-auth
+      # notify_url — must be reachable by Unipile or LinkedIn seats stay PENDING.
       APP_PUBLIC_URL: ${APP_PUBLIC_URL}
       WEB_PUBLIC_URL: ${WEB_PUBLIC_URL}
       CORS_ORIGIN: ${WEB_PUBLIC_URL}
@@ -60,8 +62,17 @@ services:
       UNIPILE_DSN: ${UNIPILE_DSN:-}
       UNIPILE_API_KEY: ${UNIPILE_API_KEY:-}
       UNIPILE_WEBHOOK_SECRET: ${UNIPILE_WEBHOOK_SECRET:-}
+      # Optional white-label: your own hosted-auth wizard domain (CNAME → account.unipile.com,
+      # validated by Unipile support). Blank = the client sees Unipile's default domain.
+      UNIPILE_HOSTED_AUTH_DOMAIN: ${UNIPILE_HOSTED_AUTH_DOMAIN:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       AI_MODEL: ${AI_MODEL:-}
+      # ── WhatsApp (self-hosted portal) ── powers number verification (OTP) and
+      # WhatsApp alerts. Blank = WhatsApp is off; in-app + email alerts still work.
+      WA_PORTAL_URL: ${WA_PORTAL_URL:-}
+      WA_PORTAL_API_KEY: ${WA_PORTAL_API_KEY:-}
+      # Brand name shown in the OTP message. Deep links reuse WEB_PUBLIC_URL.
+      APP_NAME: ${APP_NAME:-Grapme}
       # On plan/blog changes, ping the marketing container to refresh its live
       # pricing + blog pages instantly (internal docker network). Leave the
       # default unless the marketing site moves off this stack. REVALIDATE_SECRET,

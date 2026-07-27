@@ -4,6 +4,7 @@ import { useEffect, useState, FormEvent } from 'react';
 import { useAuth } from '@/lib/auth';
 import { api } from '@/lib/api';
 import { PageHeader } from '@/components/ui';
+import WhatsappVerify from '@/components/WhatsappVerify';
 
 export default function MyProfilePage() {
   const { user, refreshUser } = useAuth();
@@ -13,6 +14,8 @@ export default function MyProfilePage() {
   const [prefs, setPrefs] = useState({ notifyEmail: true, notifyWhatsapp: false, contactMobile: '' });
   const [prefsBusy, setPrefsBusy] = useState(false);
   const [prefsMsg, setPrefsMsg] = useState('');
+  // Bumped after saving so the verify card re-reads status (the number may have changed).
+  const [verifyKey, setVerifyKey] = useState(0);
 
   useEffect(() => {
     api
@@ -37,6 +40,7 @@ export default function MyProfilePage() {
         ...(isClient ? {} : { contactMobile: prefs.contactMobile }),
       });
       setPrefsMsg('Notification preferences saved.');
+      setVerifyKey((k) => k + 1);
     } catch {
       setPrefsMsg('Could not save. Please try again.');
     } finally {
@@ -215,6 +219,9 @@ export default function MyProfilePage() {
               />
             </div>
           )}
+
+          {/* Proof that the number is theirs — alerts only go to verified numbers. */}
+          <WhatsappVerify key={verifyKey} onVerified={() => setPrefs((p) => ({ ...p, notifyWhatsapp: true }))} />
           {prefsMsg && (
             <p className={`rounded-lg px-3 py-2 text-sm ${prefsMsg.startsWith('Could not') ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-700'}`}>
               {prefsMsg}

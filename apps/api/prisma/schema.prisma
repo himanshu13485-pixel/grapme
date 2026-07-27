@@ -354,6 +354,9 @@ model User {
   // Transactional mail (verification, reset, welcome) ignores these and always sends.
   notifyEmail           Boolean    @default(true)
   notifyWhatsapp        Boolean    @default(false)
+  // Set once the user proves they control their WhatsApp number (OTP). Alerts
+  // are only ever sent to a verified number.
+  whatsappVerifiedAt    DateTime?
   emailVerified         Boolean    @default(true) // client self-registration must confirm email before login
   verifyTokenHash       String? // sha256 of the email-confirmation token
   verifyExpires         DateTime? // confirmation-link expiry
@@ -406,9 +409,29 @@ model User {
   broadcastReceipts    BroadcastRecipient[]
   // Internal Work notes shared with this admin / sub-admin.
   internalNoteReceipts InternalNoteRecipient[]
+  // Pending WhatsApp number-verification codes.
+  whatsappVerifications WhatsappVerification[]
 
   @@index([tenantId])
   @@index([role])
+}
+
+/// A one-time code sent to a user's WhatsApp to prove the number is theirs.
+/// Only the hash is stored — the plain code exists solely in the message we send.
+model WhatsappVerification {
+  id        String   @id @default(uuid())
+  userId    String
+  /// The number the code went to, so changing the number invalidates it.
+  phone     String
+  codeHash  String
+  expiresAt DateTime
+  attempts  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, expiresAt])
 }
 
 model RefreshToken {

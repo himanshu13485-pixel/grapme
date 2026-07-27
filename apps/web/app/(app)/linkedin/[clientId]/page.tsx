@@ -5,8 +5,9 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useCanDelete } from '@/lib/auth';
-import { PageHeader, EmptyState, StatusBadge, Tabs, Modal } from '@/components/ui';
-import { LiSubscription, LinkedInAccount, LiCampaign, LiKnowledgeStats, accountHealth, timeAgo, purgeCountdown } from '@/lib/linkedin';
+import { PageHeader, EmptyState, StatusBadge, Tabs } from '@/components/ui';
+import { LiSubscription, LiCampaign, LiKnowledgeStats, timeAgo, purgeCountdown } from '@/lib/linkedin';
+import { LinkedInAccounts, useLinkedInAccounts } from '@/components/LinkedInAccounts';
 import { LiInbox } from '@/components/LiInbox';
 import { ValidityBadge } from '@/components/Validity';
 
@@ -121,123 +122,28 @@ function StatsHeader({ clientId }: { clientId: string }) {
 }
 
 // ── Accounts (connect via Unipile) ───────────────────────────────────────
+// Shared with the client portal: same connect/remove/sync/poll + row UI. The admin
+// surface adds a shareable hosted-auth link (mode="modal"), per-row Sync/Reconnect,
+// and can remove CONNECTED seats.
 function AccountsTab({ clientId }: { clientId: string }) {
-  const [accounts, setAccounts] = useState<LinkedInAccount[]>([]);
-  const [loaded, setLoaded] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [connectUrl, setConnectUrl] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    setAccounts(await api.get<LinkedInAccount[]>(`/linkedin/clients/${clientId}/linkedin-accounts`));
-    setLoaded(true);
+  const li = useLinkedInAccounts({ base: '/linkedin', clientId, mode: 'modal' });
+  const [seats, setSeats] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    api.get<LiSubscription>(`/linkedin/clients/${clientId}/subscription`)
+      .then((s) => setSeats(s.seats))
+      .catch(() => {});
   }, [clientId]);
-  useEffect(() => { load(); }, [load]);
-
-  async function connect() {
-    setBusy(true);
-    try {
-      const res = await api.post<{ accountId: string; url: string }>(`/linkedin/clients/${clientId}/linkedin-accounts/connect`, { successRedirect: typeof window !== 'undefined' ? window.location.href : undefined });
-      setConnectUrl(res.url); // show a shareable link; the account row is already created (PENDING)
-      load();
-    } catch (e: any) { alert(e.message ?? 'Failed to start connect'); }
-    finally { setBusy(false); }
-  }
 
   return (
-    <div>
-      <div className="mb-3 flex justify-end">
-        <button className="btn-primary" disabled={busy} onClick={connect}>{busy ? 'Starting…' : '+ Connect Account'}</button>
-      </div>
-      {connectUrl && <ConnectLinkModal url={connectUrl} onClose={() => { setConnectUrl(null); load(); }} />}
-      {!loaded ? <EmptyState message="Loading…" /> : accounts.length === 0 ? (
-        <EmptyState message="No LinkedIn accounts connected yet." />
-      ) : (
-        <>
-          <AccountHealthSummary accounts={accounts} />
-          <div className="card divide-y divide-slate-100">
-            {accounts.map((a) => {
-              const h = accountHealth(a.status, a.deactivated);
-              return (
-                <div key={a.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <img src={a.avatarUrl || 'https://placehold.co/40x40/ede9fe/6d28d9?text=in'} alt="" className="h-10 w-10 rounded-full bg-brand-50 object-cover" />
-                    <div>
-                      <div className="font-medium text-slate-800">{a.fullName ?? 'Pending connection…'}</div>
-                      <div className="line-clamp-1 text-xs text-slate-500">
-                        {a.headline ?? (a.status === 'CONNECTED' ? 'LinkedIn account' : 'Awaiting LinkedIn auth')}
-                        {a.connectionsCount != null && ` · ${a.connectionsCount} connections`}
-                        {a.status === 'CONNECTED' && ` · synced ${timeAgo(a.lastSyncedAt)}`}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className={`inline-flex items-center gap-1.5 rounded-full bg-slate-50 px-2.5 py-1 text-xs font-medium ${h.text}`}>
-                      <span className={`h-2 w-2 rounded-full ${h.dot}`} />{h.label}
-                    </span>
-                    <button className="text-sm text-slate-500 hover:text-slate-800" onClick={async () => { await api.post(`/linkedin/linkedin-accounts/${a.id}/sync`); load(); }}>Sync</button>
-                    {h.attention && <button className="text-sm text-brand-600 hover:text-brand-800" onClick={connect}>Reconnect</button>}
-                    <button className="text-sm text-rose-500 hover:text-rose-700" onClick={async () => { if (confirm('Remove this account? Any campaigns using it will also be removed.')) { try { await api.del(`/linkedin/linkedin-accounts/${a.id}`); load(); } catch (e: any) { alert(e?.message ?? 'Could not remove the account'); } } }}>Remove</button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-/** Roll-up of account connection health for the client's seats. */
-function AccountHealthSummary({ accounts }: { accounts: LinkedInAccount[] }) {
-  const connected = accounts.filter((a) => a.status === 'CONNECTED').length;
-  const attention = accounts.filter((a) => accountHealth(a.status).attention);
-  return (
-    <div className="mb-3 space-y-2">
-      <div className="flex items-center gap-2 text-sm text-slate-600">
-        <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-emerald-500" />{connected} connected</span>
-        <span className="text-slate-300">·</span>
-        <span>{accounts.length} seat{accounts.length === 1 ? '' : 's'} used</span>
-      </div>
-      {attention.length > 0 && (
-        <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-          ⚠ {attention.length} account{attention.length === 1 ? '' : 's'} need{attention.length === 1 ? 's' : ''} attention — reconnect to resume sending.
-          {' '}This campaign&apos;s sends pause for any account that isn&apos;t connected.
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** Shareable Unipile hosted-auth link. Send it to the client, or open it yourself. */
-function ConnectLinkModal({ url, onClose }: { url: string; onClose: () => void }) {
-  const [copied, setCopied] = useState(false);
-  async function copy() {
-    try { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 2000); }
-    catch { /* clipboard blocked — user can select the field manually */ }
-  }
-  return (
-    <Modal open onClose={onClose} title="Connect a LinkedIn account" wide disableBackdropClose>
-      <div className="space-y-4">
-        <p className="text-sm text-slate-500">
-          Whoever opens this link logs into the <strong>LinkedIn account to connect</strong> on Unipile&apos;s secure page
-          (we never see the password). Send it to the client, or open it yourself if you have their login.
-          The link expires in about <strong>60 minutes</strong>.
-        </p>
-        <div className="flex gap-2">
-          <input readOnly value={url} onFocus={(e) => e.currentTarget.select()} className="input flex-1 font-mono text-xs" />
-          <button className="btn-ghost whitespace-nowrap" onClick={copy}>{copied ? '✓ Copied' : 'Copy link'}</button>
-        </div>
-        <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
-          Once they finish, the account appears as <strong>Connected</strong> automatically. If it still shows
-          “Pending”, click <strong>Sync</strong> on the account row.
-        </div>
-        <div className="flex justify-end gap-2">
-          <button className="btn-ghost" onClick={onClose}>Done</button>
-          <a href={url} target="_blank" rel="noreferrer" className="btn-primary">Open now →</a>
-        </div>
-      </div>
-    </Modal>
+    <LinkedInAccounts
+      li={li}
+      mode="modal"
+      seats={seats}
+      showSync
+      showReconnect
+      allowRemoveConnected
+      showHealthSummary
+    />
   );
 }
 

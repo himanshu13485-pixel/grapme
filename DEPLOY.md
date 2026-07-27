@@ -82,6 +82,125 @@ In the app, add your real **SMTP/IMAP mailboxes** (Mailboxes page) so it can
 send and receive email. Set up **SPF, DKIM, DMARC** on your sending domains —
 the built-in **Deliverability** page checks these for you.
 
+## 6. Enabling LinkedIn connect (Unipile)
+
+The LinkedIn channel uses [Unipile](https://www.unipile.com/) to connect client
+accounts via a hosted auth page (we never see LinkedIn passwords). It's off until
+you set four env keys. Redis/queues are already on in the prod compose file, so
+this is **just env** — no code changes, no rebuild.
+
+Add these to your server's `.env` (next to the other secrets):
+
+```bash
+# host:port EXACTLY as shown in the Unipile dashboard — NO https://, NO trailing slash
+UNIPILE_DSN=api1.unipile.com:13111
+UNIPILE_API_KEY=<your Unipile API key>
+
+# Shared secret that guards the account webhook. Generate a fresh one:
+#   openssl rand -hex 24
+UNIPILE_WEBHOOK_SECRET=<paste the generated hex here>
+
+# This API's PUBLIC https base URL, no trailing slash. Unipile calls back to
+#   <APP_PUBLIC_URL>/api/v1/linkedin/webhooks/unipile/accounts
+# when an account finishes connecting, which flips the seat PENDING → Connected.
+# It MUST be reachable from the public internet (not localhost / a private IP).
+APP_PUBLIC_URL=https://api.yourdomain.com
+```
+
+Then restart the API — **no rebuild needed, only env changed**:
+
+```bash
+docker compose -f docker-compose.prod.yml up -d
+```
+
+`up -d` recreates only the containers whose env changed and reuses the existing
+image. Watch the boot log — if `APP_PUBLIC_URL` is missing you'll see a clear
+`[LinkedIn]` warning that the webhook can't be built:
+
+```bash
+docker compose -f docker-compose.prod.yml logs -f api
+```
+
+**How to verify it works:** open a client → **LinkedIn → Accounts → Connect
+Account**, finish the Unipile login, and the seat should flip from *Pending auth*
+to *Connected* on its own within a few seconds (the UI auto-polls). If it stays
+*Pending*, Unipile couldn't reach your webhook — re-check that `APP_PUBLIC_URL` is
+public, https, has no trailing slash, and that the `secret` matches
+`UNIPILE_WEBHOOK_SECRET`.
+
+> **Never commit real Unipile values.** Keep them only in the server's `.env`
+> (which stays out of git). `.env.production.example` documents the keys with
+> placeholders.
+
+### White-labeling the connect wizard (optional)
+
+When a client connects a LinkedIn account they're sent to Unipile's **hosted auth
+wizard**. Unipile's only white-label lever is a **custom domain** (their docs:
+[Hosted Auth](https://developer.unipile.com/docs/hosted-auth)) — the page's logo
+and name stay Unipile's; what changes is the domain the client sees.
+
+To enable it:
+
+1. **Needs an active Unipile subscription.**
+2. In your DNS, add a CNAME: `auth.yourdomain.com` → `account.unipile.com`.
+3. Contact **Unipile support** to validate the domain and issue the SSL cert.
+4. Once they confirm, set it in `.env` and restart the API (env-only, no rebuild):
+
+   ```bash
+   UNIPILE_HOSTED_AUTH_DOMAIN=auth.yourdomain.com
+   ```
+
+   ```bash
+   docker compose -f docker-compose.prod.yml up -d
+   ```
+
+The API then rewrites the wizard URL onto your domain automatically. Leave
+`UNIPILE_HOSTED_AUTH_DOMAIN` blank to keep Unipile's default domain.
+
+## 7. Enabling WhatsApp alerts (self-hosted portal)
+
+Alerts can also go out over WhatsApp, through our **own portal** (one WhatsApp
+number per project) — no Meta Business API and no per-message fee. Like LinkedIn,
+this is **env-only**: no code changes, no rebuild.
+
+Users must **verify their number first** (My Account → WhatsApp): the API sends a
+6-digit code to that number and only messages numbers that have been confirmed.
+The whole feature is optional — skipping it just means no WhatsApp alerts; in-app
+and email notifications are unaffected.
+
+In the portal, create a project, link its WhatsApp number, then copy the
+project's API key from **Integration details** on the project card. Add to `.env`:
+
+```bash
+# Portal's public base URL, no trailing slash. Must be reachable from the API
+# container — a public https URL, or the portal's address on the docker network.
+WA_PORTAL_URL=https://wa.yourdomain.com
+WA_PORTAL_API_KEY=<the project's API key>
+
+# Brand name in the OTP message ("123456 is your Grapme verification code").
+APP_NAME=Grapme
+```
+
+Restart the API (env-only, reuses the existing image):
+
+```bash
+docker compose -f docker-compose.prod.yml up -d
+```
+
+Deep links inside WhatsApp alerts reuse `WEB_PUBLIC_URL`, which is already set —
+there's no extra URL to configure.
+
+**How to verify it works:** sign in → **My Account** → the WhatsApp card should
+show *Not verified* with a **Send code** button (if it says WhatsApp isn't
+configured, the two env keys didn't reach the container). Send the code, enter
+it, and the card flips to *Verified* — which also switches WhatsApp alerts on for
+that user. They can opt out again in notification settings.
+
+Leave both `WA_PORTAL_*` values blank to keep WhatsApp off entirely.
+
+> **Never commit the portal API key.** Keep it only in the server's `.env`;
+> `.env.production.example` documents the keys with placeholders.
+
 ---
 
 ## Recommended: a domain + HTTPS
