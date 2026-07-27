@@ -81,6 +81,14 @@ services:
       REVALIDATE_SECRET: ${REVALIDATE_SECRET:-}
       # Inbox that grapme.com "Book a demo" / "Get in touch" submissions are emailed to.
       LEADS_NOTIFY_EMAIL: ${LEADS_NOTIFY_EMAIL:-harsh@grapmail.com}
+    # Pin a hostname to a specific IP inside the container. Needed when the
+    # WhatsApp portal sits on this same server behind a private address: the
+    # host resolves it via /etc/hosts (which containers never inherit), so the
+    # container would otherwise chase the public IP and time out on the hairpin.
+    # Format "host:ip", e.g. WA_PORTAL_HOST_ENTRY=wa.example.com:10.131.0.5.
+    # The default is a reserved .invalid name, i.e. a harmless no-op.
+    extra_hosts:
+      - '${WA_PORTAL_HOST_ENTRY:-portal.invalid:127.0.0.1}'
     # Apply DB migrations on boot, then start the API.
     command: >
       sh -c "npx prisma migrate deploy --schema=/app/apps/api/prisma/schema.prisma &&

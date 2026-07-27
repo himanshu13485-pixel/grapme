@@ -240,6 +240,34 @@ settings.
 
 Leave both `WA_PORTAL_*` blank and save nothing in the app to keep WhatsApp off.
 
+### "Could not reach the portal at that URL"
+
+If **Test connection** fails but the portal works from the server itself, the
+container and the host are resolving the hostname differently. Compare them:
+
+```bash
+getent hosts wa.yourdomain.com
+docker compose -f docker-compose.prod.yml exec api getent hosts wa.yourdomain.com
+```
+
+Different answers mean the host has an `/etc/hosts` entry (often a private IP for
+a portal on this same box) that the container never inherits — so the container
+dials the public IP and the connection times out on the hairpin. Pin the name for
+the container by setting this in `.env` and restarting:
+
+```bash
+WA_PORTAL_HOST_ENTRY=wa.yourdomain.com:10.131.0.5
+```
+
+TLS still validates: only the IP changes, not the hostname. Confirm with
+
+```bash
+docker compose -f docker-compose.prod.yml exec api node -e "fetch('https://wa.yourdomain.com/api/v1/status').then(r=>console.log('HTTP',r.status)).catch(e=>console.log('CAUSE:',e.cause&&(e.cause.code||e.cause.message)))"
+```
+
+`HTTP 401` is the good result — reachable, and correctly refusing a request that
+carries no API key.
+
 > **Never commit the portal API key.** Keep it in the app's settings page or the
 > server's `.env`; `.env.production.example` documents the keys with placeholders.
 
