@@ -51,6 +51,12 @@ export class MailboxesController {
     return this.mailboxes.remove(user, id);
   }
 
+  /** Replicate a mailbox's configuration as a new PENDING mailbox (edit email + go live). */
+  @Post(':id/duplicate')
+  duplicate(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.mailboxes.duplicate(user, id);
+  }
+
   @HttpCode(200)
   @Post(':id/test')
   test(@CurrentUser() user: AuthUser, @Param('id') id: string) {

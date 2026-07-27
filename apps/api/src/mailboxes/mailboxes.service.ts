@@ -111,6 +111,59 @@ export class MailboxesService {
     return account;
   }
 
+  /**
+   * Replicate a mailbox's full configuration (same server, ports, security, caps AND
+   * credentials) as a NEW mailbox labelled "(copy)". Staged PENDING with a fresh SMTP
+   * approval, exactly like a new mailbox — the admin then edits the email address /
+   * username / password for the related address before it goes live.
+   */
+  async duplicate(user: AuthUser, id: string) {
+    const src = await this.getOwned(user, id);
+    const account = await this.prisma.emailAccount.create({
+      data: {
+        tenantId: user.tenantId,
+        userId: user.userId,
+        label: `${src.label} (copy)`,
+        protocol: src.protocol,
+        emailAddress: src.emailAddress,
+        smtpUsername: src.smtpUsername,
+        credentialsEncrypted: src.credentialsEncrypted, // same AES blob → same password
+        smtpHost: src.smtpHost,
+        smtpPort: src.smtpPort,
+        smtpSecure: src.smtpSecure,
+        smtpEncryption: src.smtpEncryption,
+        imapHost: src.imapHost,
+        imapPort: src.imapPort,
+        imapEncryption: src.imapEncryption,
+        imapUsername: src.imapUsername,
+        imapCredentialsEncrypted: src.imapCredentialsEncrypted,
+        imapAllowSelfSigned: src.imapAllowSelfSigned,
+        dailyLimit: src.dailyLimit,
+        sendSpeedSeconds: src.sendSpeedSeconds,
+        warmupEnabled: src.warmupEnabled,
+        clientId: src.clientId,
+        rotationOrder: src.rotationOrder,
+        status: MailboxStatus.PENDING,
+      },
+      select: SAFE,
+    });
+    await this.approvals.submit({
+      tenantId: user.tenantId,
+      submittedById: user.userId,
+      entityType: ApprovalEntity.SMTP,
+      entityId: account.id,
+    });
+    await this.activity.log({
+      tenantId: user.tenantId,
+      actorId: user.userId,
+      action: 'DUPLICATE_MAILBOX',
+      entityType: 'EmailAccount',
+      entityId: account.id,
+      after: { copiedFrom: id },
+    });
+    return account;
+  }
+
   /** Edit a mailbox's details. Password is only replaced when provided. */
   async update(user: AuthUser, id: string, dto: UpdateMailboxDto) {
     const before = await this.getOwned(user, id);

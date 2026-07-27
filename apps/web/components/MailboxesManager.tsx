@@ -158,6 +158,17 @@ export function MailboxesManager({ clientId }: { clientId?: string }) {
     }
   }
 
+  async function replicateMailbox(m: Mailbox) {
+    if (!confirm(`Replicate "${m.label}" (${m.emailAddress})?\n\nCreates a copy with the same server, ports, security, limits and credentials — staged for approval. Then Edit the copy to set the new email address (and password) for the related mailbox.`)) return;
+    try {
+      await api.post(`/email-accounts/${m.id}/duplicate`, {});
+      flash('Mailbox replicated — edit the copy to set the new email address.');
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Replicate failed');
+    }
+  }
+
   async function create(e: FormEvent) {
     e.preventDefault();
     setError('');
@@ -490,6 +501,13 @@ export function MailboxesManager({ clientId }: { clientId?: string }) {
                   onClick={() => setTestMailbox(m)}
                 >
                   Send test email
+                </button>
+                <button
+                  className="btn-ghost px-3 py-1 text-xs"
+                  onClick={() => replicateMailbox(m)}
+                  title="Create a copy with the same server settings for another related email address"
+                >
+                  ⧉ Replicate
                 </button>
                 {canDelete && (
                   <button
