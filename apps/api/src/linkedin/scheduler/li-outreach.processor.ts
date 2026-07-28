@@ -48,7 +48,7 @@ export class LiOutreachProcessor extends WorkerHost {
     // Halt outreach the moment a client is deactivated or its plan validity lapses,
     // even before the engine tick pauses the campaign. Defer, don't cancel — the
     // action is restored when the campaign resumes on reactivation.
-    if (!(await this.clientCanSend(ctx.campaign.clientId))) return this.scheduler.rearm(scheduledActionId, this.scheduler.tomorrow());
+    if (!(await this.clientCanSend(ctx.campaign.clientId))) return this.scheduler.rearm(scheduledActionId, this.scheduler.nextDeferralSlot(ctx.campaign));
     // NOT_ACCEPTED is terminal: the invite was given up on and withdrawn, so the lead
     // is out of the sequence — no further follow-ups (the "not yet accepted" branch
     // only applies while the invite is still pending).
@@ -84,7 +84,7 @@ export class LiOutreachProcessor extends WorkerHost {
   private async doSendConnection(actionId: string, ctx: LeadWithContext) {
     const sentToday = await this.scheduler.invitesSentTodayForCampaign(ctx.campaign.id);
     const cap = this.scheduler.effectiveConnectionCap(ctx.campaign);
-    if (sentToday >= cap) return this.scheduler.rearm(actionId, this.scheduler.tomorrow());
+    if (sentToday >= cap) return this.scheduler.rearm(actionId, this.scheduler.nextDeferralSlot(ctx.campaign));
 
     const step1 = ctx.steps.find((s) => s.order === 1);
     const memberId = await this.ensureMemberId(ctx);
@@ -152,7 +152,7 @@ export class LiOutreachProcessor extends WorkerHost {
 
   private async doSendMessage(actionId: string, stepOrder: number, ctx: LeadWithContext) {
     const sentToday = await this.scheduler.messagesSentTodayForCampaign(ctx.campaign.id);
-    if (sentToday >= ctx.campaign.dailyMessageLimit) return this.scheduler.rearm(actionId, this.scheduler.tomorrow());
+    if (sentToday >= ctx.campaign.dailyMessageLimit) return this.scheduler.rearm(actionId, this.scheduler.nextDeferralSlot(ctx.campaign));
 
     const step = ctx.steps.find((s) => s.order === stepOrder);
     if (!step) return this.complete(actionId);

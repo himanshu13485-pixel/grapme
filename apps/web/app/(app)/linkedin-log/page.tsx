@@ -37,9 +37,14 @@ const STATUS: Record<ActionRow['status'], { label: string; cls: string }> = {
   CANCELLED: { label: 'Skipped', cls: 'bg-slate-100 text-slate-500' },
 };
 
-const todayStr = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const fmtDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const todayStr = () => fmtDate(new Date());
+/** Shift a YYYY-MM-DD string by n days (falls back to today for an empty value). */
+const addDaysStr = (s: string, n: number) => {
+  const d = s ? new Date(`${s}T00:00:00`) : new Date();
+  if (Number.isNaN(d.getTime())) return s;
+  d.setDate(d.getDate() + n);
+  return fmtDate(d);
 };
 
 export default function LinkedInLogPage() {
@@ -107,9 +112,19 @@ export default function LinkedInLogPage() {
           {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>Step {n}</option>)}
         </select>
         <div className="flex items-center gap-1.5 text-sm text-slate-500">
+          <button
+            className="grid h-9 w-8 place-items-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50"
+            onClick={() => { setFFrom((f) => addDaysStr(f, -1)); setFTo((t) => addDaysStr(t, -1)); }}
+            title="Shift range one day earlier"
+          >◀</button>
           <input type="date" className="input w-36" value={fFrom} onChange={(e) => setFFrom(e.target.value)} title="From (scheduled date)" />
           <span>–</span>
           <input type="date" className="input w-36" value={fTo} onChange={(e) => setFTo(e.target.value)} title="To (scheduled date)" />
+          <button
+            className="grid h-9 w-8 place-items-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50"
+            onClick={() => { setFFrom((f) => addDaysStr(f, 1)); setFTo((t) => addDaysStr(t, 1)); }}
+            title="Shift range one day later"
+          >▶</button>
           {!isToday && (
             <button className="btn-ghost text-xs" onClick={() => { setFFrom(todayStr()); setFTo(todayStr()); }} title="Back to today">Today</button>
           )}

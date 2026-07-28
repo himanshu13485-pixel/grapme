@@ -242,6 +242,24 @@ export class LiSchedulerService implements OnModuleInit {
     });
     if (actions.length === 0) return { ok: true, respaced: 0, message: 'No pending invites to re-space.' };
 
+    // De-duplicate: keep at most ONE pending first-invite per lead (earliest), cancel the
+    // rest. Extras accumulate from a lead sourced twice or older buggy scheduling and
+    // would invite the same person more than once.
+    const keep: typeof actions = [];
+    const dupes: typeof actions = [];
+    const seen = new Set<string>();
+    for (const a of actions) {
+      if (seen.has(a.leadId)) dupes.push(a);
+      else { seen.add(a.leadId); keep.push(a); }
+    }
+    if (dupes.length) {
+      for (const d of dupes) if (d.jobId) await this.queue.remove(d.jobId).catch(() => undefined);
+      await this.prisma.liScheduledAction.updateMany({
+        where: { id: { in: dupes.map((d) => d.id) } },
+        data: { status: LiScheduledActionStatus.CANCELLED, jobId: null },
+      });
+    }
+
     const limit = Math.max(1, direct ? campaign.dailyMessageLimit : this.effectiveConnectionCap(campaign));
     // Count invites already SENT today so re-spacing doesn't overfill today.
     const sentToday = await this.prisma.liScheduledAction.count({
@@ -252,9 +270,9 @@ export class LiSchedulerService implements OnModuleInit {
         lead: { campaignId },
       },
     });
-    const times = this.allocateSlotTimes(campaign, limit, actions.length, sentToday);
-    for (let i = 0; i < actions.length; i++) {
-      const a = actions[i];
+    const times = this.allocateSlotTimes(campaign, limit, keep.length, sentToday);
+    for (let i = 0; i < keep.length; i++) {
+      const a = keep[i];
       if (a.jobId) await this.queue.remove(a.jobId).catch(() => undefined);
       await this.prisma.liScheduledAction.update({
         where: { id: a.id },
@@ -262,8 +280,12 @@ export class LiSchedulerService implements OnModuleInit {
       });
       await this.attachJob(a.id, firstType, a.leadId, a.stepOrder ?? undefined, times[i]);
     }
-    this.logger.log(`Re-spaced ${actions.length} pending invites for campaign ${campaignId}`);
-    return { ok: true, respaced: actions.length };
+    this.logger.log(`Re-spaced ${keep.length} invites for campaign ${campaignId}${dupes.length ? ` (cancelled ${dupes.length} duplicate)` : ''}`);
+    return {
+      ok: true,
+      respaced: keep.length,
+      message: dupes.length ? `Re-spaced ${keep.length} invite(s) across working days and removed ${dupes.length} duplicate(s).` : undefined,
+    };
   }
 
   async pauseCampaign(campaignId: string) {
@@ -573,6 +595,19 @@ export class LiSchedulerService implements OnModuleInit {
   }
 
   tomorrow(): Date { const d = this.startOfToday(); d.setDate(d.getDate() + 1); return d; }
+
+  /**
+   * A SCATTERED slot on the next working day's send window, for a DEFERRED invite (daily
+   * cap reached / temporarily can't send). Critical: deferring to a fixed time (window
+   * open) makes every deferred invite collapse to the SAME instant and fire as a burst
+   * the next morning — a ban risk that also snowballs (the burst re-fills the next day
+   * over cap). Randomising across the window keeps deferred invites spread out.
+   */
+  nextDeferralSlot(campaign: { run247: boolean; timezone: string; workStartHour: number; workEndHour: number; workDays: number[] }): Date {
+    const windowSecs = campaign.run247 ? 86_400 : Math.max(1, campaign.workEndHour - campaign.workStartHour) * 3600;
+    const winStart = this.nextAllowedSlot(campaign, this.tomorrow()); // next working day's window open
+    return new Date(winStart.getTime() + Math.floor(Math.random() * windowSecs) * 1000);
+  }
 
   /**
    * Warm-up-aware daily connection cap: ramps from warmupStartLimit up to
