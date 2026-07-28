@@ -180,4 +180,10 @@ export class LiCampaignsController {
   respace(@Param('id') id: string) {
     return this.campaigns.respaceSchedule(id);
   }
+
+  /** Admin: at-a-glance schedule status (today/next planned vs cap + pending bucket). */
+  @Get(':id/schedule-status')
+  scheduleStatus(@Param('id') id: string) {
+    return this.campaigns.scheduleStatus(id);
+  }
 }

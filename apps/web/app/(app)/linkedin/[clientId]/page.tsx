@@ -220,6 +220,7 @@ function CampaignsTab({ clientId }: { clientId: string }) {
                   <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500" title="LinkedIn seat">👤 {c.linkedInAccount.fullName}</span>
                 )}
                 {view === 'deleted' && c.deletedAt && <span className="text-xs text-rose-400">deleted {timeAgo(c.deletedAt)} · expires in {purgeCountdown(c.deletedAt)} days</span>}
+                {(c.status === 'RUNNING' || c.status === 'PAUSED') && <LiScheduleStatus campaignId={c.id} />}
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-sm text-slate-500">{c._count?.leads ?? 0} leads</span>
@@ -287,4 +288,36 @@ function validityLeft(days?: number | null, startAt?: string | null): string | u
   if (!days || !startAt) return 'No expiry set';
   const left = Math.ceil((new Date(startAt).getTime() + days * 86_400_000 - Date.now()) / 86_400_000);
   return left > 0 ? `${left} day${left === 1 ? '' : 's'} left` : 'Expired';
+}
+
+type SchedStatus = {
+  scheduledThrough: string | null;
+  today: { date: string; scheduled: number; sent: number; cap: number } | null;
+  next: { date: string; scheduled: number; cap: number };
+  pending: number;
+};
+
+/** Daily-pull schedule status under a RUNNING campaign: today sent/planned vs cap, the
+ *  next working day's planned count, and the pending-bucket size. */
+function LiScheduleStatus({ campaignId }: { campaignId: string }) {
+  const [s, setS] = useState<SchedStatus | null>(null);
+  useEffect(() => {
+    api.get<SchedStatus>(`/linkedin/campaigns/${campaignId}/schedule-status`).then(setS).catch(() => {});
+  }, [campaignId]);
+  if (!s) return null;
+  const day = (iso?: string) => (iso ? new Date(iso).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }) : '—');
+  return (
+    <div className="mt-1 w-full text-xs text-slate-500">
+      <span title="Connection requests sent / planned today, vs the daily cap">
+        📅 Today <strong className="text-slate-700">{s.today ? `${s.today.sent}/${s.today.scheduled}` : '—'}</strong>
+        {s.today ? <span className="text-slate-400"> (cap {s.today.cap})</span> : ' (off day)'}
+      </span>
+      <span className="mx-2 text-slate-300">·</span>
+      <span title="Planned for the next working day (evening pull)">
+        Next <span className="text-slate-400">{day(s.next.date)}</span> <strong className="text-slate-700">{s.next.scheduled}</strong>
+      </span>
+      <span className="mx-2 text-slate-300">·</span>
+      <span title="Leads waiting in the pending bucket">Pending <strong className="text-slate-700">{s.pending}</strong></span>
+    </div>
+  );
 }

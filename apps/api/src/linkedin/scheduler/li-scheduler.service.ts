@@ -253,6 +253,41 @@ export class LiSchedulerService implements OnModuleInit {
     return true;
   }
 
+  /**
+   * At-a-glance schedule status for the campaign card: today's sent/planned vs cap, the
+   * next working day's planned count, the pending-bucket size, and scheduledThrough.
+   */
+  async scheduleStatus(campaignId: string) {
+    const c = await this.prisma.liCampaign.findUnique({ where: { id: campaignId } });
+    if (!c) return null;
+    const direct = c.outreachType === 'DIRECT_MESSAGES';
+    const firstType = direct ? LiScheduledActionType.SEND_MESSAGE : LiScheduledActionType.SEND_CONNECTION;
+    const stepFilter = direct ? { stepOrder: 1 } : {};
+    const windowSecs = c.run247 ? 86_400 : Math.max(1, c.workEndHour - c.workStartHour) * 3600;
+    const capFor = (asOf: Date) => (direct ? c.dailyMessageLimit : this.effectiveConnectionCap(c, asOf));
+    const dayCount = (s: Date, e: Date, doneOnly = false) =>
+      this.prisma.liScheduledAction.count({
+        where: {
+          type: firstType, ...stepFilter,
+          ...(doneOnly ? { status: LiScheduledActionStatus.DONE } : { status: { not: LiScheduledActionStatus.CANCELLED } }),
+          runAt: { gte: s, lt: e }, lead: { campaignId },
+        },
+      });
+
+    const isWorkingToday = c.run247 || c.workDays.includes(this.localParts(new Date(), c.timezone).day);
+    let today: { date: Date; scheduled: number; sent: number; cap: number } | null = null;
+    if (isWorkingToday) {
+      const s = this.nextAllowedSlot(c, this.startOfToday());
+      const e = new Date(s.getTime() + windowSecs * 1000);
+      today = { date: s, scheduled: await dayCount(s, e), sent: await dayCount(s, e, true), cap: capFor(s) };
+    }
+    const ns = this.nextAllowedSlot(c, new Date(this.startOfToday().getTime() + 864e5));
+    const ne = new Date(ns.getTime() + windowSecs * 1000);
+    const next = { date: ns, scheduled: await dayCount(ns, ne), cap: capFor(ns) };
+    const pending = await this.prisma.liLead.count({ where: { campaignId, status: LiLeadStatus.PENDING } });
+    return { scheduledThrough: c.scheduledThrough, today, next, pending };
+  }
+
   /** Count first-invite actions already scheduled for today (used to continue the cadence). */
   private firstActionsPlacedToday(campaignId: string, direct: boolean): Promise<number> {
     return this.prisma.liScheduledAction.count({

@@ -631,6 +631,11 @@ export class LiCampaignsService {
     return this.scheduler.respaceCampaign(id);
   }
 
+  /** Admin: at-a-glance daily-pull schedule status (today/next planned vs cap + pending). */
+  async scheduleStatus(id: string) {
+    return this.scheduler.scheduleStatus(id);
+  }
+
   /**
    * Suspend a client's LinkedIn outreach — pause every RUNNING campaign (cancels its
    * scheduled actions via the scheduler). Called when a client's plan validity expires
