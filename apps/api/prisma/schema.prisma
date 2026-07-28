@@ -1322,6 +1322,10 @@ model LiCampaign {
   dripDailyTarget      Int                 @default(25) // max leads to source per day
   dripBuffer           Int                 @default(50) // only refill when PENDING is below this
   lastDripAt           DateTime? // last successful auto-source
+  // Daily-pull scheduler: the window-open of the last day we've scheduled connection
+  // requests for. The pull is idempotent — it only schedules a day if that day is newer
+  // than this. Null = never pulled (first tick migrates off any legacy pre-scheduled pile).
+  scheduledThrough     DateTime?
   businessProfileId    String?
   businessProfile      LiKnowledgeProfile? @relation("LiCampaignBusiness", fields: [businessProfileId], references: [id])
   strategyId           String?

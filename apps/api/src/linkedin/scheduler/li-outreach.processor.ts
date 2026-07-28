@@ -32,7 +32,7 @@ export class LiOutreachProcessor extends WorkerHost {
 
   async process(job: Job<LiJobData>): Promise<void> {
     // Repeatable drip tick — no scheduled action; refill campaign audiences.
-    if (job.name === LiJob.DripSource) { await this.dripSweep(); return; }
+    if (job.name === LiJob.DripSource) { await this.dripSweep(); await this.scheduler.scheduleSweep(); return; }
     // Repeatable sync tick — re-sync acceptance + messages for running campaigns.
     if (job.name === LiJob.SyncSweep) { await this.scheduler.syncSweep(); return; }
 
@@ -99,6 +99,11 @@ export class LiOutreachProcessor extends WorkerHost {
       // Record the reason on the (cancelled) action so it surfaces in the activity log.
       await this.prisma.liScheduledAction.update({ where: { id: actionId }, data: { status: LiScheduledActionStatus.CANCELLED, lastError: reason } });
       this.logger.log(`Lead ${ctx.lead.id} ${reason}`);
+      // Backfill the freed slot from the pending bucket so the day still hits the eligible
+      // cap. The substitute is a normal action that itself backfills if it too is
+      // ineligible — chaining through the bucket until an eligible lead sends or it runs
+      // dry (the daily cap still hard-limits actual sends).
+      await this.scheduler.claimNextConnection(ctx.campaign.id);
       return;
     }
     const noteRaw = pickVariant(step1?.note, step1?.variants);
@@ -319,8 +324,9 @@ export class LiOutreachProcessor extends WorkerHost {
         const res = await this.generation.sourceLeads(c.id, need);
         if (res.sourced > 0) {
           await this.prisma.liCampaign.update({ where: { id: c.id }, data: { lastDripAt: new Date() } });
-          // Enqueue the first action for the freshly-sourced PENDING leads.
-          await this.scheduler.startCampaign(c.id);
+          // Freshly-sourced leads just join the pending bucket; the daily pull schedules
+          // them when their day comes. Nudge the due-day pull in case it wasn't filled yet.
+          await this.scheduler.scheduleDueDays(c.id);
           this.logger.log(`Drip sourced ${res.sourced} lead(s) for campaign ${c.id}`);
         }
       } catch (e) {

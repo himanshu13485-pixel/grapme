@@ -86,78 +86,171 @@ export class LiSchedulerService implements OnModuleInit {
       return;
     }
 
-    // Re-attach any orphaned pending actions (resume case).
-    const pending = await this.prisma.liScheduledAction.findMany({
+    // Pull the due day's connection schedule first (idempotent; migrates off any legacy
+    // pre-scheduled pile and drops stale past-day invites).
+    const scheduled = await this.scheduleDueDays(campaignId);
+
+    // Re-attach only ORPHANED pending actions (Redis job lost to a restart/pause) —
+    // follow-ups, acceptance checks, completions. The invites just scheduled above
+    // already have live jobs (jobId set), so `jobId: null` skips them (no double-fire).
+    const orphans = await this.prisma.liScheduledAction.findMany({
       where: {
         status: { in: [LiScheduledActionStatus.PENDING, LiScheduledActionStatus.QUEUED] },
+        jobId: null,
         lead: { campaignId },
       },
     });
-    for (const a of pending) {
+    for (const a of orphans) {
       await this.attachJob(a.id, a.type, a.leadId, a.stepOrder ?? undefined, a.runAt);
     }
-
-    // Enqueue the first action for any fresh (never-scheduled) leads.
-    const queued = await this.enqueueNewLeads(campaignId);
-    this.logger.log(`Campaign ${campaignId} (${campaign.outreachType}): resumed ${pending.length}, queued ${queued}`);
+    this.logger.log(`Campaign ${campaignId} (${campaign.outreachType}): scheduled ${scheduled}, re-attached ${orphans.length}`);
   }
 
   /**
-   * Schedule the first action for fresh (never-scheduled) PENDING leads, paced by the
-   * daily cap (warm-up aware) and spread across the send window. Safe to call after
-   * importing/sourcing leads into an already-RUNNING campaign — without this, leads
-   * added after launch sit PENDING forever (they were never enqueued). The processor
-   * still enforces the daily cap, so the new leads just wait their turn.
-   * Returns how many leads were enqueued.
+   * Public entry kept for callers (start / source / import): just triggers a due-day
+   * pull. In the daily-pull model we do NOT pre-schedule the backlog — leads sit in the
+   * pending bucket and only the current/next day is ever scheduled.
    */
   async enqueueNewLeads(campaignId: string): Promise<number> {
-    if (!this.queue) return 0;
-    const campaign = await this.prisma.liCampaign.findUnique({
-      where: { id: campaignId },
-      include: { steps: { orderBy: { order: 'asc' } }, linkedInAccount: true },
-    });
-    if (!campaign || campaign.status !== LiCampaignStatus.RUNNING) return 0;
-    if (campaign.steps.length === 0 || campaign.linkedInAccount?.status !== 'CONNECTED') return 0;
+    return this.scheduleDueDays(campaignId);
+  }
 
-    const direct = campaign.outreachType === 'DIRECT_MESSAGES';
-    const freshLeads = await this.prisma.liLead.findMany({
+  /** Repeatable tick: pull the due day for every RUNNING campaign (idempotent). */
+  async scheduleSweep() {
+    const running = await this.prisma.liCampaign.findMany({ where: { status: LiCampaignStatus.RUNNING }, select: { id: true } });
+    for (const c of running) {
+      try { await this.scheduleDueDays(c.id); }
+      catch (e) { this.logger.warn(`Schedule sweep failed for campaign ${c.id}: ${(e as Error).message}`); }
+    }
+  }
+
+  /**
+   * Daily-pull scheduler. Schedules exactly `cap` first-invites (connection requests, or
+   * first messages for DM campaigns) for the DUE day — today during its window, or the
+   * next working day once today's window has closed ("evening pull"). Idempotent: it
+   * fills the day only up to `cap`, and skips a day it's already scheduled
+   * (scheduledThrough). Clears stale/legacy un-sent invites dated before the target day
+   * (this is what migrates a campaign off the old pre-scheduled pile). Returns how many
+   * new invites it scheduled.
+   */
+  async scheduleDueDays(campaignId: string): Promise<number> {
+    if (!this.queue) return 0;
+    const c = await this.prisma.liCampaign.findUnique({ where: { id: campaignId }, include: { linkedInAccount: true } });
+    if (!c || c.status !== LiCampaignStatus.RUNNING) return 0;
+    if (c.linkedInAccount?.status !== 'CONNECTED') return 0;
+    const stepCount = await this.prisma.liSequenceStep.count({ where: { campaignId } });
+    if (stepCount === 0) return 0;
+
+    const direct = c.outreachType === 'DIRECT_MESSAGES';
+    const firstType = direct ? LiScheduledActionType.SEND_MESSAGE : LiScheduledActionType.SEND_CONNECTION;
+    const { start, end } = this.targetWindow(c);
+
+    // Idempotent: already pulled this day (or later) → nothing to do.
+    if (c.scheduledThrough && c.scheduledThrough.getTime() >= start.getTime()) return 0;
+
+    // Cancel stale/legacy un-sent invites. First run (scheduledThrough null) clears the
+    // ENTIRE legacy pre-scheduled pile so the campaign starts clean on the pull model;
+    // later runs drop only invites dated before the target day (prior-day leftovers).
+    // Their leads return to the pending bucket to be pulled in turn.
+    const staleWhere = {
+      type: firstType, ...(direct ? { stepOrder: 1 } : {}),
+      status: { in: [LiScheduledActionStatus.PENDING, LiScheduledActionStatus.QUEUED] },
+      ...(c.scheduledThrough ? { runAt: { lt: start } } : {}),
+      lead: { campaignId },
+    };
+    const stale = await this.prisma.liScheduledAction.findMany({ where: staleWhere, select: { id: true, jobId: true } });
+    if (stale.length) {
+      for (const s of stale) if (s.jobId) await this.queue.remove(s.jobId).catch(() => undefined);
+      await this.prisma.liScheduledAction.updateMany({ where: { id: { in: stale.map((s) => s.id) } }, data: { status: LiScheduledActionStatus.CANCELLED, jobId: null } });
+    }
+
+    const cap = Math.max(1, direct ? c.dailyMessageLimit : this.effectiveConnectionCap(c, start));
+    // How many first-invites are already scheduled/sent FOR the target day → fill only
+    // the remainder, so calling this twice for a day can never exceed the cap.
+    const already = await this.prisma.liScheduledAction.count({
+      where: { type: firstType, ...(direct ? { stepOrder: 1 } : {}), status: { not: LiScheduledActionStatus.CANCELLED }, runAt: { gte: start, lt: end }, lead: { campaignId } },
+    });
+    const need = cap - already;
+    if (need <= 0) { await this.markScheduled(campaignId, start); return 0; }
+
+    // Pull the next `need` eligible pending leads (oldest first) that have never been
+    // invited. (Whether each is <200 connections is only known at send time — the
+    // send-time backfill fills any resulting gaps.)
+    const leads = await this.prisma.liLead.findMany({
       where: {
         campaignId,
         status: LiLeadStatus.PENDING,
-        // Leads with no ACTIVE action. This previously required *no action rows at
-        // all*, so a lead whose only attempt ended FAILED/CANCELLED (the seat was
-        // disconnected at the time, the campaign was paused, …) was never re-queued
-        // and had nothing for "Send next" to run — stuck at Pending/Step 0 forever.
-        // A lead that genuinely progressed is no longer status=PENDING, so this
-        // can't double-schedule one.
-        scheduled: {
-          none: {
-            status: {
-              in: [
-                LiScheduledActionStatus.PENDING,
-                LiScheduledActionStatus.QUEUED,
-                LiScheduledActionStatus.RUNNING,
-              ],
-            },
-          },
-        },
+        scheduled: { none: { type: firstType, status: { in: [LiScheduledActionStatus.PENDING, LiScheduledActionStatus.QUEUED, LiScheduledActionStatus.RUNNING, LiScheduledActionStatus.DONE] } } },
       },
+      orderBy: { createdAt: 'asc' },
+      take: need,
       select: { id: true },
     });
-    if (freshLeads.length === 0) return 0;
-
-    const limit = Math.max(1, direct ? campaign.dailyMessageLimit : this.effectiveConnectionCap(campaign));
-    // Continue TODAY's cadence rather than restarting at slot 0 (=now) on every call:
-    // offset by first-actions already placed today so a fresh batch (import / source /
-    // drip top-up) fills the remaining slots instead of bunching near "now".
-    const placedToday = await this.firstActionsPlacedToday(campaignId, direct);
-    const times = this.allocateSlotTimes(campaign, limit, freshLeads.length, placedToday);
-    for (let i = 0; i < freshLeads.length; i++) {
-      const lead = freshLeads[i];
-      if (direct) await this.schedule(lead.id, LiScheduledActionType.SEND_MESSAGE, 1, times[i]);
-      else await this.schedule(lead.id, LiScheduledActionType.SEND_CONNECTION, undefined, times[i]);
+    const times = this.slotTimesForDate(c, start, end, leads.length);
+    for (let i = 0; i < leads.length; i++) {
+      if (direct) await this.schedule(leads[i].id, LiScheduledActionType.SEND_MESSAGE, 1, times[i]);
+      else await this.schedule(leads[i].id, LiScheduledActionType.SEND_CONNECTION, undefined, times[i]);
     }
-    return freshLeads.length;
+    await this.markScheduled(campaignId, start);
+    if (leads.length) this.logger.log(`Campaign ${campaignId}: pulled ${leads.length} invite(s) for ${start.toISOString()}`);
+    return leads.length;
+  }
+
+  private markScheduled(campaignId: string, day: Date) {
+    return this.prisma.liCampaign.update({ where: { id: campaignId }, data: { scheduledThrough: day } }).then(() => undefined);
+  }
+
+  /**
+   * The window we should be scheduling by now: today's window while it's still open,
+   * else (evening / after the window closes) the next working day's window.
+   */
+  private targetWindow(c: { run247: boolean; timezone: string; workStartHour: number; workEndHour: number; workDays: number[] }): { start: Date; end: Date } {
+    const windowSecs = c.run247 ? 86_400 : Math.max(1, c.workEndHour - c.workStartHour) * 3600;
+    const { hour } = this.localParts(new Date(), c.timezone);
+    const afterClose = !c.run247 && hour >= c.workEndHour; // past today's window → schedule next day
+    const probe = new Date(this.startOfToday().getTime() + (afterClose ? 864e5 : 0));
+    const start = this.nextAllowedSlot(c, probe); // window open of the target working day
+    return { start, end: new Date(start.getTime() + windowSecs * 1000) };
+  }
+
+  /** Spread `count` sends evenly (one per bucket + jitter) across [max(now,start), end]. */
+  private slotTimesForDate(_c: unknown, start: Date, end: Date, count: number): Date[] {
+    if (count <= 0) return [];
+    const now = Date.now();
+    const startMs = Math.max(start.getTime(), now);       // today mid-run → begin at "now"
+    const endMs = Math.max(startMs + 60_000, end.getTime());
+    const span = endMs - startMs;
+    const bucket = span / count;
+    const times: Date[] = [];
+    for (let i = 0; i < count; i++) times.push(new Date(startMs + i * bucket + Math.random() * bucket));
+    return times;
+  }
+
+  /**
+   * Send-time backfill: atomically claim the next eligible pending lead (oldest first,
+   * no invite yet) and schedule its connection request ~now (+20–90s jitter so a run of
+   * substitutions doesn't fire together). Returns false when the bucket has no eligible
+   * lead left. Used to fill a slot freed by a <min-connections exclusion.
+   */
+  async claimNextConnection(campaignId: string): Promise<boolean> {
+    if (!this.queue) return false;
+    const runAt = new Date(Date.now() + (20 + Math.random() * 70) * 1000);
+    const created = await this.prisma.$transaction(async (tx) => {
+      const lead = await tx.liLead.findFirst({
+        where: {
+          campaignId,
+          status: LiLeadStatus.PENDING,
+          scheduled: { none: { type: LiScheduledActionType.SEND_CONNECTION, status: { in: [LiScheduledActionStatus.PENDING, LiScheduledActionStatus.QUEUED, LiScheduledActionStatus.RUNNING, LiScheduledActionStatus.DONE] } } },
+        },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true },
+      });
+      if (!lead) return null;
+      return tx.liScheduledAction.create({ data: { leadId: lead.id, type: LiScheduledActionType.SEND_CONNECTION, runAt, status: LiScheduledActionStatus.PENDING } });
+    });
+    if (!created) return false;
+    await this.attachJob(created.id, LiScheduledActionType.SEND_CONNECTION, created.leadId, undefined, runAt);
+    return true;
   }
 
   /** Count first-invite actions already scheduled for today (used to continue the cadence). */
@@ -617,10 +710,10 @@ export class LiSchedulerService implements OnModuleInit {
   effectiveConnectionCap(c: {
     warmupEnabled?: boolean; warmupStartedAt?: Date | null; warmupStartLimit?: number;
     warmupDays?: number; dailyConnectionLimit: number;
-  }): number {
+  }, asOf: Date = new Date()): number {
     const target = c.dailyConnectionLimit;
     if (!c.warmupEnabled || !c.warmupStartedAt) return target;
-    const days = Math.floor((Date.now() - new Date(c.warmupStartedAt).getTime()) / 864e5);
+    const days = Math.floor((asOf.getTime() - new Date(c.warmupStartedAt).getTime()) / 864e5);
     const rampDays = Math.max(1, c.warmupDays ?? 14);
     if (days >= rampDays) return target;
     const start = Math.min(c.warmupStartLimit ?? 5, target);
