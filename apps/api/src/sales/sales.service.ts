@@ -346,6 +346,9 @@ export class SalesService {
     }
     let forwarded = 0;
     for (const ips of ipsByMsg.values()) if (ips.size >= 2) forwarded++;
+    // Unique opens = distinct opened messages (not total pixel loads) so the open rate
+    // can't exceed 100% from repeat opens / Apple-Mail pre-fetch.
+    const uniqueOpens = new Set(opensWithIp.map((e) => e.messageId)).size;
 
     const sent = ev[EventType.SENT] ?? 0;
     const bounces = ev[EventType.BOUNCE] ?? 0;
@@ -376,8 +379,8 @@ export class SalesService {
         sent,
         delivered: sent, // delivered = sent that didn't bounce
         deliveryRate: attempts ? Math.round((sent / attempts) * 1000) / 10 : 0,
-        opens: ev[EventType.OPEN] ?? 0,
-        openRate: pct(ev[EventType.OPEN] ?? 0),
+        opens: uniqueOpens,
+        openRate: Math.min(100, pct(uniqueOpens)),
         replies: ev[EventType.REPLY] ?? 0,
         replyRate: pct(ev[EventType.REPLY] ?? 0),
         forwarded,

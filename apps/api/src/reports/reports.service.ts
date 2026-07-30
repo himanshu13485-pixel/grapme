@@ -235,9 +235,14 @@ export class ReportsService {
     }
 
     // Forwarded (est.): messages opened from 2+ distinct IPs, across scope.
+    // openedMsgIds tracks DISTINCT messages opened (any open, incl. pixel-less/no-IP) so
+    // the open rate is unique-opens ÷ sent — repeat opens (Apple Mail pre-fetch, re-views)
+    // can't push it past 100%.
     const ipsByMsg = new Map<string, Set<string>>();
+    const openedMsgIds = new Set<string>();
     const collectOpens = (rows: { messageId: string; meta: unknown }[]) => {
       for (const r of rows) {
+        openedMsgIds.add(r.messageId);
         const ip = (r.meta as { ip?: string } | null)?.ip;
         if (!ip) continue;
         if (!ipsByMsg.has(r.messageId)) ipsByMsg.set(r.messageId, new Set());
@@ -308,13 +313,13 @@ export class ReportsService {
       sent,
       delivered: sent,
       deliveryRate,
-      opens: ev[EventType.OPEN] ?? 0,
+      opens: openedMsgIds.size,
       clicks: ev[EventType.CLICK] ?? 0,
       replies: ev[EventType.REPLY] ?? 0,
       bounces: ev[EventType.BOUNCE] ?? 0,
       failed: ev[EventType.BOUNCE] ?? 0,
       forwarded,
-      openRate: rate(ev[EventType.OPEN] ?? 0),
+      openRate: Math.min(100, rate(openedMsgIds.size)),
       clickRate: rate(ev[EventType.CLICK] ?? 0),
       replyRate: rate(ev[EventType.REPLY] ?? 0),
       bounceRate: rate(ev[EventType.BOUNCE] ?? 0),
