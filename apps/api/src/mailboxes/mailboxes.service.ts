@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { ImapFlow } from 'imapflow';
-import { ApprovalEntity, MailboxStatus } from '@prisma/client';
+import { ApprovalEntity, MailboxStatus, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { ActivityService } from '../common/services/activity.service';
@@ -415,8 +415,11 @@ export class MailboxesService {
   }
 
   private async getOwned(user: AuthUser, id: string) {
+    // Admins/sub-admins manage every mailbox in the tenant (the workspace lists them
+    // all, regardless of who created it). Non-admins are restricted to their own.
+    const isAdmin = user.role === Role.SUPER_ADMIN || user.role === Role.SUB_ADMIN;
     const account = await this.prisma.emailAccount.findFirst({
-      where: { id, tenantId: user.tenantId, userId: user.userId },
+      where: { id, tenantId: user.tenantId, ...(isAdmin ? {} : { userId: user.userId }) },
     });
     if (!account) throw new NotFoundException('Mailbox not found');
     return account;
