@@ -42,6 +42,34 @@ export class ReportsController {
     return this.reports.activityLogs(user);
   }
 
+  /** Cross-client recipient-level email activity log. */
+  @Roles(Role.SUPER_ADMIN, Role.SUB_ADMIN)
+  @Get('email/log')
+  emailLog(
+    @CurrentUser() user: AuthUser,
+    @Query('client') client?: string,
+    @Query('event') event?: string,
+    @Query('campaignId') campaignId?: string,
+    @Query('cohortId') cohortId?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ) {
+    return this.reports.globalEmailLog(user.tenantId, {
+      clientSearch: client, event, campaignId, cohortId, from, to,
+      page: page ? Number(page) : undefined,
+      pageSize: pageSize ? Number(pageSize) : undefined,
+    });
+  }
+
+  /** Per-recipient event timeline for one email message. */
+  @Roles(Role.SUPER_ADMIN, Role.SUB_ADMIN)
+  @Get('email/log/:messageId')
+  emailMessageLog(@Param('messageId') messageId: string) {
+    return this.reports.emailMessageLog(messageId);
+  }
+
   /** Address client reports are sent FROM (admin mailbox), for confirmation. */
   @Get('reports/sender')
   reportSender(@CurrentUser() user: AuthUser) {

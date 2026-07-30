@@ -40,6 +40,7 @@ const NAV: NavItem[] = [
   { href: '/mailbox', label: 'Inbox & Sent', icon: '📥', inboxBadge: true, module: 'mailbox', group: 'email' },
   { href: '/mailboxes', label: 'Mailboxes', icon: '✉', module: 'mailboxes', group: 'email' },
   { href: '/deliverability', label: 'Deliverability', icon: '◎', module: 'deliverability', group: 'email' },
+  { href: '/email-log', label: 'Email Log', icon: '🧾', admin: true, module: 'email-log', group: 'email' },
   // ── LinkedIn Outreach ──
   { href: '/linkedin', label: 'LinkedIn Outreach', icon: '🔗', admin: true, module: 'linkedin' },
   { href: '/linkedin-schedule', label: 'LinkedIn Campaigns Schedule', icon: '🗓', admin: true, module: 'linkedin-schedule' },

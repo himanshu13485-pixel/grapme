@@ -4,7 +4,9 @@ import {
   EnrollmentStatus,
   EventType,
   LinkedInAccountStatus,
+  MessageDirection,
   MessageStatus,
+  Prisma,
   Role,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -13,6 +15,134 @@ import { AuthUser } from '../common/decorators/current-user.decorator';
 @Injectable()
 export class ReportsService {
   constructor(private prisma: PrismaService) {}
+
+  // ── Email activity log (admin, cross-client) ────────────────────────
+  /**
+   * Recipient-level email log across clients: each OUTBOUND message with its derived
+   * open / click / reply / bounce / forward status, the client + source (campaign or
+   * cohort), and the contact. Filters by client search, an event, a campaign/cohort,
+   * and a sent-date range (defaults to the last 7 days). Read-only. Paginated.
+   */
+  async globalEmailLog(tenantId: string, opts: {
+    clientSearch?: string; event?: string; campaignId?: string; cohortId?: string;
+    from?: string; to?: string; page?: number; pageSize?: number;
+  }) {
+    const page = Math.max(1, opts.page ?? 1);
+    const pageSize = Math.min(100, Math.max(1, opts.pageSize ?? 25));
+
+    let clientIds: string[] | undefined;
+    const q = opts.clientSearch?.trim();
+    if (q) {
+      const ci = { contains: q, mode: 'insensitive' as const };
+      const clients = await this.prisma.client.findMany({
+        where: { tenantId, OR: [{ name: ci }, { productCategory: ci }, { invoiceNo: ci }] },
+        select: { id: true },
+      });
+      clientIds = clients.map((c) => c.id);
+      if (clientIds.length === 0) return { items: [], total: 0, page, pageSize };
+    }
+
+    // A message links to a client via campaign.clientId (a relation) OR its cohortId
+    // scalar (no `cohort` relation on the message) — resolve those cohorts here.
+    let clientCohortIds: string[] = [];
+    if (clientIds) {
+      const cs = await this.prisma.cohort.findMany({ where: { clientId: { in: clientIds } }, select: { id: true } });
+      clientCohortIds = cs.map((c) => c.id);
+    }
+
+    const sentRange = emailDateRange(opts.from, opts.to) ?? defaultRecentRange();
+    const eventCond: Prisma.EmailMessageWhereInput =
+      opts.event === 'opened' ? { events: { some: { eventType: EventType.OPEN } } }
+      : opts.event === 'clicked' ? { events: { some: { eventType: EventType.CLICK } } }
+      : opts.event === 'replied' ? { events: { some: { eventType: EventType.REPLY } } }
+      : opts.event === 'bounced' ? { OR: [{ status: MessageStatus.BOUNCED }, { events: { some: { eventType: EventType.BOUNCE } } }] }
+      : {};
+    const clientCond: Prisma.EmailMessageWhereInput = clientIds
+      ? { OR: [{ campaign: { clientId: { in: clientIds } } }, { cohortId: { in: clientCohortIds } }] }
+      : {};
+
+    const where: Prisma.EmailMessageWhereInput = {
+      tenantId,
+      direction: MessageDirection.OUTBOUND,
+      ...(sentRange ? { sentAt: sentRange } : {}),
+      ...(opts.campaignId ? { campaignId: opts.campaignId } : {}),
+      ...(opts.cohortId ? { cohortId: opts.cohortId } : {}),
+      AND: [clientCond, eventCond],
+    };
+
+    const total = await this.prisma.emailMessage.count({ where });
+    const rows = await this.prisma.emailMessage.findMany({
+      where, orderBy: { sentAt: 'desc' }, skip: (page - 1) * pageSize, take: pageSize,
+      select: {
+        id: true, subject: true, status: true, sentAt: true, cohortId: true,
+        contact: { select: { email: true, firstName: true, lastName: true, company: true } },
+        campaign: { select: { name: true, clientId: true } },
+        events: { select: { eventType: true, occurredAt: true, meta: true } },
+      },
+    });
+
+    // EmailMessage has a cohortId scalar but no `cohort` relation → look them up.
+    const cohortIds = [...new Set(rows.map((r) => r.cohortId).filter(Boolean) as string[])];
+    const cohorts = await this.prisma.cohort.findMany({ where: { id: { in: cohortIds } }, select: { id: true, label: true, clientId: true } });
+    const cohortMap = new Map(cohorts.map((c) => [c.id, c]));
+
+    const clientIdSet = [...new Set(rows.map((r) => r.campaign?.clientId ?? (r.cohortId ? cohortMap.get(r.cohortId)?.clientId : null)).filter(Boolean) as string[])];
+    const clients = await this.prisma.client.findMany({ where: { id: { in: clientIdSet } }, select: { id: true, name: true, productCategory: true, invoiceNo: true } });
+    const cmap = new Map(clients.map((c) => [c.id, { id: c.id, name: c.name, company: c.productCategory, invoice: c.invoiceNo }]));
+
+    const items = rows.map((m) => {
+      const firstOf = (t: EventType) =>
+        m.events.filter((e) => e.eventType === t).map((e) => e.occurredAt).sort((a, b) => +new Date(a) - +new Date(b))[0] ?? null;
+      const openIps = new Set(
+        m.events.filter((e) => e.eventType === EventType.OPEN).map((e) => (e.meta as { ip?: string } | null)?.ip).filter(Boolean),
+      );
+      const cohort = m.cohortId ? cohortMap.get(m.cohortId) : null;
+      const clientId = m.campaign?.clientId ?? cohort?.clientId ?? null;
+      const name = [m.contact?.firstName, m.contact?.lastName].filter(Boolean).join(' ').trim();
+      return {
+        id: m.id,
+        subject: m.subject ?? '(no subject)',
+        status: m.status,
+        sentAt: m.sentAt,
+        contact: m.contact ? { name: name || m.contact.email, email: m.contact.email, company: m.contact.company } : null,
+        client: clientId ? cmap.get(clientId) ?? null : null,
+        source: m.campaign ? { type: 'Campaign', name: m.campaign.name } : cohort ? { type: 'Cohort', name: cohort.label } : null,
+        openedAt: firstOf(EventType.OPEN),
+        clickedAt: firstOf(EventType.CLICK),
+        repliedAt: firstOf(EventType.REPLY),
+        bounced: m.status === MessageStatus.BOUNCED || m.events.some((e) => e.eventType === EventType.BOUNCE),
+        forwarded: openIps.size >= 2,
+      };
+    });
+    return { items, total, page, pageSize };
+  }
+
+  /** Per-recipient event timeline for one message (the Email Log "Log" button). */
+  async emailMessageLog(messageId: string) {
+    const m = await this.prisma.emailMessage.findUnique({
+      where: { id: messageId },
+      select: {
+        id: true, subject: true, status: true, sentAt: true,
+        contact: { select: { email: true, firstName: true, lastName: true } },
+        events: { orderBy: { occurredAt: 'asc' }, select: { eventType: true, occurredAt: true, meta: true } },
+      },
+    });
+    if (!m) return { subject: null, contact: null, status: null, entries: [] };
+    const LABEL: Record<string, string> = {
+      DELIVERED: 'Delivered', OPEN: 'Opened', CLICK: 'Clicked', REPLY: 'Replied',
+      BOUNCE: 'Bounced', UNSUBSCRIBE: 'Unsubscribed', COMPLAINT: 'Marked as spam', SENT: 'Sent',
+    };
+    const entries: { label: string; at: Date; detail: string | null }[] = [];
+    if (m.sentAt) entries.push({ label: 'Sent', at: m.sentAt, detail: null });
+    for (const e of m.events) {
+      if (e.eventType === EventType.SENT) continue; // sentAt already covers this
+      const meta = e.meta as { url?: string } | null;
+      entries.push({ label: LABEL[e.eventType] ?? e.eventType, at: e.occurredAt, detail: e.eventType === EventType.CLICK ? meta?.url ?? null : null });
+    }
+    entries.sort((a, b) => +new Date(a.at) - +new Date(b.at));
+    const name = [m.contact?.firstName, m.contact?.lastName].filter(Boolean).join(' ').trim();
+    return { subject: m.subject, contact: m.contact ? { name: name || m.contact.email, email: m.contact.email } : null, status: m.status, entries };
+  }
 
   /**
    * Role-aware dashboard aggregates.
@@ -395,4 +525,18 @@ export class ReportsService {
     });
     return rows.map((r) => r.id);
   }
+}
+
+/** Inclusive sent-date range → Prisma DateTime filter (end date covers the whole day). */
+function emailDateRange(from?: string, to?: string): Prisma.DateTimeFilter | null {
+  const r: Prisma.DateTimeFilter = {};
+  if (from) { const d = new Date(from); if (!Number.isNaN(d.getTime())) r.gte = d; }
+  if (to) { const d = new Date(to); if (!Number.isNaN(d.getTime())) r.lte = new Date(d.getTime() + 86_400_000 - 1); }
+  return r.gte || r.lte ? r : null;
+}
+
+/** Default Email Log view: the last 7 days by sent time. */
+function defaultRecentRange(): Prisma.DateTimeFilter {
+  const start = new Date(); start.setHours(0, 0, 0, 0); start.setDate(start.getDate() - 6);
+  return { gte: start };
 }
