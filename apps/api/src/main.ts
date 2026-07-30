@@ -76,6 +76,10 @@ async function bootstrap() {
   // response (dependency-free — equivalent to the core of helmet for a JSON API).
   const express = app.getHttpAdapter().getInstance();
   express.disable('x-powered-by');
+  // Behind the reverse proxy (cPanel/nginx, BIND_HOST=127.0.0.1) the direct socket IP
+  // is the proxy's loopback address. Trust the first hop so req.ip is the real client
+  // IP from X-Forwarded-For — needed for open/click geolocation and session IP tracking.
+  express.set('trust proxy', 1);
   app.use((_req: Request, res: Response, next: NextFunction) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('X-Frame-Options', 'DENY');
