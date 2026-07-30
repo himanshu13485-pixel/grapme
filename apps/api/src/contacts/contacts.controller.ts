@@ -52,6 +52,12 @@ export class ContactsController {
     return this.contacts.remove(user, id);
   }
 
+  /** Bulk-delete selected contacts. */
+  @Post('contacts/delete')
+  removeMany(@CurrentUser() user: AuthUser, @Body() body: { ids?: string[] }) {
+    return this.contacts.removeMany(user, body.ids ?? []);
+  }
+
   @Post('contacts/import')
   import(@CurrentUser() user: AuthUser, @Body() dto: ImportContactsDto) {
     return this.contacts.import(user, dto);

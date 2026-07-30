@@ -167,6 +167,16 @@ export class ContactsService {
     return { ok: true };
   }
 
+  /** Bulk-delete contacts (scoped to the caller's tenant). Returns how many were removed. */
+  async removeMany(user: AuthUser, ids: string[]) {
+    const clean = [...new Set((ids ?? []).filter(Boolean))];
+    if (clean.length === 0) return { ok: true, deleted: 0 };
+    const res = await this.prisma.contact.deleteMany({
+      where: { id: { in: clean }, tenantId: user.tenantId },
+    });
+    return { ok: true, deleted: res.count };
+  }
+
   // ── Lists ─────────────────────────────────────────────────
   listLists(user: AuthUser, clientId?: string) {
     return this.prisma.contactList.findMany({

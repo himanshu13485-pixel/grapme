@@ -57,6 +57,7 @@ export function ContactsManager({ clientId }: { clientId?: string }) {
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [clientFilter, setClientFilter] = useState('ALL');
   const [page, setPage] = useState(1);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const PAGE_SIZE = 25;
 
   const [showAdd, setShowAdd] = useState(false);
@@ -81,6 +82,22 @@ export function ContactsManager({ clientId }: { clientId?: string }) {
       loadAll();
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to delete contact');
+    }
+  }
+
+  const toggleOne = (id: string) =>
+    setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  async function bulkDelete() {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    if (!confirm(`Delete ${ids.length} selected contact${ids.length === 1 ? '' : 's'} permanently?`)) return;
+    try {
+      const r = await api.post<{ deleted: number }>('/contacts/delete', { ids });
+      setSelected(new Set());
+      loadAll();
+      alert(`Deleted ${r.deleted} contact${r.deleted === 1 ? '' : 's'}.`);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to delete contacts');
     }
   }
 
@@ -175,6 +192,11 @@ export function ContactsManager({ clientId }: { clientId?: string }) {
                 ))}
               </select>
             )}
+            {canDelete && selected.size > 0 && (
+              <button className="btn-ghost text-sm text-rose-600" onClick={bulkDelete}>
+                🗑 Delete selected ({selected.size})
+              </button>
+            )}
             <span className="ml-auto text-sm text-slate-400">
               {filtered.length} of {contacts.length}
             </span>
@@ -187,6 +209,21 @@ export function ContactsManager({ clientId }: { clientId?: string }) {
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 text-left text-xs uppercase text-slate-400">
                   <tr>
+                    {canDelete && (
+                      <th className="px-5 py-3">
+                        <input
+                          type="checkbox"
+                          aria-label="Select page"
+                          checked={pagedContacts.length > 0 && pagedContacts.every((c) => selected.has(c.id))}
+                          onChange={() => setSelected((prev) => {
+                            const n = new Set(prev);
+                            const all = pagedContacts.every((c) => n.has(c.id));
+                            pagedContacts.forEach((c) => (all ? n.delete(c.id) : n.add(c.id)));
+                            return n;
+                          })}
+                        />
+                      </th>
+                    )}
                     <th className="px-5 py-3">Email</th>
                     <th className="px-5 py-3">Name</th>
                     <th className="px-5 py-3">Company</th>
@@ -197,7 +234,12 @@ export function ContactsManager({ clientId }: { clientId?: string }) {
                 </thead>
                 <tbody>
                   {pagedContacts.map((c) => (
-                    <tr key={c.id} className="border-t border-slate-100">
+                    <tr key={c.id} className={`border-t border-slate-100 ${selected.has(c.id) ? 'bg-brand-50/40' : ''}`}>
+                      {canDelete && (
+                        <td className="px-5 py-3">
+                          <input type="checkbox" aria-label={`Select ${c.email}`} checked={selected.has(c.id)} onChange={() => toggleOne(c.id)} />
+                        </td>
+                      )}
                       <td className="px-5 py-3 font-medium">{c.email}</td>
                       <td className="px-5 py-3 text-slate-500">
                         {[c.firstName, c.lastName].filter(Boolean).join(' ') || '—'}
