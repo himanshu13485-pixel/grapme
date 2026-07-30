@@ -42,19 +42,21 @@
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
     "embedded-postgres": "^18.4.0-beta.17",
-    "unipile-node-sdk": "^1.9.0",
     "geoip-lite": "^2.0.3",
     "imapflow": "^1.0.171",
+    "mailparser": "^3.9.14",
     "nodemailer": "^6.9.15",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
-    "smtp-server": "^3.19.1"
+    "smtp-server": "^3.19.1",
+    "unipile-node-sdk": "^1.9.0"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.4.5",
     "@nestjs/schematics": "^10.1.4",
+    "@types/mailparser": "^3.4.6",
     "@types/node": "^22.7.4",
     "@types/nodemailer": "^6.4.16",
     "@types/passport-jwt": "^4.0.1",

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ImapFlow } from 'imapflow';
+import { simpleParser } from 'mailparser';
 import {
   EnrollmentStatus,
   EventType,
@@ -125,7 +126,9 @@ export class InboundMailService {
               msg.envelope?.messageId ??
               `${from}|${subject ?? ''}|${msg.envelope?.date ?? ''}`;
             const raw = msg.source ? msg.source.toString('utf8') : '';
-            const body = raw ? this.extractTextBody(raw) : undefined;
+            // Primary: the battle-tested MIME parser on the raw source. Falls back to the
+            // dependency-free extractor if it can't parse (so a body is rarely blank).
+            const body = (await this.parseBody(msg.source)) ?? (raw ? this.extractTextBody(raw) : undefined);
             const isNew = await this.storeInbound(
               mailbox,
               from,
@@ -254,6 +257,24 @@ export class InboundMailService {
       }
     }
     return out;
+  }
+
+  /** Reliable body extraction via mailparser (handles multipart, quoted-printable,
+   *  base64, charsets). Prefers text/plain, falls back to stripped HTML. Returns
+   *  undefined when it can't parse or there's no readable text (caller then falls
+   *  back to the dependency-free extractor). Best-effort: never throws. */
+  private async parseBody(source?: Buffer): Promise<string | undefined> {
+    if (!source || source.length === 0) return undefined;
+    try {
+      const parsed = await simpleParser(source);
+      const text = (parsed.text ?? '').trim();
+      if (text) return text;
+      const html = typeof parsed.html === 'string' ? this.stripHtml(parsed.html).trim() : '';
+      return html || undefined;
+    } catch (e) {
+      this.logger.warn(`mailparser failed on an inbound message: ${(e as Error).message}`);
+      return undefined;
+    }
   }
 
   /** Best-effort, dependency-free extraction of a readable text body from raw
