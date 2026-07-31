@@ -14,7 +14,7 @@ interface ActionRow {
   runAt: string;
   doneAt: string | null;
   error: string | null;
-  lead: { id: string; fullName: string; currentStep: number; profileUrl?: string | null; connectionsCount?: number | null };
+  lead: { id: string; fullName: string; status?: string; lastReplyAt?: string | null; currentStep: number; profileUrl?: string | null; connectionsCount?: number | null };
   campaign: { id: string; name: string };
   client?: { id: string; name: string; company?: string | null; invoice?: string | null } | null;
 }
@@ -161,9 +161,17 @@ export default function LinkedInLogPage() {
                 {items.map((a) => (
                   <tr key={a.id} className="border-t border-slate-100 hover:bg-slate-50">
                     <td className="px-4 py-3">
-                      {a.lead.profileUrl
-                        ? <a href={a.lead.profileUrl} target="_blank" rel="noreferrer" className="font-medium text-brand-700 hover:underline">{a.lead.fullName}</a>
-                        : <span className="font-medium text-slate-800">{a.lead.fullName}</span>}
+                      <div className="flex items-center gap-2">
+                        {a.lead.profileUrl
+                          ? <a href={a.lead.profileUrl} target="_blank" rel="noreferrer" className="font-medium text-brand-700 hover:underline">{a.lead.fullName}</a>
+                          : <span className="font-medium text-slate-800">{a.lead.fullName}</span>}
+                        {a.lead.status === 'REPLIED' && (
+                          <span
+                            className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700"
+                            title={a.lead.lastReplyAt ? `Replied ${new Date(a.lead.lastReplyAt).toLocaleString()} — sequence stopped` : 'Replied — sequence stopped'}
+                          >Replied</span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       {a.client

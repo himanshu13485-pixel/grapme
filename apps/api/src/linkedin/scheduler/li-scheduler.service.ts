@@ -117,11 +117,32 @@ export class LiSchedulerService implements OnModuleInit {
 
   /** Repeatable tick: pull the due day for every RUNNING campaign (idempotent). */
   async scheduleSweep() {
+    await this.cancelTerminalLeadActions().catch(() => undefined);
     const running = await this.prisma.liCampaign.findMany({ where: { status: LiCampaignStatus.RUNNING }, select: { id: true } });
     for (const c of running) {
       try { await this.scheduleDueDays(c.id); }
       catch (e) { this.logger.warn(`Schedule sweep failed for campaign ${c.id}: ${(e as Error).message}`); }
     }
+  }
+
+  /**
+   * Cancel any still-pending scheduled actions for leads that have left the sequence —
+   * REPLIED (a reply stops everything), NOT_ACCEPTED, CAMPAIGN_COMPLETED, EXCLUDED. The
+   * processor already skips these at send time, but this clears the queue so their
+   * follow-ups don't keep showing as "Scheduled" (also heals leads that reached a
+   * terminal state before this rule existed). The delayed job self-skips on the
+   * cancelled row, so it need not be removed.
+   */
+  async cancelTerminalLeadActions(): Promise<number> {
+    const res = await this.prisma.liScheduledAction.updateMany({
+      where: {
+        status: { in: [LiScheduledActionStatus.PENDING, LiScheduledActionStatus.QUEUED] },
+        lead: { status: { in: [LiLeadStatus.REPLIED, LiLeadStatus.NOT_ACCEPTED, LiLeadStatus.CAMPAIGN_COMPLETED, LiLeadStatus.EXCLUDED] } },
+      },
+      data: { status: LiScheduledActionStatus.CANCELLED, lastError: 'Lead left the sequence' },
+    });
+    if (res.count) this.logger.log(`Cancelled ${res.count} stale action(s) for terminal-status leads`);
+    return res.count;
   }
 
   /**

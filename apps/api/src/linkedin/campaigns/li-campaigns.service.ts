@@ -900,7 +900,7 @@ export class LiCampaignsService {
         where, orderBy: { runAt: 'desc' }, skip: (page - 1) * pageSize, take: pageSize,
         select: {
           id: true, type: true, status: true, stepOrder: true, runAt: true, updatedAt: true, lastError: true,
-          lead: { select: { id: true, fullName: true, currentStep: true, profileUrl: true, connectionsCount: true, campaign: { select: { id: true, name: true, clientId: true } } } },
+          lead: { select: { id: true, fullName: true, status: true, lastReplyAt: true, currentStep: true, profileUrl: true, connectionsCount: true, campaign: { select: { id: true, name: true, clientId: true } } } },
         },
       }),
     ]);
@@ -913,7 +913,7 @@ export class LiCampaignsService {
       runAt: a.runAt,
       doneAt: a.status === LiScheduledActionStatus.DONE ? a.updatedAt : null,
       error: a.lastError,
-      lead: { id: a.lead.id, fullName: a.lead.fullName, currentStep: a.lead.currentStep, profileUrl: a.lead.profileUrl, connectionsCount: a.lead.connectionsCount },
+      lead: { id: a.lead.id, fullName: a.lead.fullName, status: a.lead.status, lastReplyAt: a.lead.lastReplyAt, currentStep: a.lead.currentStep, profileUrl: a.lead.profileUrl, connectionsCount: a.lead.connectionsCount },
       campaign: { id: a.lead.campaign.id, name: a.lead.campaign.name },
       client: cmap.get(a.lead.campaign.clientId) ?? null,
     }));
