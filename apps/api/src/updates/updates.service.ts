@@ -72,7 +72,14 @@ export class UpdatesService {
       this.prisma.updateThread.count({ where }),
       this.prisma.updateThread.findMany({
         where, orderBy: { lastActivityAt: 'desc' }, skip: (page - 1) * pageSize, take: pageSize,
-        include: { _count: { select: { replies: true } } },
+        // Exclude the private attachmentData blob; expose only its name (for a paperclip chip).
+        select: {
+          id: true, tenantId: true, clientId: true, type: true, title: true, bodyHtml: true,
+          authorUserId: true, authorRole: true, authorName: true, notifyEmail: true, notifyWhatsapp: true,
+          attachmentName: true, attachmentMime: true, lastActivityAt: true, lastActorUserId: true,
+          createdAt: true, updatedAt: true,
+          _count: { select: { replies: true } },
+        },
       }),
     ]);
     // Denormalized client names so the admin list can label each row's workspace.
@@ -86,7 +93,21 @@ export class UpdatesService {
   async get(user: AuthUser, id: string) {
     const thread = await this.prisma.updateThread.findUnique({
       where: { id },
-      include: { replies: { orderBy: { createdAt: 'asc' } } },
+      // Explicit select excludes the private attachmentData blob — only its metadata
+      // travels to the client; the bytes are served through the gated download route.
+      select: {
+        id: true, tenantId: true, clientId: true, type: true, title: true, bodyHtml: true,
+        authorUserId: true, authorRole: true, authorName: true, notifyEmail: true, notifyWhatsapp: true,
+        attachmentName: true, attachmentMime: true, lastActivityAt: true, lastActorUserId: true,
+        createdAt: true, updatedAt: true,
+        replies: {
+          orderBy: { createdAt: 'asc' },
+          select: {
+            id: true, threadId: true, body: true, authorUserId: true, authorRole: true, authorName: true,
+            attachmentName: true, attachmentMime: true, createdAt: true,
+          },
+        },
+      },
     });
     if (!thread || thread.tenantId !== user.tenantId) throw new NotFoundException('Update not found');
     await this.assertClientAccess(user, thread.clientId);
@@ -98,6 +119,7 @@ export class UpdatesService {
   async create(user: AuthUser, dto: CreateUpdateDto) {
     await this.assertClientAccess(user, dto.clientId);
     const author = await this.prisma.user.findUnique({ where: { id: user.userId }, select: { name: true, email: true } });
+    const attachment = decodeAttachment(dto);
     const thread = await this.prisma.updateThread.create({
       data: {
         tenantId: user.tenantId,
@@ -110,6 +132,9 @@ export class UpdatesService {
         authorName: author?.name ?? author?.email ?? 'Someone',
         notifyEmail: !!dto.notifyEmail,
         notifyWhatsapp: !!dto.notifyWhatsapp,
+        attachmentData: attachment?.data ?? null,
+        attachmentName: attachment?.name ?? null,
+        attachmentMime: attachment?.mime ?? null,
         lastActivityAt: new Date(),
         lastActorUserId: user.userId,
       },
@@ -123,6 +148,7 @@ export class UpdatesService {
     if (!thread || thread.tenantId !== user.tenantId) throw new NotFoundException('Update not found');
     await this.assertClientAccess(user, thread.clientId);
     const author = await this.prisma.user.findUnique({ where: { id: user.userId }, select: { name: true, email: true } });
+    const attachment = decodeAttachment(dto);
     await this.prisma.updateReply.create({
       data: {
         threadId: id,
@@ -130,6 +156,9 @@ export class UpdatesService {
         authorUserId: user.userId,
         authorRole: user.role as Role,
         authorName: author?.name ?? author?.email ?? 'Someone',
+        attachmentData: attachment?.data ?? null,
+        attachmentName: attachment?.name ?? null,
+        attachmentMime: attachment?.mime ?? null,
       },
     });
     await this.prisma.updateThread.update({ where: { id }, data: { lastActivityAt: new Date(), lastActorUserId: user.userId } });
@@ -143,6 +172,40 @@ export class UpdatesService {
     if (!thread || thread.tenantId !== user.tenantId) throw new NotFoundException('Update not found');
     await this.prisma.updateThread.delete({ where: { id } });
     return { ok: true };
+  }
+
+  // ── attachment downloads (gated: same access as reading the thread) ───
+  async downloadThreadAttachment(user: AuthUser, id: string) {
+    const thread = await this.prisma.updateThread.findUnique({
+      where: { id },
+      select: { tenantId: true, clientId: true, attachmentData: true, attachmentName: true, attachmentMime: true },
+    });
+    if (!thread || thread.tenantId !== user.tenantId) throw new NotFoundException('Update not found');
+    await this.assertClientAccess(user, thread.clientId);
+    if (!thread.attachmentData) throw new NotFoundException('No attachment on this update');
+    return {
+      data: Buffer.from(thread.attachmentData),
+      name: thread.attachmentName || 'attachment',
+      mime: thread.attachmentMime || 'application/octet-stream',
+    };
+  }
+
+  async downloadReplyAttachment(user: AuthUser, replyId: string) {
+    const reply = await this.prisma.updateReply.findUnique({
+      where: { id: replyId },
+      select: {
+        attachmentData: true, attachmentName: true, attachmentMime: true,
+        thread: { select: { tenantId: true, clientId: true } },
+      },
+    });
+    if (!reply || reply.thread.tenantId !== user.tenantId) throw new NotFoundException('Attachment not found');
+    await this.assertClientAccess(user, reply.thread.clientId);
+    if (!reply.attachmentData) throw new NotFoundException('No attachment on this reply');
+    return {
+      data: Buffer.from(reply.attachmentData),
+      name: reply.attachmentName || 'attachment',
+      mime: reply.attachmentMime || 'application/octet-stream',
+    };
   }
 
   // ── notifications fan-out (bell + email + WhatsApp stub) ──────────────
@@ -282,6 +345,33 @@ export class UpdatesService {
     });
     return { ok: true };
   }
+}
+
+// ── attachment decode ──────────────────────────────────────────────────
+const ALLOWED_MIME = [
+  'application/pdf',
+  'image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+];
+const MAX_BYTES = 5 * 1024 * 1024;
+
+interface AttachmentInput { attachmentBase64?: string; attachmentName?: string; attachmentMime?: string }
+
+/** Decode + validate an optional base64/data-URL attachment (shared by create & reply). */
+function decodeAttachment(dto: AttachmentInput): { data: Buffer; name: string; mime: string } | null {
+  if (!dto.attachmentBase64) return null;
+  const mime = (dto.attachmentMime || '').toLowerCase();
+  if (!ALLOWED_MIME.includes(mime)) {
+    throw new BadRequestException('Unsupported file type. Allowed: PDF, image, Word, or Excel.');
+  }
+  const base64 = dto.attachmentBase64.replace(/^data:[^;]+;base64,/, '');
+  const data = Buffer.from(base64, 'base64');
+  if (data.length === 0) throw new BadRequestException('Empty file.');
+  if (data.length > MAX_BYTES) throw new BadRequestException('File too large (max 5 MB).');
+  return { data, name: (dto.attachmentName || 'attachment').slice(0, 200), mime };
 }
 
 // ── helpers ────────────────────────────────────────────────────────────

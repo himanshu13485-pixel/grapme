@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api } from '@/lib/api';
+import { api, fetchBlob } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { PageHeader, Tabs, Pagination, EmptyState, Modal } from '@/components/ui';
 import { RichText } from '@/components/RichText';
@@ -9,6 +9,45 @@ import {
   UpdateThread, UpdatesPage, UpdateType, UPDATE_TYPES,
   updateTypeMeta, authorRoleLabel, timeAgo, dateTime,
 } from '@/lib/updates';
+
+// Read a picked file as a data: URL for the JSON attachment payload.
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = reject;
+    r.readAsDataURL(file);
+  });
+}
+
+// Pull a private attachment (auth header) and save it under its original name.
+async function downloadAttachment(path: string, name: string) {
+  try {
+    const blob = await fetchBlob(path);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  } catch { alert('Could not download the attachment.'); }
+}
+
+const ATTACH_ACCEPT = '.pdf,image/*,.doc,.docx,.xls,.xlsx';
+const MAX_ATTACH_BYTES = 5 * 1024 * 1024;
+
+/** A clickable download chip for an attachment (thread or reply). */
+function AttachmentChip({ path, name }: { path: string; name: string }) {
+  return (
+    <button
+      type="button"
+      onClick={() => downloadAttachment(path, name)}
+      className="mt-2 inline-flex max-w-full items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-600 hover:border-brand-300 hover:text-brand-600"
+      title={`Download ${name}`}
+    >
+      <span>📎</span><span className="truncate">{name}</span>
+    </button>
+  );
+}
 
 export default function UpdatesBoardPage() {
   const { user } = useAuth();
@@ -106,6 +145,7 @@ export default function UpdatesBoardPage() {
                     {t.authorName} ({authorRoleLabel(t.authorRole)}) · {timeAgo(t.lastActivityAt)}
                   </div>
                 </div>
+                {t.attachmentName && <span className="shrink-0 text-slate-400" title="Has an attachment">📎</span>}
                 {replies > 0 && <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">💬 {replies}</span>}
               </button>
             );
@@ -151,6 +191,8 @@ function Composer({
   const [clientId, setClientId] = useState(clients.length === 1 ? clients[0].id : '');
   const [notifyEmail, setNotifyEmail] = useState(true);
   const [notifyWhatsapp, setNotifyWhatsapp] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -160,9 +202,16 @@ function Composer({
     if (!title.trim()) return setError('Add a title.');
     const text = bodyHtml.replace(/<[^>]+>/g, '').trim();
     if (!text) return setError('Add some detail in the body.');
+    if (file && file.size > MAX_ATTACH_BYTES) return setError('File too large (max 5 MB).');
     setSaving(true);
     try {
-      const t = await api.post<{ id: string }>('/updates', { clientId, type, title, bodyHtml, notifyEmail, notifyWhatsapp });
+      const payload: Record<string, unknown> = { clientId, type, title, bodyHtml, notifyEmail, notifyWhatsapp };
+      if (file) {
+        payload.attachmentBase64 = await fileToBase64(file);
+        payload.attachmentName = file.name;
+        payload.attachmentMime = file.type;
+      }
+      const t = await api.post<{ id: string }>('/updates', payload);
       onCreated(t.id);
     } catch (e: any) { setError(e.message ?? 'Could not save'); setSaving(false); }
   }
@@ -187,6 +236,21 @@ function Composer({
         <div>
           <label className="mb-1 block text-sm font-medium text-slate-600">Details</label>
           <RichText value={bodyHtml} onChange={setBodyHtml} placeholder="Write the update… (bold, lists, links supported)" />
+        </div>
+        <div>
+          <label className="mb-1 block text-sm font-medium text-slate-600">Attachment <span className="font-normal text-slate-400">(optional — PDF, image, Word, or Excel · max 5 MB)</span></label>
+          <input
+            ref={fileRef}
+            type="file"
+            accept={ATTACH_ACCEPT}
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            className="block w-full text-xs text-slate-500 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:text-slate-700 hover:file:bg-slate-200"
+          />
+          {file && (
+            <button type="button" className="mt-1 text-xs text-rose-500 hover:text-rose-700" onClick={() => { setFile(null); if (fileRef.current) fileRef.current.value = ''; }}>
+              Remove {file.name}
+            </button>
+          )}
         </div>
         <div className="flex flex-wrap gap-4 rounded-lg bg-slate-50 px-3 py-2">
           <label className="flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" checked={notifyEmail} onChange={(e) => setNotifyEmail(e.target.checked)} /> ✉ Send Email</label>
@@ -213,6 +277,8 @@ function ThreadDetail({
 }) {
   const [t, setT] = useState<UpdateThread | null>(null);
   const [reply, setReply] = useState('');
+  const [file, setFile] = useState<File | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -227,10 +293,19 @@ function ThreadDetail({
 
   async function sendReply() {
     if (!reply.trim()) return;
+    if (file && file.size > MAX_ATTACH_BYTES) { setError('File too large (max 5 MB).'); return; }
     setBusy(true); setError('');
     try {
-      const updated = await api.post<UpdateThread>(`/updates/${id}/replies`, { body: reply });
-      setT(updated); setReply(''); onChanged();
+      const payload: Record<string, unknown> = { body: reply };
+      if (file) {
+        payload.attachmentBase64 = await fileToBase64(file);
+        payload.attachmentName = file.name;
+        payload.attachmentMime = file.type;
+      }
+      const updated = await api.post<UpdateThread>(`/updates/${id}/replies`, payload);
+      setT(updated); setReply(''); setFile(null);
+      if (fileRef.current) fileRef.current.value = '';
+      onChanged();
     } catch (e: any) { setError(e.message ?? 'Could not send'); }
     finally { setBusy(false); }
   }
@@ -264,6 +339,7 @@ function ThreadDetail({
             className="rounded-lg border border-slate-100 bg-slate-50/60 p-3 text-sm leading-relaxed text-slate-800 [&_a]:text-brand-600 [&_a]:underline [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:pl-5"
             dangerouslySetInnerHTML={{ __html: t.bodyHtml }}
           />
+          {t.attachmentName && <AttachmentChip path={`/updates/${t.id}/attachment`} name={t.attachmentName} />}
 
           {/* Replies */}
           <div className="mt-4 space-y-3">
@@ -277,6 +353,7 @@ function ThreadDetail({
                     <span className="font-medium text-slate-700">{r.authorName}</span> ({authorRoleLabel(r.authorRole)}) · <span title={dateTime(r.createdAt)}>{timeAgo(r.createdAt)}</span>
                   </div>
                   <div className="whitespace-pre-wrap text-sm text-slate-800">{r.body}</div>
+                  {r.attachmentName && <AttachmentChip path={`/updates/replies/${r.id}/attachment`} name={r.attachmentName} />}
                 </div>
               </div>
             ))}
@@ -289,6 +366,21 @@ function ThreadDetail({
           <div className="mt-4 border-t border-slate-100 pt-4">
             <label className="mb-1 block text-sm font-medium text-slate-600">Add a reply</label>
             <textarea className="input" rows={3} value={reply} onChange={(e) => setReply(e.target.value)} placeholder="Write a reply…" />
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <input
+                ref={fileRef}
+                type="file"
+                accept={ATTACH_ACCEPT}
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                className="block text-xs text-slate-500 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:text-slate-700 hover:file:bg-slate-200"
+                title="Attach a file (PDF, image, Word, or Excel · max 5 MB)"
+              />
+              {file && (
+                <button type="button" className="text-xs text-rose-500 hover:text-rose-700" onClick={() => { setFile(null); if (fileRef.current) fileRef.current.value = ''; }}>
+                  Remove {file.name}
+                </button>
+              )}
+            </div>
             <div className="mt-2 flex items-center justify-between">
               {canDelete ? <button className="text-sm text-rose-500 hover:text-rose-700" onClick={del} disabled={busy}>Delete update</button> : <span />}
               <button className="btn-primary" onClick={sendReply} disabled={busy || !reply.trim()}>{busy ? 'Sending…' : 'Add reply'}</button>

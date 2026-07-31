@@ -8,6 +8,8 @@ export interface UpdateReply {
   authorName: string;
   authorRole: string;
   createdAt: string;
+  attachmentName?: string | null;
+  attachmentMime?: string | null;
 }
 
 export interface UpdateThread {
@@ -24,6 +26,8 @@ export interface UpdateThread {
   createdAt: string;
   replies?: UpdateReply[];
   clientName?: string | null;
+  attachmentName?: string | null;
+  attachmentMime?: string | null;
   _count?: { replies: number };
 }
 

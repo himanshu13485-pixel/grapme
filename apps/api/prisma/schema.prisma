@@ -893,6 +893,9 @@ model UpdateThread {
   authorName      String // denormalized for display
   notifyEmail     Boolean    @default(false)
   notifyWhatsapp  Boolean    @default(false)
+  attachmentData  Bytes? // private blob (nullable); served only through the gated download route
+  attachmentName  String?
+  attachmentMime  String?
   lastActivityAt  DateTime   @default(now()) // opening post or latest reply
   lastActorUserId String? // who caused the latest activity (for unread math)
   createdAt       DateTime   @default(now())
@@ -906,14 +909,17 @@ model UpdateThread {
 }
 
 model UpdateReply {
-  id           String       @id @default(uuid())
-  threadId     String
-  thread       UpdateThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
-  body         String // plain-text reply
-  authorUserId String
-  authorRole   Role
-  authorName   String
-  createdAt    DateTime     @default(now())
+  id             String       @id @default(uuid())
+  threadId       String
+  thread         UpdateThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  body           String // plain-text reply
+  authorUserId   String
+  authorRole     Role
+  authorName     String
+  attachmentData Bytes? // private blob (nullable); served only through the gated download route
+  attachmentName String?
+  attachmentMime String?
+  createdAt      DateTime     @default(now())
 
   @@index([threadId])
 }
