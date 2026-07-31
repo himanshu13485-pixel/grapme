@@ -29,9 +29,11 @@ interface Summary {
   delivered: number;
   deliveryRate: number;
   opens: number;
+  clicks: number;
   replies: number;
   forwarded: number;
   openRate: number;
+  clickRate: number;
   replyRate: number;
   forwardRate: number;
   bounceRate: number;
@@ -67,7 +69,8 @@ export default function DashboardPage() {
     { label: 'Reply rate', value: `${summary?.replyRate ?? 0}%` },
     { label: 'Forwarded', value: summary?.forwarded ?? 0 },
     { label: 'Forward rate', value: `${summary?.forwardRate ?? 0}%` },
-    { label: 'Open rate', value: `${summary?.openRate ?? 0}%` },
+    { label: 'Opens', value: `${summary?.opens ?? 0} · ${summary?.openRate ?? 0}%` },
+    { label: 'Clicks', value: `${summary?.clicks ?? 0} · ${summary?.clickRate ?? 0}%` },
     { label: 'Total campaigns', value: summary?.totalCampaigns ?? 0 },
   ];
 

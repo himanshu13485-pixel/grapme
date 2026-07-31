@@ -381,6 +381,8 @@ export class SalesService {
         deliveryRate: attempts ? Math.round((sent / attempts) * 1000) / 10 : 0,
         opens: uniqueOpens,
         openRate: Math.min(100, pct(uniqueOpens)),
+        clicks: ev[EventType.CLICK] ?? 0,
+        clickRate: Math.min(100, pct(ev[EventType.CLICK] ?? 0)),
         replies: ev[EventType.REPLY] ?? 0,
         replyRate: pct(ev[EventType.REPLY] ?? 0),
         forwarded,

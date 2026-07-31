@@ -6,7 +6,7 @@ import { api } from '@/lib/api';
 export interface SalesDashboard {
   email: {
     activeCohorts: number; sent: number; delivered: number; deliveryRate: number;
-    opens: number; openRate: number; replies: number; replyRate: number;
+    opens: number; openRate: number; clicks: number; clickRate: number; replies: number; replyRate: number;
     forwarded: number; forwardRate: number; bounces: number; totalCampaigns: number;
   };
   linkedin: {
@@ -56,7 +56,8 @@ export function SalesActivityDashboard({
             <Tile label="Reply rate" value={d?.email.replyRate} suffix="%" />
             <Tile label="Forwarded" value={d?.email.forwarded} />
             <Tile label="Forward rate" value={d?.email.forwardRate} suffix="%" />
-            <Tile label="Open rate" value={d?.email.openRate} suffix="%" hint="counts repeat opens" />
+            <Tile label="Opens" value={d ? `${d.email.opens} · ${d.email.openRate}%` : undefined} hint="unique opens · open rate" />
+            <Tile label="Clicks" value={d ? `${d.email.clicks} · ${d.email.clickRate}%` : undefined} hint="link clicks · click rate" />
             <Tile label="Total campaigns" value={d?.email.totalCampaigns} />
           </div>
         </section>
@@ -80,7 +81,7 @@ export function SalesActivityDashboard({
   );
 }
 
-function Tile({ label, value, suffix, hint }: { label: string; value?: number; suffix?: string; hint?: string }) {
+function Tile({ label, value, suffix, hint }: { label: string; value?: number | string; suffix?: string; hint?: string }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm" title={hint}>
       <div className="text-sm text-slate-500">{label}</div>

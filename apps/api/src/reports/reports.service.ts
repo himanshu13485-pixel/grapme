@@ -320,7 +320,7 @@ export class ReportsService {
       failed: ev[EventType.BOUNCE] ?? 0,
       forwarded,
       openRate: Math.min(100, rate(openedMsgIds.size)),
-      clickRate: rate(ev[EventType.CLICK] ?? 0),
+      clickRate: Math.min(100, rate(ev[EventType.CLICK] ?? 0)),
       replyRate: rate(ev[EventType.REPLY] ?? 0),
       bounceRate: rate(ev[EventType.BOUNCE] ?? 0),
       forwardRate: rate(forwarded),
