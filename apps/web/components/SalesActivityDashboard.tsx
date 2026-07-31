@@ -56,8 +56,10 @@ export function SalesActivityDashboard({
             <Tile label="Reply rate" value={d?.email.replyRate} suffix="%" />
             <Tile label="Forwarded" value={d?.email.forwarded} />
             <Tile label="Forward rate" value={d?.email.forwardRate} suffix="%" />
-            <Tile label="Opens" value={d ? `${d.email.opens} · ${d.email.openRate}%` : undefined} hint="unique opens · open rate" />
-            <Tile label="Clicks" value={d ? `${d.email.clicks} · ${d.email.clickRate}%` : undefined} hint="link clicks · click rate" />
+            <Tile label="Opens" value={d?.email.opens} hint="unique opens" />
+            <Tile label="Open rate" value={d?.email.openRate} suffix="%" />
+            <Tile label="Clicks" value={d?.email.clicks} hint="link clicks" />
+            <Tile label="Click rate" value={d?.email.clickRate} suffix="%" />
             <Tile label="Total campaigns" value={d?.email.totalCampaigns} />
           </div>
         </section>
