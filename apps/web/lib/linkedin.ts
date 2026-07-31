@@ -177,6 +177,8 @@ export interface LiCampaignDetail extends LiCampaign {
   connectionWindowDays?: number;
   // Lead-quality gate: only invite profiles with ≥ this many connections (0 = off).
   minConnections?: number;
+  // Upper bound: skip profiles above this many connections (0 = off).
+  maxConnections?: number;
   linkedInAccount?: { id?: string; fullName?: string | null; avatarUrl?: string | null };
   businessProfile?: { id: string; name: string; completeness: number } | null;
   strategy?: { id: string; name: string; completeness: number } | null;

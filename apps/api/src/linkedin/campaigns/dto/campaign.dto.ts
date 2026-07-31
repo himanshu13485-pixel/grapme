@@ -81,6 +81,9 @@ export class UpdateLiScheduleDto {
   // Lead-quality gate: only send invites to profiles with at least this many LinkedIn
   // connections (0 = off). Unknown/hidden counts pass.
   @IsOptional() @IsInt() @Min(0) @Max(100000) minConnections?: number;
+  // Upper bound: skip profiles ABOVE this many connections (maxed-out accounts can't
+  // accept invites). 0 = off.
+  @IsOptional() @IsInt() @Min(0) @Max(100000) maxConnections?: number;
 }
 
 export class ImportLiLeadDto {

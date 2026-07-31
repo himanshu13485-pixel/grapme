@@ -1317,6 +1317,10 @@ model LiCampaign {
   // this before sending an invite — the engine already fetches the profile at contact
   // time, so it costs nothing. 0 = off. Leads with a hidden/unknown count still pass.
   minConnections       Int                 @default(0)
+  // Upper bound of the same gate: skip leads ABOVE this many connections. People at/near
+  // LinkedIn's 30k cap can't accept new invites (the request fails), so excluding them
+  // avoids wasted, failing sends. 0 = off. Hidden/unknown counts still pass.
+  maxConnections       Int                 @default(0)
   // Background drip-sourcer: auto-refill the Target Audience from LinkedIn search.
   dripEnabled          Boolean             @default(false)
   dripDailyTarget      Int                 @default(25) // max leads to source per day

@@ -77,7 +77,7 @@ export function LiRegularWizard({
     connectionWindowDays: 5,
     dripEnabled: false, dripDailyTarget: 25, dripBuffer: 50,
     followUpMin: 0, followUpMax: 0, graceHours: 96,
-    minConnections: 0,
+    minConnections: 0, maxConnections: 0,
   });
 
   useEffect(() => {
@@ -111,6 +111,7 @@ export function LiRegularWizard({
         followUpMax: (d as any).followUpMax ?? prev.followUpMax,
         graceHours: (d as any).graceHours ?? prev.graceHours,
         minConnections: (d as any).minConnections ?? prev.minConnections,
+        maxConnections: (d as any).maxConnections ?? prev.maxConnections,
       }));
     }).catch(() => {});
   }, [clientId, base, editCampaignId]);
@@ -167,6 +168,7 @@ export function LiRegularWizard({
         followUpMax: c.followUpMax ?? prev.followUpMax,
         graceHours: c.graceHours ?? prev.graceHours,
         minConnections: c.minConnections ?? prev.minConnections,
+        maxConnections: c.maxConnections ?? prev.maxConnections,
       }));
     }).catch(() => {});
   }, [editCampaignId, base]);
@@ -595,19 +597,31 @@ export function LiRegularWizard({
             {/* Lead-quality gate — only invite well-connected profiles (admin only) */}
             {!isPortal && (
             <div className="mt-2 rounded-xl border border-sky-200 bg-sky-50/50 p-4">
-              <div className="text-sm font-medium text-slate-800">Lead quality — minimum connections</div>
+              <div className="text-sm font-medium text-slate-800">Lead quality — connection count range</div>
               <p className="mt-1 text-xs text-slate-500">
-                Only send a connection request to profiles with at least this many LinkedIn connections.
-                The engine checks each profile just before inviting (no extra cost), so lower-network leads are
-                skipped and marked <strong>Excluded</strong> — they never use one of your daily invite slots.
+                Only invite profiles whose LinkedIn connection count is within this range. The engine checks each
+                profile just before inviting (no extra cost); out-of-range leads are skipped and marked
+                <strong> Excluded</strong> — they never use a daily invite slot.
               </p>
-              <div className="mt-3 flex items-center gap-3">
-                <input type="number" min={0} max={100000} step={50} className="input w-40" value={sched.minConnections} onChange={(e) => setSched({ ...sched, minConnections: Math.max(0, Number(e.target.value)) })} />
-                <span className="text-sm text-slate-500">connections {sched.minConnections > 0 ? `(invite only ${sched.minConnections}+)` : '(0 = off, invite everyone)'}</span>
+              <div className="mt-3 flex flex-wrap items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-slate-600">Min</span>
+                  <input type="number" min={0} max={100000} step={50} className="input w-32" value={sched.minConnections} onChange={(e) => setSched({ ...sched, minConnections: Math.max(0, Number(e.target.value)) })} />
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-slate-600">Max</span>
+                  <input type="number" min={0} max={100000} step={500} className="input w-32" value={sched.maxConnections} onChange={(e) => setSched({ ...sched, maxConnections: Math.max(0, Number(e.target.value)) })} />
+                </div>
+                <span className="text-sm text-slate-500">
+                  {sched.minConnections > 0 || sched.maxConnections > 0
+                    ? `invite ${sched.minConnections > 0 ? `${sched.minConnections}+` : 'any'}${sched.maxConnections > 0 ? ` up to ${sched.maxConnections}` : ''}`
+                    : '(0 = off, invite everyone)'}
+                </span>
               </div>
               <div className="mt-2 text-xs text-slate-400">
-                Profiles that hide their connection count still pass. This only reduces who gets invited — it never
-                sends more than your daily cap, so there&apos;s no added risk to the account.
+                <strong>Max</strong> avoids maxed-out profiles (≈25k–30k) that can&apos;t accept invites, so the request
+                just fails — e.g. set Max <strong>20000</strong> to skip them. Profiles that hide their count still pass.
+                This only reduces who gets invited; it never sends more than your daily cap.
               </div>
             </div>
             )}

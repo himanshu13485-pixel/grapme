@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { PageHeader, EmptyState, Pagination } from '@/components/ui';
+import { LiLeadLogModal } from '@/components/LiLeadLogModal';
 
 interface ActionRow {
   id: string;
@@ -61,6 +62,7 @@ export default function LinkedInLogPage() {
   // Default to today's activity.
   const [fFrom, setFFrom] = useState(todayStr());
   const [fTo, setFTo] = useState(todayStr());
+  const [logLead, setLogLead] = useState<{ campaignId: string; id: string; name: string } | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setDq(q.trim()), 300);
@@ -152,6 +154,7 @@ export default function LinkedInLogPage() {
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3">Scheduled</th>
                   <th className="px-4 py-3">Sent / reason</th>
+                  <th className="px-4 py-3 text-right">Log</th>
                 </tr>
               </thead>
               <tbody>
@@ -189,6 +192,9 @@ export default function LinkedInLogPage() {
                           ? <span className={a.status === 'CANCELLED' ? 'text-slate-500' : 'text-rose-500'} title={a.error}>{a.error}</span>
                           : <span className="text-slate-300">—</span>}
                     </td>
+                    <td className="px-4 py-3 text-right">
+                      <button className="text-xs font-medium text-slate-600 hover:underline" onClick={() => setLogLead({ campaignId: a.campaign.id, id: a.lead.id, name: a.lead.fullName })} title="Full timeline for this lead (incl. replies)">Log</button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -196,6 +202,13 @@ export default function LinkedInLogPage() {
           </div>
           <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPage={setPage} />
         </>
+      )}
+      {logLead && (
+        <LiLeadLogModal
+          logUrl={`/linkedin/overview/leads/${logLead.campaignId}/${logLead.id}/log`}
+          name={logLead.name}
+          onClose={() => setLogLead(null)}
+        />
       )}
     </div>
   );

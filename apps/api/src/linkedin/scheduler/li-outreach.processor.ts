@@ -70,7 +70,7 @@ export class LiOutreachProcessor extends WorkerHost {
         case LiJob.SendMessage: await this.doSendMessage(scheduledActionId, action.stepOrder ?? 0, ctx); break;
       }
     } catch (err) {
-      const msg = (err as Error).message;
+      const msg = ((err as Error)?.message || String(err) || '').trim() || 'Send failed (no detail returned by LinkedIn)';
       const willRetry = job.attemptsMade + 1 < (job.opts.attempts ?? 1);
       await this.prisma.liScheduledAction.update({
         where: { id: scheduledActionId },
@@ -93,8 +93,15 @@ export class LiOutreachProcessor extends WorkerHost {
     // counts pass. Cancel (not complete) the action so a skipped lead doesn't burn one
     // of today's invite slots — the daily cap counts DONE invites only.
     const minConn = ctx.campaign.minConnections ?? 0;
-    if (minConn > 0 && ctx.lead.connectionsCount != null && ctx.lead.connectionsCount < minConn) {
-      const reason = `Excluded: ${ctx.lead.connectionsCount} connections (min ${minConn})`;
+    const maxConn = ctx.campaign.maxConnections ?? 0;
+    const count = ctx.lead.connectionsCount;
+    const belowMin = minConn > 0 && count != null && count < minConn;
+    // People at/near LinkedIn's 30k cap can't accept invites → the send fails, so skip them.
+    const aboveMax = maxConn > 0 && count != null && count > maxConn;
+    if (belowMin || aboveMax) {
+      const reason = belowMin
+        ? `Excluded: ${count} connections (min ${minConn})`
+        : `Excluded: ${count} connections (max ${maxConn})`;
       await this.prisma.liLead.update({ where: { id: ctx.lead.id }, data: { status: LiLeadStatus.EXCLUDED } });
       // Record the reason on the (cancelled) action so it surfaces in the activity log.
       await this.prisma.liScheduledAction.update({ where: { id: actionId }, data: { status: LiScheduledActionStatus.CANCELLED, lastError: reason } });
