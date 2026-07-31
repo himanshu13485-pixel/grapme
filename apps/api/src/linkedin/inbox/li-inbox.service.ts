@@ -1,6 +1,7 @@
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import {
-  LiCreditReason, LiLeadStatus, LiMessageDirection, LiMessageSource, LiSentiment, Prisma,
+  LiCreditReason, LiLeadStatus, LiMessageDirection, LiMessageSource,
+  LiScheduledActionStatus, LiSentiment, Prisma,
 } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LinkedInSubscriptionService } from '../subscription/linkedin-subscription.service';
@@ -51,6 +52,12 @@ export class LiInboxService {
       }),
       this.prisma.liConversation.update({ where: { id: conversation.id }, data: { unreadCount: { increment: 1 }, needsReply: true, lastReplyAt: at } }),
       this.prisma.liLead.update({ where: { id: conversation.leadId }, data: { status: LiLeadStatus.REPLIED, sentiment, lastReplyAt: at } }),
+      // A reply ends the sequence — cancel any pending follow-ups / acceptance checks so
+      // they don't linger as "Scheduled" (the processor already skips REPLIED leads).
+      this.prisma.liScheduledAction.updateMany({
+        where: { leadId: conversation.leadId, status: { in: [LiScheduledActionStatus.PENDING, LiScheduledActionStatus.QUEUED] } },
+        data: { status: LiScheduledActionStatus.CANCELLED, lastError: 'Lead replied — sequence stopped' },
+      }),
     ]);
     return { ok: true };
   }
@@ -124,6 +131,11 @@ export class LiInboxService {
       await this.prisma.liLead.update({
         where: { id: leadId },
         data: { status: LiLeadStatus.REPLIED, lastReplyAt: lastInboundAt, sentiment: quickSentiment(lastInboundText) },
+      });
+      // Reply ends the sequence — cancel any pending follow-ups / acceptance checks.
+      await this.prisma.liScheduledAction.updateMany({
+        where: { leadId, status: { in: [LiScheduledActionStatus.PENDING, LiScheduledActionStatus.QUEUED] } },
+        data: { status: LiScheduledActionStatus.CANCELLED, lastError: 'Lead replied — sequence stopped' },
       });
     }
     return added;
