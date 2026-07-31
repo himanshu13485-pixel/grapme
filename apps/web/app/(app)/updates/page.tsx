@@ -49,6 +49,67 @@ function AttachmentChip({ path, name }: { path: string; name: string }) {
   );
 }
 
+/** Human-readable file size (KB/MB) for the picked-file chip. */
+function fmtSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/**
+ * File attachment picker with drag-and-drop OR click-to-browse. Shows the picked
+ * file with size + a remove button. `compact` renders a slimmer strip for the reply box.
+ */
+function AttachmentPicker({
+  file, onFile, compact,
+}: {
+  file: File | null;
+  onFile: (f: File | null) => void;
+  compact?: boolean;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false);
+
+  const pick = (f?: File | null) => { if (f) onFile(f); };
+  const clear = () => { onFile(null); if (inputRef.current) inputRef.current.value = ''; };
+
+  return (
+    <div>
+      <input
+        ref={inputRef}
+        type="file"
+        accept={ATTACH_ACCEPT}
+        className="hidden"
+        onChange={(e) => pick(e.target.files?.[0] ?? null)}
+      />
+      {file ? (
+        <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+          <span>📎</span>
+          <span className="min-w-0 flex-1 truncate text-slate-700">{file.name}</span>
+          <span className="shrink-0 text-xs text-slate-400">{fmtSize(file.size)}</span>
+          <button type="button" className="shrink-0 text-xs text-rose-500 hover:text-rose-700" onClick={clear}>Remove</button>
+        </div>
+      ) : (
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => inputRef.current?.click()}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); inputRef.current?.click(); } }}
+          onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+          onDragLeave={(e) => { e.preventDefault(); setDragging(false); }}
+          onDrop={(e) => { e.preventDefault(); setDragging(false); pick(e.dataTransfer.files?.[0] ?? null); }}
+          className={`flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed text-center transition ${
+            compact ? 'px-3 py-2 text-xs' : 'px-3 py-4 text-sm'
+          } ${dragging ? 'border-brand-400 bg-brand-50 text-brand-600' : 'border-slate-300 bg-slate-50/50 text-slate-500 hover:border-brand-300 hover:text-brand-600'}`}
+        >
+          <span>📎</span>
+          <span>{dragging ? 'Drop the file to attach' : <>Drag a file here or <span className="font-medium underline">browse</span></>}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function UpdatesBoardPage() {
   const { user } = useAuth();
   const isAdmin = !!user && user.role !== 'CLIENT';
@@ -192,7 +253,6 @@ function Composer({
   const [notifyEmail, setNotifyEmail] = useState(true);
   const [notifyWhatsapp, setNotifyWhatsapp] = useState(false);
   const [file, setFile] = useState<File | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -239,18 +299,7 @@ function Composer({
         </div>
         <div>
           <label className="mb-1 block text-sm font-medium text-slate-600">Attachment <span className="font-normal text-slate-400">(optional — PDF, image, Word, or Excel · max 5 MB)</span></label>
-          <input
-            ref={fileRef}
-            type="file"
-            accept={ATTACH_ACCEPT}
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-            className="block w-full text-xs text-slate-500 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:text-slate-700 hover:file:bg-slate-200"
-          />
-          {file && (
-            <button type="button" className="mt-1 text-xs text-rose-500 hover:text-rose-700" onClick={() => { setFile(null); if (fileRef.current) fileRef.current.value = ''; }}>
-              Remove {file.name}
-            </button>
-          )}
+          <AttachmentPicker file={file} onFile={setFile} />
         </div>
         <div className="flex flex-wrap gap-4 rounded-lg bg-slate-50 px-3 py-2">
           <label className="flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" checked={notifyEmail} onChange={(e) => setNotifyEmail(e.target.checked)} /> ✉ Send Email</label>
@@ -278,7 +327,6 @@ function ThreadDetail({
   const [t, setT] = useState<UpdateThread | null>(null);
   const [reply, setReply] = useState('');
   const [file, setFile] = useState<File | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -304,7 +352,6 @@ function ThreadDetail({
       }
       const updated = await api.post<UpdateThread>(`/updates/${id}/replies`, payload);
       setT(updated); setReply(''); setFile(null);
-      if (fileRef.current) fileRef.current.value = '';
       onChanged();
     } catch (e: any) { setError(e.message ?? 'Could not send'); }
     finally { setBusy(false); }
@@ -366,20 +413,8 @@ function ThreadDetail({
           <div className="mt-4 border-t border-slate-100 pt-4">
             <label className="mb-1 block text-sm font-medium text-slate-600">Add a reply</label>
             <textarea className="input" rows={3} value={reply} onChange={(e) => setReply(e.target.value)} placeholder="Write a reply…" />
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <input
-                ref={fileRef}
-                type="file"
-                accept={ATTACH_ACCEPT}
-                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                className="block text-xs text-slate-500 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:text-slate-700 hover:file:bg-slate-200"
-                title="Attach a file (PDF, image, Word, or Excel · max 5 MB)"
-              />
-              {file && (
-                <button type="button" className="text-xs text-rose-500 hover:text-rose-700" onClick={() => { setFile(null); if (fileRef.current) fileRef.current.value = ''; }}>
-                  Remove {file.name}
-                </button>
-              )}
+            <div className="mt-2">
+              <AttachmentPicker file={file} onFile={setFile} compact />
             </div>
             <div className="mt-2 flex items-center justify-between">
               {canDelete ? <button className="text-sm text-rose-500 hover:text-rose-700" onClick={del} disabled={busy}>Delete update</button> : <span />}
