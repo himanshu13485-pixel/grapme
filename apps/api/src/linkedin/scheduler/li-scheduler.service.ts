@@ -236,16 +236,46 @@ export class LiSchedulerService implements OnModuleInit {
     return { start, end: new Date(start.getTime() + windowSecs * 1000) };
   }
 
-  /** Spread `count` sends evenly (one per bucket + jitter) across [max(now,start), end]. */
-  private slotTimesForDate(_c: unknown, start: Date, end: Date, count: number): Date[] {
+  /**
+   * Spread `count` sends evenly (one per bucket + jitter) across [max(now,start), end].
+   *
+   * Guardrail: if too little of today's window is left to space them safely (e.g. the
+   * pull/re-space fires late in the day, or after the window has effectively closed),
+   * DON'T cram the whole cap into the final minute — that's the "all invites in one
+   * minute" burst and a ban risk. Instead roll to the NEXT working day's full window.
+   * A hard minimum gap between consecutive sends is enforced as a final safety net.
+   */
+  private slotTimesForDate(
+    c: { run247: boolean; timezone: string; workStartHour: number; workEndHour: number; workDays: number[] },
+    start: Date,
+    end: Date,
+    count: number,
+  ): Date[] {
     if (count <= 0) return [];
+    const MIN_GAP = 60_000; // ≥ 1 min between consecutive first-invites
     const now = Date.now();
-    const startMs = Math.max(start.getTime(), now);       // today mid-run → begin at "now"
-    const endMs = Math.max(startMs + 60_000, end.getTime());
+    let startMs = Math.max(start.getTime(), now); // today mid-run → begin at "now"
+    let endMs = end.getTime();
+
+    // Not enough room left today to space every send at least MIN_GAP apart → the
+    // even spread would degenerate into a burst. Move to the next working day's window.
+    if (endMs - startMs < count * MIN_GAP) {
+      const windowSecs = c.run247 ? 86_400 : Math.max(1, c.workEndHour - c.workStartHour) * 3600;
+      const nextStart = this.nextAllowedSlot(c, this.tomorrow());
+      startMs = nextStart.getTime();
+      endMs = startMs + windowSecs * 1000;
+    }
+
     const span = endMs - startMs;
     const bucket = span / count;
     const times: Date[] = [];
-    for (let i = 0; i < count; i++) times.push(new Date(startMs + i * bucket + Math.random() * bucket));
+    let prev = 0;
+    for (let i = 0; i < count; i++) {
+      let t = startMs + i * bucket + Math.random() * bucket;
+      if (i > 0 && t - prev < MIN_GAP) t = prev + MIN_GAP; // never closer than MIN_GAP
+      prev = t;
+      times.push(new Date(t));
+    }
     return times;
   }
 
@@ -338,6 +368,7 @@ export class LiSchedulerService implements OnModuleInit {
     count: number,
     placedToday: number,
   ): Date[] {
+    const MIN_GAP = 60_000; // ≥ 1 min between consecutive first-invites (anti-burst)
     const windowSecs = campaign.run247 ? 86_400 : Math.max(1, campaign.workEndHour - campaign.workStartHour) * 3600;
     const baseSpacing = windowSecs / limit;
     const jMin = Math.max(0, campaign.jitterMinSeconds ?? 20);
@@ -358,7 +389,12 @@ export class LiSchedulerService implements OnModuleInit {
       }
       for (let slot = startSlot; slot < limit && times.length < count; slot++) {
         const t = winStartMs + (slot * baseSpacing + wobble()) * 1000;
-        times.push(new Date(Math.max(t, now))); // never in the past
+        let clamped = Math.max(t, now); // never in the past
+        // Safety net: if several early slots clamp onto `now`, keep them ≥ MIN_GAP apart
+        // so a late re-space can't fire a burst within the same minute.
+        const prev = times[times.length - 1]?.getTime() ?? 0;
+        if (times.length && dayIdx === 0 && clamped - prev < MIN_GAP) clamped = prev + MIN_GAP;
+        times.push(new Date(clamped));
       }
       probe = new Date(midnightOf(winStart).getTime() + 864e5); // day after; skips off-days
       dayIdx++;
