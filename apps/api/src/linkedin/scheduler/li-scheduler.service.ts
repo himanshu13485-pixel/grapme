@@ -287,7 +287,14 @@ export class LiSchedulerService implements OnModuleInit {
    */
   async claimNextConnection(campaignId: string): Promise<boolean> {
     if (!this.queue) return false;
-    const runAt = new Date(Date.now() + (20 + Math.random() * 70) * 1000);
+    // Fire the substitute ~now, but never outside the send window — a backfill triggered
+    // late in the day (or a chain of exclusions) must not push invites past working hours.
+    const campaign = await this.prisma.liCampaign.findUnique({
+      where: { id: campaignId },
+      select: { run247: true, timezone: true, workStartHour: true, workEndHour: true, workDays: true },
+    });
+    const desired = new Date(Date.now() + (20 + Math.random() * 70) * 1000);
+    const runAt = campaign ? this.nextAllowedSlot(campaign, desired) : desired;
     const created = await this.prisma.$transaction(async (tx) => {
       const lead = await tx.liLead.findFirst({
         where: {
