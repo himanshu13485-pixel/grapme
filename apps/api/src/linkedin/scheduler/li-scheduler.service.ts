@@ -154,7 +154,7 @@ export class LiSchedulerService implements OnModuleInit {
    * (this is what migrates a campaign off the old pre-scheduled pile). Returns how many
    * new invites it scheduled.
    */
-  async scheduleDueDays(campaignId: string): Promise<number> {
+  async scheduleDueDays(campaignId: string, force = false): Promise<number> {
     if (!this.queue) return 0;
     const c = await this.prisma.liCampaign.findUnique({ where: { id: campaignId }, include: { linkedInAccount: true } });
     if (!c || c.status !== LiCampaignStatus.RUNNING) return 0;
@@ -166,8 +166,10 @@ export class LiSchedulerService implements OnModuleInit {
     const firstType = direct ? LiScheduledActionType.SEND_MESSAGE : LiScheduledActionType.SEND_CONNECTION;
     const { start, end } = this.targetWindow(c);
 
-    // Idempotent: already pulled this day (or later) → nothing to do.
-    if (c.scheduledThrough && c.scheduledThrough.getTime() >= start.getTime()) return 0;
+    // Idempotent: already pulled this day (or later) → nothing to do. `force` (manual
+    // Re-space) bypasses this — the per-day `already` counter below still prevents
+    // overfilling, so a forced pull only tops the day up to the cap, never past it.
+    if (!force && c.scheduledThrough && c.scheduledThrough.getTime() >= start.getTime()) return 0;
 
     // Cancel stale/legacy un-sent invites. First run (scheduledThrough null) clears the
     // ENTIRE legacy pre-scheduled pile so the campaign starts clean on the pull model;
@@ -389,7 +391,20 @@ export class LiSchedulerService implements OnModuleInit {
       orderBy: { runAt: 'asc' },
       select: { id: true, jobId: true, leadId: true, stepOrder: true },
     });
-    if (actions.length === 0) return { ok: true, respaced: 0, message: 'No pending invites to re-space.' };
+    if (actions.length === 0) {
+      // Nothing scheduled yet — e.g. the campaign was paused when the evening pull ran,
+      // so the day's invites were never created. Instead of no-opping, build the due-day
+      // schedule now from the pending bucket (force past the idempotency guard).
+      const pulled = await this.scheduleDueDays(campaignId, true);
+      if (pulled > 0) {
+        return { ok: true, respaced: pulled, message: `Scheduled ${pulled} invite(s) for the next working day from the pending bucket.` };
+      }
+      const reason =
+        campaign.status !== LiCampaignStatus.RUNNING ? 'Campaign is paused — resume it, then Re-space.'
+        : campaign.linkedInAccount?.status !== 'CONNECTED' ? 'The LinkedIn account is not connected.'
+        : 'No pending leads available to schedule (bucket empty or the day is already full).';
+      return { ok: true, respaced: 0, message: reason };
+    }
 
     // De-duplicate: keep at most ONE pending first-invite per lead (earliest), cancel the
     // rest. Extras accumulate from a lead sourced twice or older buggy scheduling and
