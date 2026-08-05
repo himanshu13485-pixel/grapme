@@ -801,6 +801,34 @@ export class LiSchedulerService implements OnModuleInit {
     });
   }
 
+  /** When the campaign's most recent first-invite actually went out (today). Null = none yet. */
+  async lastConnectionSentAt(campaignId: string): Promise<Date | null> {
+    const last = await this.prisma.liScheduledAction.findFirst({
+      where: {
+        type: LiScheduledActionType.SEND_CONNECTION, status: LiScheduledActionStatus.DONE,
+        updatedAt: { gte: this.startOfToday() }, lead: { campaignId },
+      },
+      orderBy: { updatedAt: 'desc' },
+      select: { updatedAt: true },
+    });
+    return last?.updatedAt ?? null;
+  }
+
+  /**
+   * Target minimum spacing between consecutive first-invites: the send window divided by
+   * the daily cap (the intended even pace), clamped to a sane floor/ceiling. This is the
+   * send-time rate limiter that makes bursts impossible no matter how the queue was built
+   * (retries, backfills, re-pulls, manual sends can all pile invites onto one instant).
+   */
+  minInviteSpacingMs(c: { run247: boolean; workStartHour: number; workEndHour: number; dailyConnectionLimit: number; warmupEnabled?: boolean; warmupStartedAt?: Date | null; warmupStartLimit?: number; warmupDays?: number }): number {
+    const windowSecs = c.run247 ? 86_400 : Math.max(1, c.workEndHour - c.workStartHour) * 3600;
+    const cap = Math.max(1, this.effectiveConnectionCap(c));
+    const even = (windowSecs * 1000) / cap;
+    const FLOOR = 3 * 60_000;   // never less than 3 min apart
+    const CEIL = 90 * 60_000;   // never force more than 90 min apart
+    return Math.min(CEIL, Math.max(FLOOR, even));
+  }
+
   tomorrow(): Date { const d = this.startOfToday(); d.setDate(d.getDate() + 1); return d; }
 
   /**

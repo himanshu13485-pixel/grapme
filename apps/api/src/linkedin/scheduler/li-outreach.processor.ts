@@ -86,6 +86,16 @@ export class LiOutreachProcessor extends WorkerHost {
     const cap = this.scheduler.effectiveConnectionCap(ctx.campaign);
     if (sentToday >= cap) return this.scheduler.rearm(actionId, this.scheduler.nextDeferralSlot(ctx.campaign));
 
+    // Send-time spacing guard: if the last invite went out too recently, defer this one so
+    // invites never fire as a burst — even when the queue got piled onto one instant by
+    // retries/backfills/re-pulls. rearm() re-gates to working hours.
+    const minGap = this.scheduler.minInviteSpacingMs(ctx.campaign);
+    const lastAt = await this.scheduler.lastConnectionSentAt(ctx.campaign.id);
+    if (lastAt && Date.now() - lastAt.getTime() < minGap) {
+      const jitter = Math.floor(Math.random() * 60_000);
+      return this.scheduler.rearm(actionId, new Date(lastAt.getTime() + minGap + jitter));
+    }
+
     const step1 = ctx.steps.find((s) => s.order === 1);
     const memberId = await this.ensureMemberId(ctx);
     // Lead-quality gate: skip profiles below the campaign's minimum connection count.
