@@ -29,6 +29,48 @@ export function setRefreshToken(token: string | null) {
 export function clearTokens() {
   setToken(null);
   setRefreshToken(null);
+  clearStashedAdmin();
+}
+
+// ── Admin impersonation ("Login as" → "Back to Admin") ──────────────────
+// When an admin impersonates a client we stash the admin's tokens under separate
+// keys so the client portal can offer a one-click return to the admin session.
+const ADMIN_STASH_TOKEN = 'aeo_admin_stash_token';
+const ADMIN_STASH_REFRESH = 'aeo_admin_stash_refresh';
+
+/** Save the current (admin) session before swapping to a client session. */
+export function stashAdminSession() {
+  if (typeof window === 'undefined') return;
+  const t = getToken();
+  const r = getRefreshToken();
+  if (t) localStorage.setItem(ADMIN_STASH_TOKEN, t);
+  if (r) localStorage.setItem(ADMIN_STASH_REFRESH, r);
+}
+
+/** True when an admin session is stashed (i.e. we're currently impersonating). */
+export function hasStashedAdmin(): boolean {
+  if (typeof window === 'undefined') return false;
+  return !!localStorage.getItem(ADMIN_STASH_TOKEN);
+}
+
+/** Restore the stashed admin session. Returns false if none was stashed. */
+export function restoreAdminSession(): boolean {
+  if (typeof window === 'undefined') return false;
+  const t = localStorage.getItem(ADMIN_STASH_TOKEN);
+  if (!t) return false;
+  const r = localStorage.getItem(ADMIN_STASH_REFRESH);
+  setToken(t);
+  setRefreshToken(r);
+  localStorage.removeItem(ADMIN_STASH_TOKEN);
+  localStorage.removeItem(ADMIN_STASH_REFRESH);
+  return true;
+}
+
+/** Drop any stashed admin session (e.g. on a clean sign-out). */
+export function clearStashedAdmin() {
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem(ADMIN_STASH_TOKEN);
+  localStorage.removeItem(ADMIN_STASH_REFRESH);
 }
 
 export class ApiError extends Error {

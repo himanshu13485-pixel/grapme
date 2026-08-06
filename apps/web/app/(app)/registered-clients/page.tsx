@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { api, setToken, setRefreshToken } from '@/lib/api';
+import { api, setToken, setRefreshToken, stashAdminSession } from '@/lib/api';
 import { usePlans } from '@/lib/plans';
 import { useAuth } from '@/lib/auth';
 import { PageHeader, EmptyState, Pagination, Modal } from '@/components/ui';
@@ -56,10 +56,12 @@ export default function RegisteredClientsPage() {
   /** Swap this browser's session for the client's, then land on their portal. */
   async function loginAs(u: Registration) {
     if (!confirm(
-      `Log in as "${u.email}"?\n\nYou'll see the client portal exactly as they do. This signs you out of the admin panel in this browser — sign out and back in to return.`,
+      `Log in as "${u.email}"?\n\nYou'll see the client portal exactly as they do. Use the "Back to Admin" button at the top to return to your admin session.`,
     )) return;
     try {
       const res = await api.post<{ accessToken: string; refreshToken: string }>(`/auth/client/${u.id}/impersonate`, {});
+      // Preserve the admin session so the portal can offer a one-click return.
+      stashAdminSession();
       setToken(res.accessToken);
       setRefreshToken(res.refreshToken);
       // Full reload so every provider picks up the new identity cleanly.

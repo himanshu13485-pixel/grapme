@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
-import { api } from '@/lib/api';
+import { api, hasStashedAdmin, restoreAdminSession } from '@/lib/api';
 
 // `superOnly` items are hidden from sub-admins entirely. All other items are
 // gated for sub-admins by their accessModules (unless fullAccess). `module` is
@@ -83,6 +83,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   >([]);
   const [planColors, setPlanColors] = useState<Record<string, string>>({});
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [impersonating, setImpersonating] = useState(false);
   const [emailOpen, setEmailOpen] = useState(false);
   const [liMoreOpen, setLiMoreOpen] = useState(false);
   const [mainOpen, setMainOpen] = useState(false);
@@ -90,6 +91,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!loading && !user) router.replace('/login');
   }, [user, loading, router]);
+
+  // Are we inside an admin "Login as" impersonation? (stashed admin session present)
+  useEffect(() => { setImpersonating(hasStashedAdmin()); }, [user]);
+  function backToAdmin() {
+    if (restoreAdminSession()) window.location.href = '/registered-clients';
+  }
 
   // Salespersons live entirely inside their restricted panel — land them on
   // their dashboard and keep them out of any other route.
@@ -179,6 +186,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           pathname !== '/client-home' &&
           pathname !== '/updates' &&
           pathname !== '/notifications' &&
+          pathname !== '/my-email-log' &&
           pathname !== '/pricing' &&
           pathname !== '/subscription'
         ) {
@@ -380,6 +388,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 <span className="rounded-full bg-rose-500 px-2 py-0.5 text-[10px] font-semibold text-white shadow">{supportUnread}</span>
               ) : null}
             />
+            <ClientNavItem
+              href="/my-email-log"
+              active={pathname === '/my-email-log'}
+              icon="🧾"
+              label="Email Log"
+              color={themeColor}
+            />
 
             <div className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-wider text-white/50">
               My workspace{clientProfiles.length > 1 ? 's' : ''}
@@ -483,6 +498,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
         </aside>
         <div className="flex min-w-0 flex-1 flex-col">
+          {impersonating && (
+            <div className="flex items-center justify-between gap-3 bg-amber-500 px-4 py-2 text-sm text-white shadow md:px-8">
+              <span className="min-w-0 truncate">
+                👁 Viewing as <strong>{user.name}</strong> (client) — you’re impersonating this account.
+              </span>
+              <button
+                onClick={backToAdmin}
+                className="shrink-0 rounded-lg bg-white/95 px-3 py-1.5 text-xs font-semibold text-amber-700 shadow hover:bg-white"
+              >
+                ← Back to Admin
+              </button>
+            </div>
+          )}
           <MobileTopBar onMenu={() => setSidebarOpen(true)} />
           <main
             className="flex-1 overflow-auto px-4 py-5 md:px-8 md:py-8"

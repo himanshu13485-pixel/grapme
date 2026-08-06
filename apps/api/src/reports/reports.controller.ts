@@ -70,6 +70,27 @@ export class ReportsController {
     return this.reports.emailMessageLog(messageId);
   }
 
+  /** Client-portal Email Log: same activity feed, hard-scoped to the caller's own workspaces. */
+  @Roles(Role.CLIENT)
+  @Get('email/my-log')
+  async myEmailLog(
+    @CurrentUser() user: AuthUser,
+    @Query('client') client?: string,
+    @Query('event') event?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ) {
+    const owned = await this.reports.ownedClientIds(user.userId);
+    return this.reports.globalEmailLog(user.tenantId, {
+      clientSearch: client, event, from, to,
+      page: page ? Number(page) : undefined,
+      pageSize: pageSize ? Number(pageSize) : undefined,
+      restrictClientIds: owned,
+    });
+  }
+
   /** Address client reports are sent FROM (admin mailbox), for confirmation. */
   @Get('reports/sender')
   reportSender(@CurrentUser() user: AuthUser) {

@@ -26,11 +26,19 @@ export class ReportsService {
   async globalEmailLog(tenantId: string, opts: {
     clientSearch?: string; event?: string; campaignId?: string; cohortId?: string;
     from?: string; to?: string; page?: number; pageSize?: number;
+    // When set, hard-restrict the result to these client ids (client-portal scoping).
+    restrictClientIds?: string[];
   }) {
     const page = Math.max(1, opts.page ?? 1);
     const pageSize = Math.min(100, Math.max(1, opts.pageSize ?? 25));
 
-    let clientIds: string[] | undefined;
+    // A restricted (client-portal) caller only ever sees their own workspaces. An empty
+    // allow-list means "no workspaces" → nothing to show.
+    if (opts.restrictClientIds && opts.restrictClientIds.length === 0) {
+      return { items: [], total: 0, page, pageSize };
+    }
+
+    let clientIds: string[] | undefined = opts.restrictClientIds;
     const q = opts.clientSearch?.trim();
     if (q) {
       const ci = { contains: q, mode: 'insensitive' as const };
@@ -38,7 +46,10 @@ export class ReportsService {
         where: { tenantId, OR: [{ name: ci }, { productCategory: ci }, { invoiceNo: ci }] },
         select: { id: true },
       });
-      clientIds = clients.map((c) => c.id);
+      let matched = clients.map((c) => c.id);
+      // Intersect the search with the restriction so a client can't reach others' data.
+      if (opts.restrictClientIds) matched = matched.filter((id) => opts.restrictClientIds!.includes(id));
+      clientIds = matched;
       if (clientIds.length === 0) return { items: [], total: 0, page, pageSize };
     }
 
@@ -523,7 +534,7 @@ export class ReportsService {
     return rows.map((r) => r.assignedClientId!).filter(Boolean);
   }
 
-  private async ownedClientIds(ownerUserId: string): Promise<string[]> {
+  async ownedClientIds(ownerUserId: string): Promise<string[]> {
     const rows = await this.prisma.client.findMany({
       where: { ownerUserId },
       select: { id: true },
