@@ -128,12 +128,19 @@ export class UnipileProvider implements LinkedInProvider {
 
   async sendConnection(params: { accountId: string; memberId: string; note?: string }): Promise<{ invitationId: string }> {
     const client = this.getClient();
-    const res = await client.users.sendInvitation({
-      account_id: params.accountId,
-      provider_id: params.memberId,
-      message: params.note,
-    });
-    return { invitationId: res?.invitation_id ?? res?.id ?? '' };
+    try {
+      const res = await client.users.sendInvitation({
+        account_id: params.accountId,
+        provider_id: params.memberId,
+        message: params.note,
+      });
+      return { invitationId: res?.invitation_id ?? res?.id ?? '' };
+    } catch (err) {
+      // The Unipile SDK throws a bare "Error"; the useful cause (invitation limit, already
+      // invited, checkpoint, etc.) is in its response body. Re-throw with that detail so it
+      // lands in the action's failure reason instead of an opaque "Error".
+      throw new Error(describeError(err));
+    }
   }
 
   async withdrawConnection(params: { accountId: string; invitationId: string }): Promise<void> {
@@ -313,6 +320,26 @@ function firstNumber(...vals: unknown[]): number | undefined {
     if (Number.isFinite(n) && n > 0) return Math.round(n);
   }
   return undefined;
+}
+
+/**
+ * Build a human-readable reason from a Unipile SDK error. The SDK surfaces the API's JSON
+ * body (type/title/detail/message) on the error object; we prefer those over the generic
+ * ".message" (often just "Error") so the failure reason names the real cause.
+ */
+function describeError(err: unknown): string {
+  const e = err as {
+    message?: string; status?: number; statusCode?: number;
+    body?: { type?: string; title?: string; detail?: string; message?: string; status?: number };
+  };
+  const body = e?.body ?? {};
+  const code = e?.status ?? e?.statusCode ?? body.status;
+  const parts = [body.detail, body.title, body.type, body.message].filter(Boolean) as string[];
+  // De-dup and keep it short; fall back to the raw message, then a generic line.
+  const seen = new Set<string>();
+  const detail = parts.filter((p) => (seen.has(p) ? false : (seen.add(p), true))).join(' — ').slice(0, 240);
+  const base = detail || (e?.message && e.message !== 'Error' ? e.message : '') || 'LinkedIn/Unipile rejected the request';
+  return code ? `${base} (${code})` : base;
 }
 
 /** True when a Unipile error means "this account no longer exists" (deleted/unlinked). */
