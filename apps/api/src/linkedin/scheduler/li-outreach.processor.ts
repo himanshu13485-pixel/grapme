@@ -125,7 +125,27 @@ export class LiOutreachProcessor extends WorkerHost {
     }
     const noteRaw = pickVariant(step1?.note, step1?.variants);
     const note = noteRaw ? renderTemplate(noteRaw, ctx.lead) : undefined;
-    const { invitationId } = await this.provider.sendConnection({ accountId: ctx.account.unipileAccountId!, memberId, note });
+    let invitationId = '';
+    try {
+      ({ invitationId } = await this.provider.sendConnection({ accountId: ctx.account.unipileAccountId!, memberId, note }));
+    } catch (err) {
+      // "cannot_resend_yet" / "already invited" means an invitation to this person is ALREADY
+      // pending (a duplicate action tried to re-send it) — LinkedIn blocks re-inviting within
+      // its cooldown. That's not a real failure: advance the lead to CONNECTION_PENDING and
+      // wait for acceptance, so it stops looping as "Failed" and never gets re-pulled. Any
+      // other error falls through to normal retry/fail handling.
+      if (isAlreadyInvited(err)) {
+        await this.prisma.liLead.update({
+          where: { id: ctx.lead.id },
+          data: { status: LiLeadStatus.CONNECTION_PENDING, currentStep: 1, lastActionAt: new Date() },
+        });
+        await this.complete(actionId);
+        await this.scheduler.schedule(ctx.lead.id, LiScheduledActionType.CHECK_ACCEPTANCE, undefined, new Date(Date.now() + FIRST_ACCEPTANCE_CHECK_MS));
+        this.logger.log(`Lead ${ctx.lead.id}: invitation already pending (cannot_resend_yet) — advanced to CONNECTION_PENDING`);
+        return;
+      }
+      throw err;
+    }
 
     await this.prisma.liLead.update({
       where: { id: ctx.lead.id },
@@ -384,6 +404,16 @@ export class LiOutreachProcessor extends WorkerHost {
   private fail(actionId: string, error: string) {
     return this.prisma.liScheduledAction.update({ where: { id: actionId }, data: { status: LiScheduledActionStatus.FAILED, lastError: error } }).then(() => undefined);
   }
+}
+
+/**
+ * Whether a send error means "an invitation to this person already exists" — LinkedIn
+ * rejects re-inviting the same member within its cooldown (Unipile: cannot_resend_yet).
+ * Treated as already-pending, not a real failure.
+ */
+function isAlreadyInvited(err: unknown): boolean {
+  const msg = String((err as Error)?.message ?? err ?? '');
+  return /cannot_resend_yet|already[\s_-]*(invited|connected|sent)|invitation already/i.test(msg);
 }
 
 /**
