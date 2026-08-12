@@ -261,11 +261,12 @@ export class SalesService {
               status: { in: [MessageStatus.SENT, MessageStatus.DELIVERED] },
             },
           }),
-          this.prisma.emailEvent.count({
-            where: { eventType: EventType.OPEN, message: { emailAccount: { clientId: c.id } } },
+          // Unique opens/clicks (distinct messages) — matches the cohort report.
+          this.prisma.emailMessage.count({
+            where: { emailAccount: { clientId: c.id }, events: { some: { eventType: EventType.OPEN } } },
           }),
-          this.prisma.emailEvent.count({
-            where: { eventType: EventType.CLICK, message: { emailAccount: { clientId: c.id } } },
+          this.prisma.emailMessage.count({
+            where: { emailAccount: { clientId: c.id }, events: { some: { eventType: EventType.CLICK } } },
           }),
           this.prisma.liLead.groupBy({ by: ['status'], where: { campaign: { clientId: c.id } }, _count: { _all: true } }),
         ]);

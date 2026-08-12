@@ -20,7 +20,7 @@ interface ClientRow {
 }
 interface StepEvent { id: string; status: Status; actorName: string; at: string }
 interface Step {
-  id: string; templateKey: string | null; label: string; group: Group; order: number; status: Status;
+  id: string; templateKey: string | null; label: string; group: Group; order: number; status: Status; hidden: boolean;
   assigneeUserId: string | null; assigneeName: string | null; assigneeEmail: string | null; assigneeRole: string | null;
   startedAt: string | null; finishedAt: string | null; updatedByName: string | null; updatedAt: string;
   events?: StepEvent[];
@@ -149,7 +149,7 @@ function ClientDetailModal({
   }, [clientId]);
   useEffect(() => { load(); }, [load]);
 
-  async function patch(stepId: string, body: { status?: Status; assigneeUserId?: string; label?: string }) {
+  async function patch(stepId: string, body: { status?: Status; assigneeUserId?: string; label?: string; hidden?: boolean }) {
     setBusy(true);
     try { await api.patch(`/reporting/steps/${stepId}`, body); load(); onChanged(); }
     catch (e: any) { alert(e?.message ?? 'Update failed'); }
@@ -256,7 +256,7 @@ function StepRow({
   step, team, canManage, canDelete, busy, onPatch, onRemove,
 }: {
   step: Step; team: Member[]; canManage: boolean; canDelete: boolean; busy: boolean;
-  onPatch: (id: string, b: { status?: Status; assigneeUserId?: string; label?: string }) => void;
+  onPatch: (id: string, b: { status?: Status; assigneeUserId?: string; label?: string; hidden?: boolean }) => void;
   onRemove: (id: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
@@ -269,9 +269,10 @@ function StepRow({
     if (editLabel.trim() && editLabel.trim() !== step.label) onPatch(step.id, { label: editLabel.trim() });
   };
   return (
-    <div className="rounded-xl border border-slate-100 p-3">
+    <div className={`rounded-xl border border-slate-100 p-3 ${step.hidden ? 'opacity-50' : ''}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 flex-1 items-center gap-2">
+          {step.hidden && <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500">hidden</span>}
           {editing ? (
             <input
               autoFocus className="input flex-1 py-1 text-sm" value={editLabel} disabled={busy}
@@ -321,6 +322,11 @@ function StepRow({
         {step.startedAt && <span title="Started">▶ {new Date(step.startedAt).toLocaleDateString()}</span>}
         {step.finishedAt && <span className="text-emerald-600" title="Finished">✓ {new Date(step.finishedAt).toLocaleDateString()}</span>}
         {last && <span className="text-slate-400">· last: {last}</span>}
+        {canManage && step.templateKey && (
+          <button className="ml-auto text-slate-400 hover:text-slate-700" onClick={() => onPatch(step.id, { hidden: !step.hidden })} title={step.hidden ? 'Show this step for this client' : 'Hide this step for this client only'}>
+            {step.hidden ? 'Unhide' : 'Hide'}
+          </button>
+        )}
         {canDelete && !step.templateKey && (
           <button className="ml-auto text-rose-400 hover:text-rose-600" onClick={() => onRemove(step.id)} title="Delete custom step">Delete</button>
         )}

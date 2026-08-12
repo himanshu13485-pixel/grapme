@@ -211,8 +211,8 @@ export class ReportingService {
       orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
       include: { events: { orderBy: { at: 'desc' }, take: 10 } },
     });
-    // The Account Setup % is one-time onboarding only — monthly ops steps are excluded.
-    const core = steps.filter((s) => s.group !== 'MONTHLY');
+    // The Account Setup % is one-time onboarding only — monthly + hidden steps are excluded.
+    const core = steps.filter((s) => s.group !== 'MONTHLY' && !s.hidden);
     const total = core.length;
     const finished = core.filter((s) => s.status === 'FINISHED').length;
     const started = core.filter((s) => s.status === 'STARTED').length;
@@ -315,6 +315,12 @@ export class ReportingService {
       data.updatedByName = name;
     }
 
+    // Hide/unhide for this client (admins only) — sticks across re-syncs.
+    if (dto.hidden !== undefined) {
+      if (!this.isAdmin(user)) throw new ForbiddenException('Only admins can hide a step');
+      data.hidden = !!dto.hidden;
+    }
+
     // Status transition (records timestamps + an audit event).
     if (dto.status && dto.status !== step.status) {
       data.status = dto.status;
@@ -375,7 +381,7 @@ export class ReportingService {
     const clientIds = clients.map((c) => c.id);
     const steps = clientIds.length
       ? await this.prisma.clientSetupStep.findMany({
-          where: { clientId: { in: clientIds }, group: { not: 'MONTHLY' } }, // monthly ops steps don't count toward the %
+          where: { clientId: { in: clientIds }, group: { not: 'MONTHLY' }, hidden: false }, // monthly + hidden steps don't count toward the %
           select: { clientId: true, templateKey: true, status: true },
         })
       : [];
@@ -404,7 +410,7 @@ export class ReportingService {
     const out = new Map<string, { i: number; status: SetupStatus }[]>();
     if (!clientIds.length) return out;
     const rows = await this.prisma.clientSetupStep.findMany({
-      where: { clientId: { in: clientIds }, group: 'MONTHLY' },
+      where: { clientId: { in: clientIds }, group: 'MONTHLY', hidden: false },
       select: { clientId: true, monthIndex: true, status: true },
       orderBy: { monthIndex: 'asc' },
     });

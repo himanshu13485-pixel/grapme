@@ -333,8 +333,8 @@ export class ProgramsService {
       clients.map(async (c) => {
         const [emailSent, emailOpens, emailClicks, liByStatus] = await Promise.all([
           this.prisma.emailMessage.count({ where: { emailAccount: { clientId: c.id }, direction: MessageDirection.OUTBOUND, status: { in: [MessageStatus.SENT, MessageStatus.DELIVERED] } } }),
-          this.prisma.emailEvent.count({ where: { eventType: EventType.OPEN, message: { emailAccount: { clientId: c.id } } } }),
-          this.prisma.emailEvent.count({ where: { eventType: EventType.CLICK, message: { emailAccount: { clientId: c.id } } } }),
+          this.prisma.emailMessage.count({ where: { emailAccount: { clientId: c.id }, events: { some: { eventType: EventType.OPEN } } } }),
+          this.prisma.emailMessage.count({ where: { emailAccount: { clientId: c.id }, events: { some: { eventType: EventType.CLICK } } } }),
           this.prisma.liLead.groupBy({ by: ['status'], where: { campaign: { clientId: c.id } }, _count: { _all: true } }),
         ]);
         let liLeads = 0, liConnected = 0, liInvites = 0;
@@ -474,11 +474,13 @@ export class ProgramsService {
           this.prisma.emailMessage.count({
             where: { emailAccount: { clientId: c.id }, direction: MessageDirection.OUTBOUND, status: { in: [MessageStatus.SENT, MessageStatus.DELIVERED] } },
           }),
-          this.prisma.emailEvent.count({
-            where: { eventType: EventType.OPEN, message: { emailAccount: { clientId: c.id } } },
+          // UNIQUE opens/clicks (distinct messages with ≥1 event) — matches the cohort
+          // report's "real picture", not raw event totals.
+          this.prisma.emailMessage.count({
+            where: { emailAccount: { clientId: c.id }, events: { some: { eventType: EventType.OPEN } } },
           }),
-          this.prisma.emailEvent.count({
-            where: { eventType: EventType.CLICK, message: { emailAccount: { clientId: c.id } } },
+          this.prisma.emailMessage.count({
+            where: { emailAccount: { clientId: c.id }, events: { some: { eventType: EventType.CLICK } } },
           }),
           this.prisma.liLead.groupBy({ by: ['status'], where: { campaign: { clientId: c.id } }, _count: { _all: true } }),
         ]);

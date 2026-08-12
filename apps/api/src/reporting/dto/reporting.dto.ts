@@ -1,4 +1,4 @@
-import { IsEnum, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { IsBoolean, IsEnum, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { SetupGroup, SetupStatus } from '@prisma/client';
 
 /** Update a client step's status, assignee, and/or label (rename). */
@@ -8,6 +8,8 @@ export class UpdateSetupStepDto {
   @IsOptional() @IsString() assigneeUserId?: string;
   // Rename the step (admins only).
   @IsOptional() @IsString() @MinLength(2) @MaxLength(120) label?: string;
+  // Hide/unhide a default step for THIS client only (admins only).
+  @IsOptional() @IsBoolean() hidden?: boolean;
 }
 
 /** Add a one-off custom step to a single client's checklist. */

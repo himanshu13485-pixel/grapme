@@ -1727,6 +1727,7 @@ model ClientSetupStep {
   order          Int         @default(0)
   monthIndex     Int? // for MONTHLY steps: 1..12 (the service month this arrangement covers)
   lastReminderAt DateTime? // last time the assignee was nudged about this (monthly) step
+  hidden         Boolean     @default(false) // per-client hide: drop a default step from THIS client (sticks across re-syncs)
   status         SetupStatus @default(NOT_STARTED)
   assigneeUserId String? // the "concern person" (a staff user)
   assigneeName   String?
