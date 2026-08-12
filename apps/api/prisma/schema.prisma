@@ -1000,6 +1000,7 @@ model Client {
   subAdminAssignments SubAdminAssignment[]
   liAudiencePresets   LiAudiencePreset[]
   supportTickets      SupportTicket[]
+  setupSteps          ClientSetupStep[]
 
   @@index([tenantId])
   @@index([salesPersonId])
@@ -1673,4 +1674,81 @@ model InternalNoteRecipient {
 
   @@index([userId, readAt])
   @@index([noteId])
+}
+
+// ───────────────── Client-workspace setup reporting (onboarding tracker) ─────────────────
+// A per-client checklist of onboarding steps (registration → email setup → LinkedIn setup),
+// each owned by a "concern person" and moved through NOT_STARTED → STARTED → FINISHED. The
+// managed default list (SetupStepTemplate) seeds every client; a client's applicable steps
+// depend on its enabled channels (email / LinkedIn). Progress % powers the Workspace Box bar.
+
+enum SetupGroup {
+  GENERAL
+  EMAIL
+  LINKEDIN
+}
+
+enum SetupStatus {
+  NOT_STARTED
+  STARTED
+  FINISHED
+}
+
+// Managed default checklist for a tenant — new/edited steps here apply to every client.
+model SetupStepTemplate {
+  id        String     @id @default(uuid())
+  tenantId  String
+  key       String // stable slug (also links client instances back to their template step)
+  label     String
+  group     SetupGroup @default(GENERAL)
+  order     Int        @default(0)
+  active    Boolean    @default(true)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@unique([tenantId, key])
+  @@index([tenantId])
+}
+
+// One onboarding step for one client. `templateKey` links to the default step it came from
+// (null = a per-client custom extra). Cascade-deleted with the client.
+model ClientSetupStep {
+  id             String      @id @default(uuid())
+  tenantId       String
+  clientId       String
+  templateKey    String? // null = custom per-client step
+  label          String
+  group          SetupGroup  @default(GENERAL)
+  order          Int         @default(0)
+  status         SetupStatus @default(NOT_STARTED)
+  assigneeUserId String? // the "concern person" (a staff user)
+  assigneeName   String?
+  assigneeEmail  String?
+  assigneeRole   String?
+  startedAt      DateTime? // first time it moved to STARTED
+  finishedAt     DateTime? // when it reached FINISHED
+  updatedByName  String? // who last changed status/assignee
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  client Client             @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  events ClientSetupEvent[]
+
+  @@unique([clientId, templateKey]) // one instance per template step per client (nulls stay distinct → many custom steps allowed)
+  @@index([clientId])
+  @@index([tenantId])
+}
+
+// Audit trail: who moved a step to which status, and when.
+model ClientSetupEvent {
+  id          String      @id @default(uuid())
+  stepId      String
+  status      SetupStatus
+  actorUserId String?
+  actorName   String
+  at          DateTime    @default(now())
+
+  step ClientSetupStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
+
+  @@index([stepId])
 }

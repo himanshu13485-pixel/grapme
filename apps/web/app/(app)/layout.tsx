@@ -16,7 +16,7 @@ type NavItem = {
   admin?: boolean; superOnly?: boolean; sales?: boolean; inboxBadge?: boolean; updatesBadge?: boolean; supportBadge?: boolean; group?: 'email' | 'linkedin' | 'main';
 };
 // Pages a salesperson may reach in their restricted panel (nothing else).
-const SALES_ALLOWED = ['/sales-home', '/sales-clients', '/support', '/updates', '/my-profile'];
+const SALES_ALLOWED = ['/sales-home', '/sales-clients', '/reporting', '/support', '/updates', '/my-profile'];
 const NAV: NavItem[] = [
   // ── Salesperson panel (only these show for role SALES) ──
   { href: '/sales-home', label: 'Dashboard', icon: '▦', sales: true, module: 'sales-home' },
@@ -26,6 +26,7 @@ const NAV: NavItem[] = [
   { href: '/updates', label: 'Updates', icon: '🔔', module: 'updates', updatesBadge: true },
   { href: '/registered-clients', label: 'Registered Clients', icon: '👥', admin: true, module: 'registered-clients' },
   { href: '/clients', label: 'Clients Workspace', icon: '🏢', admin: true, module: 'clients' },
+  { href: '/reporting', label: 'Reporting', icon: '📋', admin: true, module: 'reporting' },
   { href: '/support', label: 'Client Support', icon: '🎧', module: 'support', supportBadge: true },
   { href: '/broadcasts', label: 'Notifications', icon: '📢', admin: true, module: 'broadcasts' },
   { href: '/internal-work', label: 'Internal Work', icon: '🗒', admin: true, module: 'internal-work' },

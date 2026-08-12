@@ -52,6 +52,8 @@ export default function ClientsPage() {
   const [clients, setClients] = useState<Client[]>([]);
   const [total, setTotal] = useState(0);
   const [loaded, setLoaded] = useState(false);
+  // Onboarding/setup progress per client (Reporting) → the "Account Setup" bar.
+  const [setupProgress, setSetupProgress] = useState<Record<string, { percent: number; finished: number; total: number }>>({});
   const [show, setShow] = useState(false);
   const [viewing, setViewing] = useState<Client | null>(null);
   const [editing, setEditing] = useState<Client | null>(null);
@@ -129,6 +131,13 @@ export default function ClientsPage() {
 
   // Reset to page 1 whenever the filters change, then (re)fetch.
   useEffect(() => setPage(1), [dq, dEmail, dInvoice, statusFilter, planFilter, channelFilter, salesFilter, dateField, dateFrom, dateTo]);
+
+  // Setup/onboarding progress for the "Account Setup" bar on each workspace box.
+  useEffect(() => {
+    if (!isAdmin) return;
+    api.get<Record<string, { percent: number; finished: number; total: number }>>('/reporting/progress')
+      .then(setSetupProgress).catch(() => {});
+  }, [isAdmin, loaded]);
 
   // Salesperson filter options (admins only).
   useEffect(() => {
@@ -448,6 +457,20 @@ export default function ClientsPage() {
                   )}
                 </span>
               </div>
+              {isAdmin && setupProgress[c.id] && (
+                <div className="mt-3 border-t border-slate-100 pt-3">
+                  <div className="mb-1 flex items-center justify-between text-[11px] font-medium text-slate-500">
+                    <span>Account Setup</span>
+                    <span className="text-slate-700">{setupProgress[c.id].percent}%</span>
+                  </div>
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                    <div
+                      className={`h-full rounded-full ${setupProgress[c.id].percent >= 100 ? 'bg-emerald-500' : setupProgress[c.id].percent > 0 ? 'bg-brand-500' : 'bg-slate-300'}`}
+                      style={{ width: `${Math.min(100, Math.max(0, setupProgress[c.id].percent))}%` }}
+                    />
+                  </div>
+                </div>
+              )}
             </Link>
           ))}
         </div>

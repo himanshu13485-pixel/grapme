@@ -1,0 +1,330 @@
+'use client';
+
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { api } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
+import { PageHeader, EmptyState, Modal } from '@/components/ui';
+
+type Group = 'GENERAL' | 'EMAIL' | 'LINKEDIN';
+type Status = 'NOT_STARTED' | 'STARTED' | 'FINISHED';
+
+interface Progress { total: number; finished: number; started: number; percent: number }
+interface ClientRow {
+  id: string; name: string; invoiceNo?: string | null; plan: string; status: string;
+  emailEnabled: boolean; linkedInEnabled: boolean;
+  salesPerson?: { id: string; name: string } | null;
+  progress: Progress;
+}
+interface StepEvent { id: string; status: Status; actorName: string; at: string }
+interface Step {
+  id: string; templateKey: string | null; label: string; group: Group; order: number; status: Status;
+  assigneeUserId: string | null; assigneeName: string | null; assigneeEmail: string | null; assigneeRole: string | null;
+  startedAt: string | null; finishedAt: string | null; updatedByName: string | null; updatedAt: string;
+  events?: StepEvent[];
+}
+interface Detail { client: { id: string; name: string; emailEnabled: boolean; linkedInEnabled: boolean }; progress: Progress; steps: Step[] }
+interface Member { id: string; name: string; email: string; role: string }
+interface TemplateStep { id: string; key: string; label: string; group: Group; order: number; active: boolean }
+
+const GROUP_LABEL: Record<Group, string> = { GENERAL: 'General', EMAIL: 'Email Setup', LINKEDIN: 'LinkedIn Setup' };
+const GROUP_ORDER: Group[] = ['GENERAL', 'EMAIL', 'LINKEDIN'];
+const STATUS: Record<Status, { label: string; cls: string; dot: string }> = {
+  NOT_STARTED: { label: 'Not Yet Started', cls: 'bg-slate-100 text-slate-600', dot: 'bg-slate-400' },
+  STARTED: { label: 'Process Started', cls: 'bg-amber-100 text-amber-700', dot: 'bg-amber-500' },
+  FINISHED: { label: 'Process Finished', cls: 'bg-emerald-100 text-emerald-700', dot: 'bg-emerald-500' },
+};
+const roleLabel = (r: string) => r === 'SUPER_ADMIN' ? 'Admin' : r === 'SUB_ADMIN' ? 'Sub-admin' : r === 'SALES' ? 'Salesperson' : 'Staff';
+
+function ProgressBar({ percent }: { percent: number }) {
+  const color = percent >= 100 ? 'bg-emerald-500' : percent > 0 ? 'bg-brand-500' : 'bg-slate-300';
+  return (
+    <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+      <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${Math.min(100, Math.max(0, percent))}%` }} />
+    </div>
+  );
+}
+
+export default function ReportingPage() {
+  const { user } = useAuth();
+  const canManage = user?.role === 'SUPER_ADMIN' || user?.role === 'SUB_ADMIN';
+
+  const [clients, setClients] = useState<ClientRow[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [q, setQ] = useState('');
+  const [dq, setDq] = useState('');
+  const [team, setTeam] = useState<Member[]>([]);
+  const [openClient, setOpenClient] = useState<{ id: string; name: string } | null>(null);
+  const [manageTpl, setManageTpl] = useState(false);
+
+  useEffect(() => { const t = setTimeout(() => setDq(q.trim()), 300); return () => clearTimeout(t); }, [q]);
+
+  const load = useCallback(() => {
+    const params = new URLSearchParams();
+    if (dq) params.set('search', dq);
+    api.get<ClientRow[]>(`/reporting/clients?${params}`).then(setClients).catch(() => {}).finally(() => setLoaded(true));
+  }, [dq]);
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => { api.get<Member[]>('/reporting/team').then(setTeam).catch(() => {}); }, []);
+
+  return (
+    <div>
+      <PageHeader
+        title="Reporting"
+        subtitle="Onboarding & setup progress for every client workspace — who owns each step and where it stands."
+        action={canManage ? <button className="btn-ghost" onClick={() => setManageTpl(true)}>⚙ Manage default steps</button> : undefined}
+      />
+
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <input className="input max-w-xs" placeholder="Search client, invoice, product…" value={q} onChange={(e) => setQ(e.target.value)} />
+      </div>
+
+      {!loaded ? (
+        <EmptyState message="Loading…" />
+      ) : clients.length === 0 ? (
+        <EmptyState message="No client workspaces found." />
+      ) : (
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          {clients.map((c) => (
+            <button key={c.id} onClick={() => setOpenClient({ id: c.id, name: c.name })} className="card p-5 text-left transition hover:border-brand-300 hover:shadow-sm">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="truncate font-medium text-slate-800">{c.name}</div>
+                  <div className="mt-0.5 text-xs text-slate-400">
+                    {c.plan}{c.invoiceNo ? ` · Invoice ${c.invoiceNo}` : ''}
+                    {c.salesPerson ? ` · 🧑‍💼 ${c.salesPerson.name}` : ''}
+                  </div>
+                </div>
+                <span className="shrink-0 text-lg font-bold text-slate-700">{c.progress.percent}%</span>
+              </div>
+              <div className="mt-3"><ProgressBar percent={c.progress.percent} /></div>
+              <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
+                <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-emerald-700">{c.progress.finished} finished</span>
+                <span className="rounded-full bg-amber-50 px-2 py-0.5 text-amber-700">{c.progress.started} in progress</span>
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-500">{c.progress.total} steps</span>
+                {c.emailEnabled && <span className="rounded-full bg-brand-50 px-2 py-0.5 text-brand-700">Email</span>}
+                {c.linkedInEnabled && <span className="rounded-full bg-sky-50 px-2 py-0.5 text-sky-700">LinkedIn</span>}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {openClient && (
+        <ClientDetailModal
+          clientId={openClient.id}
+          clientName={openClient.name}
+          team={team}
+          canManage={!!canManage}
+          onClose={() => setOpenClient(null)}
+          onChanged={load}
+        />
+      )}
+      {manageTpl && <ManageTemplateModal onClose={() => setManageTpl(false)} />}
+    </div>
+  );
+}
+
+// ── One client's checklist ─────────────────────────────────────────────
+function ClientDetailModal({
+  clientId, clientName, team, canManage, onClose, onChanged,
+}: {
+  clientId: string; clientName: string; team: Member[]; canManage: boolean; onClose: () => void; onChanged: () => void;
+}) {
+  const [detail, setDetail] = useState<Detail | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [newLabel, setNewLabel] = useState('');
+  const [newGroup, setNewGroup] = useState<Group>('GENERAL');
+
+  const load = useCallback(() => {
+    api.get<Detail>(`/reporting/clients/${clientId}`).then(setDetail).catch(() => {});
+  }, [clientId]);
+  useEffect(() => { load(); }, [load]);
+
+  async function patch(stepId: string, body: { status?: Status; assigneeUserId?: string }) {
+    setBusy(true);
+    try { await api.patch(`/reporting/steps/${stepId}`, body); load(); onChanged(); }
+    catch (e: any) { alert(e?.message ?? 'Update failed'); }
+    finally { setBusy(false); }
+  }
+  async function addStep() {
+    if (!newLabel.trim()) return;
+    setBusy(true);
+    try { await api.post(`/reporting/clients/${clientId}/steps`, { label: newLabel.trim(), group: newGroup }); setNewLabel(''); load(); onChanged(); }
+    catch (e: any) { alert(e?.message ?? 'Could not add'); }
+    finally { setBusy(false); }
+  }
+  async function removeStep(stepId: string) {
+    if (!confirm('Remove this custom step?')) return;
+    setBusy(true);
+    try { await api.del(`/reporting/steps/${stepId}`); load(); onChanged(); }
+    catch (e: any) { alert(e?.message ?? 'Could not remove'); }
+    finally { setBusy(false); }
+  }
+
+  const grouped = useMemo(() => {
+    const g: Record<Group, Step[]> = { GENERAL: [], EMAIL: [], LINKEDIN: [] };
+    (detail?.steps ?? []).forEach((s) => g[s.group].push(s));
+    return g;
+  }, [detail]);
+
+  return (
+    <Modal open onClose={onClose} title={`Setup — ${clientName}`} wide>
+      {!detail ? (
+        <div className="p-6 text-center text-sm text-slate-400">Loading…</div>
+      ) : (
+        <div>
+          <div className="mb-4 flex items-center gap-3">
+            <div className="flex-1"><ProgressBar percent={detail.progress.percent} /></div>
+            <span className="text-sm font-semibold text-slate-700">{detail.progress.percent}%</span>
+            <span className="text-xs text-slate-400">{detail.progress.finished}/{detail.progress.total} finished</span>
+          </div>
+
+          {GROUP_ORDER.map((grp) => grouped[grp].length > 0 && (
+            <div key={grp} className="mb-5">
+              <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">{GROUP_LABEL[grp]}</div>
+              <div className="space-y-2">
+                {grouped[grp].map((s) => (
+                  <StepRow key={s.id} step={s} team={team} canManage={canManage} busy={busy} onPatch={patch} onRemove={removeStep} />
+                ))}
+              </div>
+            </div>
+          ))}
+
+          {canManage && (
+            <div className="mt-4 rounded-xl border border-dashed border-slate-200 p-3">
+              <div className="mb-2 text-xs font-medium text-slate-500">Add a custom step for this client</div>
+              <div className="flex flex-wrap items-center gap-2">
+                <input className="input flex-1" placeholder="Step name…" value={newLabel} onChange={(e) => setNewLabel(e.target.value)} />
+                <select className="input w-40" value={newGroup} onChange={(e) => setNewGroup(e.target.value as Group)}>
+                  {GROUP_ORDER.map((g) => <option key={g} value={g}>{GROUP_LABEL[g]}</option>)}
+                </select>
+                <button className="btn-primary" onClick={addStep} disabled={busy || !newLabel.trim()}>Add</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+function StepRow({
+  step, team, canManage, busy, onPatch, onRemove,
+}: {
+  step: Step; team: Member[]; canManage: boolean; busy: boolean;
+  onPatch: (id: string, b: { status?: Status; assigneeUserId?: string }) => void;
+  onRemove: (id: string) => void;
+}) {
+  const last = step.updatedByName
+    ? `${step.updatedByName} · ${new Date(step.updatedAt).toLocaleString()}`
+    : null;
+  return (
+    <div className="rounded-xl border border-slate-100 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0">
+          <span className="font-medium text-slate-800">{step.label}</span>
+          {!step.templateKey && <span className="ml-2 rounded-full bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-600">custom</span>}
+        </div>
+        <div className="flex items-center gap-1">
+          {(['NOT_STARTED', 'STARTED', 'FINISHED'] as Status[]).map((st) => (
+            <button
+              key={st}
+              disabled={busy || st === step.status}
+              onClick={() => onPatch(step.id, { status: st })}
+              className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition ${st === step.status ? STATUS[st].cls : 'text-slate-400 hover:bg-slate-100'}`}
+              title={`Mark ${STATUS[st].label}`}
+            >
+              {STATUS[st].label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-500">
+        <label className="flex items-center gap-1.5">
+          <span className="text-slate-400">Owner:</span>
+          {canManage ? (
+            <select
+              className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs"
+              value={step.assigneeUserId ?? ''}
+              disabled={busy}
+              onChange={(e) => onPatch(step.id, { assigneeUserId: e.target.value })}
+            >
+              <option value="">— Unassigned —</option>
+              {team.map((m) => <option key={m.id} value={m.id}>{m.name} ({roleLabel(m.role)})</option>)}
+            </select>
+          ) : (
+            <span className="font-medium text-slate-600">{step.assigneeName ?? '—'}</span>
+          )}
+        </label>
+        {step.startedAt && <span title="Started">▶ {new Date(step.startedAt).toLocaleDateString()}</span>}
+        {step.finishedAt && <span className="text-emerald-600" title="Finished">✓ {new Date(step.finishedAt).toLocaleDateString()}</span>}
+        {last && <span className="text-slate-400">· last: {last}</span>}
+        {canManage && !step.templateKey && (
+          <button className="ml-auto text-rose-400 hover:text-rose-600" onClick={() => onRemove(step.id)} title="Remove custom step">Remove</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Manage the default checklist (admins) ──────────────────────────────
+function ManageTemplateModal({ onClose }: { onClose: () => void }) {
+  const [rows, setRows] = useState<TemplateStep[]>([]);
+  const [label, setLabel] = useState('');
+  const [group, setGroup] = useState<Group>('GENERAL');
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(() => { api.get<TemplateStep[]>('/reporting/template').then(setRows).catch(() => {}); }, []);
+  useEffect(() => { load(); }, [load]);
+
+  async function add() {
+    if (!label.trim()) return;
+    setBusy(true);
+    try { await api.post('/reporting/template', { label: label.trim(), group }); setLabel(''); load(); }
+    catch (e: any) { alert(e?.message ?? 'Could not add'); }
+    finally { setBusy(false); }
+  }
+  async function toggle(r: TemplateStep) {
+    setBusy(true);
+    try { await api.patch(`/reporting/template/${r.id}`, { active: !r.active }); load(); }
+    catch (e: any) { alert(e?.message ?? 'Failed'); }
+    finally { setBusy(false); }
+  }
+
+  const grouped = useMemo(() => {
+    const g: Record<Group, TemplateStep[]> = { GENERAL: [], EMAIL: [], LINKEDIN: [] };
+    rows.forEach((r) => g[r.group].push(r));
+    return g;
+  }, [rows]);
+
+  return (
+    <Modal open onClose={onClose} title="Default setup steps" wide>
+      <p className="mb-3 text-xs text-slate-500">These apply to every client (Email steps only for Email-enabled clients, LinkedIn steps only for LinkedIn-enabled clients). Deactivating a step stops it seeding new clients but keeps existing history.</p>
+      {GROUP_ORDER.map((grp) => grouped[grp].length > 0 && (
+        <div key={grp} className="mb-4">
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">{GROUP_LABEL[grp]}</div>
+          <div className="space-y-1.5">
+            {grouped[grp].map((r) => (
+              <div key={r.id} className={`flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2 text-sm ${r.active ? '' : 'opacity-50'}`}>
+                <span className="text-slate-700">{r.label}</span>
+                <button className="text-xs text-slate-500 hover:underline" disabled={busy} onClick={() => toggle(r)}>
+                  {r.active ? 'Deactivate' : 'Reactivate'}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+      <div className="mt-4 rounded-xl border border-dashed border-slate-200 p-3">
+        <div className="mb-2 text-xs font-medium text-slate-500">Add a new default step</div>
+        <div className="flex flex-wrap items-center gap-2">
+          <input className="input flex-1" placeholder="Step name…" value={label} onChange={(e) => setLabel(e.target.value)} />
+          <select className="input w-40" value={group} onChange={(e) => setGroup(e.target.value as Group)}>
+            {GROUP_ORDER.map((g) => <option key={g} value={g}>{GROUP_LABEL[g]}</option>)}
+          </select>
+          <button className="btn-primary" onClick={add} disabled={busy || !label.trim()}>Add</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
