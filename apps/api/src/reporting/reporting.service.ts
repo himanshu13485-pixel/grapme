@@ -37,6 +37,15 @@ export class ReportingService {
   private assertAdmin(user: AuthUser) {
     if (!this.isAdmin(user)) throw new ForbiddenException('Admins only');
   }
+  /** Delete access: super admins always; sub-admins only with full access or the delete flag. */
+  private async assertCanDelete(user: AuthUser) {
+    if (user.role === Role.SUPER_ADMIN) return;
+    if (user.role === Role.SUB_ADMIN) {
+      const u = await this.prisma.user.findUnique({ where: { id: user.userId }, select: { fullAccess: true, canDelete: true } });
+      if (u?.fullAccess || u?.canDelete) return;
+    }
+    throw new ForbiddenException('You do not have delete access');
+  }
 
   /** Clients this user may see: admins → all; salesperson → their assigned clients. */
   private clientScopeWhere(user: AuthUser): Prisma.ClientWhereInput {
@@ -140,12 +149,15 @@ export class ReportingService {
     return { ok: true };
   }
 
+  /** Hard-delete a default step and every client instance of it (needs delete access). */
   async removeTemplateStep(user: AuthUser, id: string) {
-    this.assertAdmin(user);
+    await this.assertCanDelete(user);
     const row = await this.prisma.setupStepTemplate.findFirst({ where: { id, tenantId: user.tenantId } });
     if (!row) throw new NotFoundException('Step not found');
-    // Soft-remove: deactivate so it stops seeding new clients, but keep existing history.
-    await this.prisma.setupStepTemplate.update({ where: { id }, data: { active: false } });
+    await this.prisma.$transaction([
+      this.prisma.clientSetupStep.deleteMany({ where: { tenantId: user.tenantId, templateKey: row.key } }),
+      this.prisma.setupStepTemplate.delete({ where: { id } }),
+    ]);
     return { ok: true };
   }
 
@@ -273,10 +285,12 @@ export class ReportingService {
   }
 
   async deleteStep(user: AuthUser, stepId: string) {
-    this.assertAdmin(user);
+    await this.assertCanDelete(user);
     const step = await this.prisma.clientSetupStep.findFirst({ where: { id: stepId, tenantId: user.tenantId } });
     if (!step) throw new NotFoundException('Step not found');
-    if (step.templateKey) throw new BadRequestException('Default steps can only be removed from the default list, not per client.');
+    // Default-list (and monthly) steps are managed globally / by months-of-service, and a
+    // re-sync would recreate them — so only per-client CUSTOM extras can be deleted here.
+    if (step.templateKey) throw new BadRequestException('This step is managed in "Default steps" or by Months of service — remove it there.');
     await this.prisma.clientSetupStep.delete({ where: { id: stepId } });
     return { ok: true };
   }
@@ -293,6 +307,13 @@ export class ReportingService {
 
     const data: Prisma.ClientSetupStepUpdateInput = {};
     const name = await this.actorName(user);
+
+    // Rename (admins only) — a per-client label override.
+    if (dto.label !== undefined) {
+      if (!this.isAdmin(user)) throw new ForbiddenException('Only admins can rename a step');
+      data.label = dto.label.trim();
+      data.updatedByName = name;
+    }
 
     // Status transition (records timestamps + an audit event).
     if (dto.status && dto.status !== step.status) {

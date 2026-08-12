@@ -12,6 +12,21 @@ const COLOR: Record<Status, string> = {
 };
 const LABEL: Record<Status, string> = { NOT_STARTED: 'Not started', STARTED: 'In progress', FINISHED: 'Finished' };
 
+/** Colour key for the month squares. */
+export function SetupMonthLegend({ className = '' }: { className?: string }) {
+  const items: [Status, string][] = [['NOT_STARTED', 'Not started'], ['STARTED', 'In progress'], ['FINISHED', 'Finished']];
+  return (
+    <div className={`flex flex-wrap items-center gap-3 text-[11px] text-slate-500 ${className}`}>
+      <span className="font-medium text-slate-400">Email arrangement:</span>
+      {items.map(([s, label]) => (
+        <span key={s} className="inline-flex items-center gap-1.5">
+          <span className={`h-3 w-3 rounded ${COLOR[s]}`} />{label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export function SetupMonthSquares({ months, className = '' }: { months?: MonthCell[]; className?: string }) {
   if (!months || months.length === 0) return null;
   const sorted = [...months].sort((a, b) => a.i - b.i);

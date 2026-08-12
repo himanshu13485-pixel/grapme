@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/api';
-import { useAuth } from '@/lib/auth';
+import { useAuth, useCanDelete } from '@/lib/auth';
 import { PageHeader, EmptyState, Modal } from '@/components/ui';
-import { SetupMonthSquares } from '@/components/SetupMonthSquares';
+import { SetupMonthSquares, SetupMonthLegend } from '@/components/SetupMonthSquares';
 
 type Group = 'GENERAL' | 'EMAIL' | 'LINKEDIN' | 'MONTHLY';
 type Status = 'NOT_STARTED' | 'STARTED' | 'FINISHED';
@@ -80,8 +80,9 @@ export default function ReportingPage() {
         action={canManage ? <button className="btn-ghost" onClick={() => setManageTpl(true)}>⚙ Manage default steps</button> : undefined}
       />
 
-      <div className="mb-4 flex flex-wrap items-center gap-3">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <input className="input max-w-xs" placeholder="Search client, invoice, product…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <SetupMonthLegend />
       </div>
 
       {!loaded ? (
@@ -137,6 +138,7 @@ function ClientDetailModal({
 }: {
   clientId: string; clientName: string; team: Member[]; canManage: boolean; onClose: () => void; onChanged: () => void;
 }) {
+  const canDelete = useCanDelete();
   const [detail, setDetail] = useState<Detail | null>(null);
   const [busy, setBusy] = useState(false);
   const [newLabel, setNewLabel] = useState('');
@@ -147,7 +149,7 @@ function ClientDetailModal({
   }, [clientId]);
   useEffect(() => { load(); }, [load]);
 
-  async function patch(stepId: string, body: { status?: Status; assigneeUserId?: string }) {
+  async function patch(stepId: string, body: { status?: Status; assigneeUserId?: string; label?: string }) {
     setBusy(true);
     try { await api.patch(`/reporting/steps/${stepId}`, body); load(); onChanged(); }
     catch (e: any) { alert(e?.message ?? 'Update failed'); }
@@ -226,7 +228,7 @@ function ClientDetailModal({
               <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">{GROUP_LABEL[grp]}</div>
               <div className="space-y-2">
                 {grouped[grp].map((s) => (
-                  <StepRow key={s.id} step={s} team={team} canManage={canManage} busy={busy} onPatch={patch} onRemove={removeStep} />
+                  <StepRow key={s.id} step={s} team={team} canManage={canManage} canDelete={canDelete} busy={busy} onPatch={patch} onRemove={removeStep} />
                 ))}
               </div>
             </div>
@@ -251,21 +253,39 @@ function ClientDetailModal({
 }
 
 function StepRow({
-  step, team, canManage, busy, onPatch, onRemove,
+  step, team, canManage, canDelete, busy, onPatch, onRemove,
 }: {
-  step: Step; team: Member[]; canManage: boolean; busy: boolean;
-  onPatch: (id: string, b: { status?: Status; assigneeUserId?: string }) => void;
+  step: Step; team: Member[]; canManage: boolean; canDelete: boolean; busy: boolean;
+  onPatch: (id: string, b: { status?: Status; assigneeUserId?: string; label?: string }) => void;
   onRemove: (id: string) => void;
 }) {
+  const [editing, setEditing] = useState(false);
+  const [editLabel, setEditLabel] = useState(step.label);
   const last = step.updatedByName
     ? `${step.updatedByName} · ${new Date(step.updatedAt).toLocaleString()}`
     : null;
+  const saveRename = () => {
+    setEditing(false);
+    if (editLabel.trim() && editLabel.trim() !== step.label) onPatch(step.id, { label: editLabel.trim() });
+  };
   return (
     <div className="rounded-xl border border-slate-100 p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="min-w-0">
-          <span className="font-medium text-slate-800">{step.label}</span>
-          {!step.templateKey && <span className="ml-2 rounded-full bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-600">custom</span>}
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          {editing ? (
+            <input
+              autoFocus className="input flex-1 py-1 text-sm" value={editLabel} disabled={busy}
+              onChange={(e) => setEditLabel(e.target.value)}
+              onBlur={saveRename}
+              onKeyDown={(e) => { if (e.key === 'Enter') saveRename(); if (e.key === 'Escape') { setEditLabel(step.label); setEditing(false); } }}
+            />
+          ) : (
+            <>
+              <span className="font-medium text-slate-800">{step.label}</span>
+              {!step.templateKey && <span className="rounded-full bg-violet-50 px-1.5 py-0.5 text-[10px] font-medium text-violet-600">custom</span>}
+              {canManage && <button className="text-[11px] text-slate-400 hover:text-brand-600 hover:underline" onClick={() => { setEditLabel(step.label); setEditing(true); }}>Edit</button>}
+            </>
+          )}
         </div>
         <div className="flex items-center gap-1">
           {(['NOT_STARTED', 'STARTED', 'FINISHED'] as Status[]).map((st) => (
@@ -301,8 +321,8 @@ function StepRow({
         {step.startedAt && <span title="Started">▶ {new Date(step.startedAt).toLocaleDateString()}</span>}
         {step.finishedAt && <span className="text-emerald-600" title="Finished">✓ {new Date(step.finishedAt).toLocaleDateString()}</span>}
         {last && <span className="text-slate-400">· last: {last}</span>}
-        {canManage && !step.templateKey && (
-          <button className="ml-auto text-rose-400 hover:text-rose-600" onClick={() => onRemove(step.id)} title="Remove custom step">Remove</button>
+        {canDelete && !step.templateKey && (
+          <button className="ml-auto text-rose-400 hover:text-rose-600" onClick={() => onRemove(step.id)} title="Delete custom step">Delete</button>
         )}
       </div>
     </div>
@@ -311,13 +331,31 @@ function StepRow({
 
 // ── Manage the default checklist (admins) ──────────────────────────────
 function ManageTemplateModal({ onClose }: { onClose: () => void }) {
+  const canDelete = useCanDelete();
   const [rows, setRows] = useState<TemplateStep[]>([]);
   const [label, setLabel] = useState('');
   const [group, setGroup] = useState<Group>('GENERAL');
   const [busy, setBusy] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editLabel, setEditLabel] = useState('');
 
   const load = useCallback(() => { api.get<TemplateStep[]>('/reporting/template').then(setRows).catch(() => {}); }, []);
   useEffect(() => { load(); }, [load]);
+
+  async function rename(r: TemplateStep) {
+    if (!editLabel.trim() || editLabel.trim() === r.label) { setEditId(null); return; }
+    setBusy(true);
+    try { await api.patch(`/reporting/template/${r.id}`, { label: editLabel.trim() }); setEditId(null); load(); }
+    catch (e: any) { alert(e?.message ?? 'Rename failed'); }
+    finally { setBusy(false); }
+  }
+  async function del(r: TemplateStep) {
+    if (!confirm(`Delete "${r.label}" from the default list? This removes it from every client. This cannot be undone.`)) return;
+    setBusy(true);
+    try { await api.del(`/reporting/template/${r.id}`); load(); }
+    catch (e: any) { alert(e?.message ?? 'Delete failed'); }
+    finally { setBusy(false); }
+  }
 
   async function add() {
     if (!label.trim()) return;
@@ -354,13 +392,24 @@ function ManageTemplateModal({ onClose }: { onClose: () => void }) {
           <div className="space-y-1.5">
             {grouped[grp].map((r, i) => (
               <div key={r.id} className={`flex items-center justify-between gap-2 rounded-lg border border-slate-100 px-3 py-2 text-sm ${r.active ? '' : 'opacity-50'}`}>
-                <span className="min-w-0 flex-1 truncate text-slate-700">{r.label}</span>
+                {editId === r.id ? (
+                  <input
+                    autoFocus className="input flex-1 py-1 text-sm" value={editLabel} disabled={busy}
+                    onChange={(e) => setEditLabel(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') rename(r); if (e.key === 'Escape') setEditId(null); }}
+                    onBlur={() => rename(r)}
+                  />
+                ) : (
+                  <span className="min-w-0 flex-1 truncate text-slate-700">{r.label}</span>
+                )}
                 <div className="flex shrink-0 items-center gap-1">
                   <button className="grid h-6 w-6 place-items-center rounded border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-30" disabled={busy || i === 0} onClick={() => move(r, 'up')} title="Move up">▲</button>
                   <button className="grid h-6 w-6 place-items-center rounded border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-30" disabled={busy || i === grouped[grp].length - 1} onClick={() => move(r, 'down')} title="Move down">▼</button>
-                  <button className="ml-1 text-xs text-slate-500 hover:underline" disabled={busy} onClick={() => toggle(r)}>
+                  <button className="ml-1 text-xs text-slate-500 hover:underline" disabled={busy} onClick={() => { setEditId(r.id); setEditLabel(r.label); }}>Edit</button>
+                  <button className="text-xs text-slate-500 hover:underline" disabled={busy} onClick={() => toggle(r)}>
                     {r.active ? 'Deactivate' : 'Reactivate'}
                   </button>
+                  {canDelete && <button className="text-xs text-rose-500 hover:underline" disabled={busy} onClick={() => del(r)}>Delete</button>}
                 </div>
               </div>
             ))}
