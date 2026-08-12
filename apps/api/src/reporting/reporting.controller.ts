@@ -26,6 +26,13 @@ export class ReportingController {
     return this.reporting.progressMap(user);
   }
 
+  /** Client-portal: the caller's own setup progress (for the dashboard box). */
+  @Roles(Role.CLIENT)
+  @Get('my-progress')
+  myProgress(@CurrentUser() user: AuthUser) {
+    return this.reporting.myProgress(user);
+  }
+
   @Roles(...STAFF)
   @Get('team')
   team(@CurrentUser() user: AuthUser) {

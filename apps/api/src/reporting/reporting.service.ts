@@ -328,6 +328,23 @@ export class ReportingService {
     return out;
   }
 
+  /** A client-portal user's own setup progress (per owned workspace) — dashboard box only. */
+  async myProgress(user: AuthUser) {
+    const clients = await this.prisma.client.findMany({
+      where: { tenantId: user.tenantId, ownerUserId: user.userId },
+      select: { id: true, name: true, emailEnabled: true, linkedInEnabled: true },
+    });
+    if (clients.length === 0) return { workspaces: [], overall: { total: 0, finished: 0, percent: 0 } };
+    const progress = await this.progressForClients(user, clients);
+    const workspaces = clients.map((c) => {
+      const p = progress.get(c.id) ?? { total: 0, finished: 0, started: 0, percent: 0 };
+      return { id: c.id, name: c.name, total: p.total, finished: p.finished, started: p.started, percent: p.percent };
+    });
+    const total = workspaces.reduce((s, w) => s + w.total, 0);
+    const finished = workspaces.reduce((s, w) => s + w.finished, 0);
+    return { workspaces, overall: { total, finished, percent: total ? Math.round((finished / total) * 100) : 0 } };
+  }
+
   /** Staff members assignable as a step's "concern person". */
   async teamMembers(user: AuthUser) {
     if (!this.isAdmin(user) && user.role !== Role.SALES) throw new ForbiddenException('No access');

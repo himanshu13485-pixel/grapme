@@ -53,6 +53,11 @@ interface Client {
   validityStartAt?: string | null;
 }
 
+interface SetupProgress {
+  workspaces: { id: string; name: string; total: number; finished: number; started: number; percent: number }[];
+  overall: { total: number; finished: number; percent: number };
+}
+
 export default function ClientHomePage() {
   const { user } = useAuth();
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -60,10 +65,12 @@ export default function ClientHomePage() {
   const [clients, setClients] = useState<Client[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [greeting, setGreeting] = useState<string | null>(null);
+  const [setup, setSetup] = useState<SetupProgress | null>(null);
 
   useEffect(() => {
     api.get<Summary>('/dashboard/summary').then(setSummary).catch(() => {});
     api.get<RecentCohort[]>('/dashboard/recent-cohorts').then(setCohorts).catch(() => {});
+    api.get<SetupProgress>('/reporting/my-progress').then(setSetup).catch(() => {});
     api
       .get<Client[]>('/clients')
       .then(setClients)
@@ -162,6 +169,39 @@ export default function ClientHomePage() {
         </div>
       ) : (
         <>
+          {/* Account Setup progress — overall onboarding completion (no step details). */}
+          {setup && setup.overall.total > 0 && (
+            <div className="mb-8 card p-5">
+              <div className="mb-2 flex items-center justify-between">
+                <div className="text-sm font-semibold text-slate-600">Account Setup</div>
+                <div className="text-2xl font-bold text-slate-900">{setup.overall.percent}%</div>
+              </div>
+              <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
+                <div
+                  className={`h-full rounded-full transition-all ${setup.overall.percent >= 100 ? 'bg-emerald-500' : setup.overall.percent > 0 ? 'bg-gradient-to-r from-emerald-500 to-teal-500' : 'bg-slate-300'}`}
+                  style={{ width: `${Math.min(100, Math.max(0, setup.overall.percent))}%` }}
+                />
+              </div>
+              <div className="mt-1.5 text-xs text-slate-400">
+                {setup.overall.finished} of {setup.overall.total} setup steps completed
+                {setup.overall.percent >= 100 ? ' — all set 🎉' : ''}
+              </div>
+              {setup.workspaces.length > 1 && (
+                <div className="mt-3 space-y-2 border-t border-slate-100 pt-3">
+                  {setup.workspaces.map((w) => (
+                    <div key={w.id} className="flex items-center gap-3">
+                      <span className="w-40 shrink-0 truncate text-xs text-slate-500" title={w.name}>{w.name}</span>
+                      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
+                        <div className={`h-full rounded-full ${w.percent >= 100 ? 'bg-emerald-500' : 'bg-brand-500'}`} style={{ width: `${w.percent}%` }} />
+                      </div>
+                      <span className="w-9 shrink-0 text-right text-xs font-medium text-slate-600">{w.percent}%</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* KPI cards — same content as the admin dashboard */}
           {showLi && <div className="mb-3 text-sm font-semibold text-slate-500">📧 Email</div>}
           <div className="mb-8 grid grid-cols-2 gap-4 md:grid-cols-4">
