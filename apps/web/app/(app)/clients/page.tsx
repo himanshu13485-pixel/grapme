@@ -702,26 +702,27 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
     whatsappEnabled: false,
     whatsappNumber: '',
     validityDays: 0,
-    emailCredits: 0,
+    // Prefilled business-requirement defaults for a new client (admin can still edit).
+    emailCredits: 1000,
     emailCreditMetering: false,
-    mailboxLimit: 0,
+    mailboxLimit: 3,
     emailCampaignLimit: 0,
     plan: 'Growth',
     monthlyQuota: 100,
     dailyBatchSize: 10,
     batchWindowDays: 10,
-    stageIntervalDays: 10,
-    followUpCount: 4,
+    stageIntervalDays: 15,
+    followUpCount: 1,
     weekdaysOnly: true,
     workDays: [1, 2, 3, 4, 5] as number[],
-    emailJitterSeconds: 20,
+    emailJitterSeconds: 600,
     sendWindowStart: 9,
-    sendWindowEnd: 17,
+    sendWindowEnd: 18,
     stageIntervalJitterDays: 2,
   });
   // Which outreach channels this client is subscribed to (admin decides at creation).
   const [channels, setChannels] = useState<'EMAIL' | 'LINKEDIN' | 'BOTH'>('EMAIL');
-  const [creditMetering, setCreditMetering] = useState(false);
+  const [creditMetering, setCreditMetering] = useState(true); // default: charge 1 credit / lead-sourcing run
   const [liPlan, setLiPlan] = useState<LiPlanForm>(emptyLiPlan());
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);

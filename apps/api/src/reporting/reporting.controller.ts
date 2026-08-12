@@ -3,7 +3,7 @@ import { Role } from '@prisma/client';
 import { Roles } from '../common/decorators/roles.decorator';
 import { AuthUser, CurrentUser } from '../common/decorators/current-user.decorator';
 import { ReportingService } from './reporting.service';
-import { AddClientStepDto, AddTemplateStepDto, UpdateSetupStepDto, UpdateTemplateStepDto } from './dto/reporting.dto';
+import { AddClientStepDto, AddTemplateStepDto, MoveTemplateStepDto, SetServiceMonthsDto, UpdateSetupStepDto, UpdateTemplateStepDto } from './dto/reporting.dto';
 
 const ADMIN = [Role.SUPER_ADMIN, Role.SUB_ADMIN] as const;
 const STAFF = [Role.SUPER_ADMIN, Role.SUB_ADMIN, Role.SALES] as const;
@@ -59,6 +59,12 @@ export class ReportingController {
   }
 
   @Roles(...ADMIN)
+  @Patch('template/:id/move')
+  moveTemplate(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: MoveTemplateStepDto) {
+    return this.reporting.moveTemplateStep(user, id, dto.dir);
+  }
+
+  @Roles(...ADMIN)
   @Delete('template/:id')
   removeTemplate(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.reporting.removeTemplateStep(user, id);
@@ -75,6 +81,18 @@ export class ReportingController {
   @Post('clients/:clientId/steps')
   addStep(@CurrentUser() user: AuthUser, @Param('clientId') clientId: string, @Body() dto: AddClientStepDto) {
     return this.reporting.addCustomStep(user, clientId, dto);
+  }
+
+  @Roles(...ADMIN)
+  @Patch('clients/:clientId/months')
+  setMonths(@CurrentUser() user: AuthUser, @Param('clientId') clientId: string, @Body() dto: SetServiceMonthsDto) {
+    return this.reporting.setServiceMonths(user, clientId, dto.months);
+  }
+
+  @Roles(...ADMIN)
+  @Post('clients/:clientId/notify')
+  notify(@CurrentUser() user: AuthUser, @Param('clientId') clientId: string) {
+    return this.reporting.notifyAssignees(user, clientId);
   }
 
   @Roles(...STAFF)

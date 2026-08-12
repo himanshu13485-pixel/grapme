@@ -1,4 +1,4 @@
-import { IsEnum, IsInt, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsEnum, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { SetupGroup, SetupStatus } from '@prisma/client';
 
 /** Update a client step's status and/or its assigned "concern person". */
@@ -26,4 +26,14 @@ export class UpdateTemplateStepDto {
   @IsOptional() @IsEnum(SetupGroup) group?: SetupGroup;
   @IsOptional() @IsInt() order?: number;
   @IsOptional() active?: boolean;
+}
+
+/** Move a default step up/down within its group. */
+export class MoveTemplateStepDto {
+  @IsIn(['up', 'down']) dir!: 'up' | 'down';
+}
+
+/** Set a client's months of service (0–12) → generates the monthly arrangement steps. */
+export class SetServiceMonthsDto {
+  @IsInt() @Min(0) @Max(12) months!: number;
 }

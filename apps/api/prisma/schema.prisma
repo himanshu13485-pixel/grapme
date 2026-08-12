@@ -954,6 +954,10 @@ model Client {
   emailCampaignLimit      Int       @default(0)
   status                  String    @default("active")
   plan                    String    @default("Growth")
+  // Setup reporting: months of service bought (0 = not set; 1–12) → generates monthly
+  // "Email arrangement" ops steps. setupNotifiedAt guards the first "notify the team" send.
+  serviceMonths           Int       @default(0)
+  setupNotifiedAt         DateTime?
   reportDaily             Boolean   @default(false) // email a daily performance report
   reportWeekly            Boolean   @default(false) // email a weekly report (Mondays)
   reportMonthly           Boolean   @default(false) // email a monthly report (1st)
@@ -1686,6 +1690,7 @@ enum SetupGroup {
   GENERAL
   EMAIL
   LINKEDIN
+  MONTHLY // recurring per-month "email arrangement" work (internal ops; excluded from the client %)
 }
 
 enum SetupStatus {
@@ -1720,6 +1725,8 @@ model ClientSetupStep {
   label          String
   group          SetupGroup  @default(GENERAL)
   order          Int         @default(0)
+  monthIndex     Int? // for MONTHLY steps: 1..12 (the service month this arrangement covers)
+  lastReminderAt DateTime? // last time the assignee was nudged about this (monthly) step
   status         SetupStatus @default(NOT_STARTED)
   assigneeUserId String? // the "concern person" (a staff user)
   assigneeName   String?

@@ -1,6 +1,7 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma, Role, SetupGroup, SetupStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotifyService } from '../notifications/notify.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { AddClientStepDto, AddTemplateStepDto, UpdateSetupStepDto, UpdateTemplateStepDto } from './dto/reporting.dto';
 
@@ -24,7 +25,11 @@ const DEFAULT_TEMPLATE: { key: string; label: string; group: SetupGroup }[] = [
 
 @Injectable()
 export class ReportingService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(ReportingService.name);
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notify: NotifyService,
+  ) {}
 
   private isAdmin(user: AuthUser) {
     return user.role === Role.SUPER_ADMIN || user.role === Role.SUB_ADMIN;
@@ -43,7 +48,7 @@ export class ReportingService {
   private async loadScopedClient(user: AuthUser, clientId: string) {
     const client = await this.prisma.client.findFirst({
       where: { id: clientId, ...this.clientScopeWhere(user) },
-      select: { id: true, name: true, tenantId: true, emailEnabled: true, linkedInEnabled: true, salesPersonId: true },
+      select: { id: true, name: true, tenantId: true, emailEnabled: true, linkedInEnabled: true, salesPersonId: true, serviceMonths: true, setupNotifiedAt: true },
     });
     if (!client) throw new NotFoundException('Client not found (or outside your scope)');
     return client;
@@ -112,6 +117,29 @@ export class ReportingService {
     return updated;
   }
 
+  /** Reorder a default step within its group (swap order with the adjacent step). */
+  async moveTemplateStep(user: AuthUser, id: string, dir: 'up' | 'down') {
+    this.assertAdmin(user);
+    const row = await this.prisma.setupStepTemplate.findFirst({ where: { id, tenantId: user.tenantId } });
+    if (!row) throw new NotFoundException('Step not found');
+    const neighbor = await this.prisma.setupStepTemplate.findFirst({
+      where: {
+        tenantId: user.tenantId, group: row.group,
+        order: dir === 'up' ? { lt: row.order } : { gt: row.order },
+      },
+      orderBy: { order: dir === 'up' ? 'desc' : 'asc' },
+    });
+    if (!neighbor) return { ok: true }; // already at the edge
+    await this.prisma.$transaction([
+      this.prisma.setupStepTemplate.update({ where: { id: row.id }, data: { order: neighbor.order } }),
+      this.prisma.setupStepTemplate.update({ where: { id: neighbor.id }, data: { order: row.order } }),
+    ]);
+    // Mirror the new order onto already-instantiated client steps.
+    await this.prisma.clientSetupStep.updateMany({ where: { tenantId: user.tenantId, templateKey: row.key }, data: { order: neighbor.order } });
+    await this.prisma.clientSetupStep.updateMany({ where: { tenantId: user.tenantId, templateKey: neighbor.key }, data: { order: row.order } });
+    return { ok: true };
+  }
+
   async removeTemplateStep(user: AuthUser, id: string) {
     this.assertAdmin(user);
     const row = await this.prisma.setupStepTemplate.findFirst({ where: { id, tenantId: user.tenantId } });
@@ -129,8 +157,9 @@ export class ReportingService {
     return groups;
   }
 
-  /** Ensure a client has an instance of every applicable active template step. */
-  private async syncClientSteps(client: { id: string; tenantId: string; emailEnabled: boolean; linkedInEnabled: boolean }) {
+  /** Ensure a client has an instance of every applicable active template step, plus the
+   *  monthly "Email arrangement" steps for its months of service. */
+  private async syncClientSteps(client: { id: string; tenantId: string; emailEnabled: boolean; linkedInEnabled: boolean; serviceMonths?: number }) {
     await this.ensureTemplate(client.tenantId);
     const groups = this.applicableGroups(client);
     const template = await this.prisma.setupStepTemplate.findMany({
@@ -142,15 +171,22 @@ export class ReportingService {
       select: { templateKey: true },
     });
     const have = new Set(existing.map((e) => e.templateKey));
-    const toCreate = template.filter((t) => !have.has(t.key));
+    const toCreate = template
+      .filter((t) => !have.has(t.key))
+      .map((t) => ({ tenantId: client.tenantId, clientId: client.id, templateKey: t.key, label: t.label, group: t.group, order: t.order, monthIndex: null as number | null }));
+
+    // Monthly "Email arrangement" steps: one per bought month (only if email is on).
+    const months = Math.max(0, Math.min(12, client.serviceMonths ?? 0));
+    if (months > 0 && client.emailEnabled) {
+      for (let m = 1; m <= months; m++) {
+        const key = `month_${m}`;
+        if (have.has(key)) continue;
+        toCreate.push({ tenantId: client.tenantId, clientId: client.id, templateKey: key, label: `Email arrangement — Month ${m} (${ordinal(m)})`, group: 'MONTHLY', order: 1000 + m, monthIndex: m });
+      }
+    }
+
     if (toCreate.length) {
-      await this.prisma.clientSetupStep.createMany({
-        data: toCreate.map((t) => ({
-          tenantId: client.tenantId, clientId: client.id, templateKey: t.key,
-          label: t.label, group: t.group, order: t.order,
-        })),
-        skipDuplicates: true,
-      });
+      await this.prisma.clientSetupStep.createMany({ data: toCreate, skipDuplicates: true });
     }
   }
 
@@ -160,17 +196,67 @@ export class ReportingService {
     await this.syncClientSteps(client);
     const steps = await this.prisma.clientSetupStep.findMany({
       where: { clientId },
-      orderBy: [{ group: 'asc' }, { order: 'asc' }, { createdAt: 'asc' }],
+      orderBy: [{ order: 'asc' }, { createdAt: 'asc' }],
       include: { events: { orderBy: { at: 'desc' }, take: 10 } },
     });
-    const total = steps.length;
-    const finished = steps.filter((s) => s.status === 'FINISHED').length;
-    const started = steps.filter((s) => s.status === 'STARTED').length;
+    // The Account Setup % is one-time onboarding only — monthly ops steps are excluded.
+    const core = steps.filter((s) => s.group !== 'MONTHLY');
+    const total = core.length;
+    const finished = core.filter((s) => s.status === 'FINISHED').length;
+    const started = core.filter((s) => s.status === 'STARTED').length;
     return {
-      client: { id: client.id, name: client.name, emailEnabled: client.emailEnabled, linkedInEnabled: client.linkedInEnabled },
+      client: { id: client.id, name: client.name, emailEnabled: client.emailEnabled, linkedInEnabled: client.linkedInEnabled, serviceMonths: client.serviceMonths, setupNotifiedAt: client.setupNotifiedAt },
       progress: { total, finished, started, percent: total ? Math.round((finished / total) * 100) : 0 },
       steps,
     };
+  }
+
+  /** Admin sets the client's months of service (0–12) → (re)generates the monthly steps. */
+  async setServiceMonths(user: AuthUser, clientId: string, months: number) {
+    this.assertAdmin(user);
+    const client = await this.loadScopedClient(user, clientId);
+    const m = Math.max(0, Math.min(12, Math.round(months || 0)));
+    await this.prisma.client.update({ where: { id: client.id }, data: { serviceMonths: m } });
+    // Add any newly-needed monthly steps; if reduced, cancel the now-extra ones (keep history off).
+    await this.syncClientSteps({ ...client, serviceMonths: m });
+    if (m >= 0) {
+      await this.prisma.clientSetupStep.deleteMany({ where: { clientId: client.id, group: 'MONTHLY', monthIndex: { gt: m } } });
+    }
+    return { ok: true, serviceMonths: m };
+  }
+
+  /** First-save / on-demand: notify each assigned owner about their pending steps here. */
+  async notifyAssignees(user: AuthUser, clientId: string) {
+    this.assertAdmin(user);
+    const client = await this.loadScopedClient(user, clientId);
+    await this.syncClientSteps(client);
+    const steps = await this.prisma.clientSetupStep.findMany({
+      where: { clientId, assigneeUserId: { not: null }, status: { not: 'FINISHED' } },
+      select: { label: true, assigneeUserId: true },
+    });
+    // Group pending steps by assignee, then send each a single summary alert.
+    const byUser = new Map<string, string[]>();
+    for (const s of steps) {
+      if (!s.assigneeUserId) continue;
+      const list = byUser.get(s.assigneeUserId) ?? [];
+      list.push(s.label);
+      byUser.set(s.assigneeUserId, list);
+    }
+    let notified = 0;
+    for (const [userId, labels] of byUser) {
+      const lines = labels.map((l) => `• ${l}`).join('\n');
+      await this.notify.notify(userId, {
+        type: 'reporting',
+        title: `Setup tasks assigned to you — ${client.name}`,
+        body: `You have ${labels.length} pending setup task(s) for ${client.name}:\n${lines}`,
+        emailHtml: `<p>You have <strong>${labels.length}</strong> pending setup task(s) for <strong>${escapeHtml(client.name)}</strong>:</p><ul>${labels.map((l) => `<li>${escapeHtml(l)}</li>`).join('')}</ul>`,
+        whatsappText: `GrapMe: ${labels.length} setup task(s) pending for ${client.name}. Please start when you can.`,
+        link: '/reporting',
+      }).catch((e) => this.logger.warn(`notifyAssignees failed for ${userId}: ${e}`));
+      notified += 1;
+    }
+    await this.prisma.client.update({ where: { id: client.id }, data: { setupNotifiedAt: new Date() } });
+    return { ok: true, notified };
   }
 
   async addCustomStep(user: AuthUser, clientId: string, dto: AddClientStepDto) {
@@ -268,7 +354,7 @@ export class ReportingService {
     const clientIds = clients.map((c) => c.id);
     const steps = clientIds.length
       ? await this.prisma.clientSetupStep.findMany({
-          where: { clientId: { in: clientIds } },
+          where: { clientId: { in: clientIds }, group: { not: 'MONTHLY' } }, // monthly ops steps don't count toward the %
           select: { clientId: true, templateKey: true, status: true },
         })
       : [];
@@ -345,6 +431,49 @@ export class ReportingService {
     return { workspaces, overall: { total, finished, percent: total ? Math.round((finished / total) * 100) : 0 } };
   }
 
+  /**
+   * Reminder sweep for the monthly "Email arrangement" ops steps. Safe to run often
+   * (idempotent via lastReminderAt): for each due, not-finished, assigned monthly step —
+   *  - first nudge once the service month has begun,
+   *  - then re-nudge every 2 days while NOT_STARTED, every 3 days while STARTED,
+   * emailing + WhatsApping the assignee. Internal only (never shown to the client).
+   */
+  async runSetupReminders(): Promise<{ sent: number }> {
+    const now = new Date();
+    const steps = await this.prisma.clientSetupStep.findMany({
+      where: { group: 'MONTHLY', status: { not: 'FINISHED' }, assigneeUserId: { not: null } },
+      select: {
+        id: true, label: true, monthIndex: true, status: true, lastReminderAt: true, assigneeUserId: true,
+        client: { select: { name: true, status: true, termStartedAt: true } },
+      },
+    });
+    let sent = 0;
+    for (const s of steps) {
+      if (!s.assigneeUserId || !s.monthIndex) continue;
+      if ((s.client.status ?? 'active').toLowerCase() !== 'active') continue;
+      // The service month this arrangement covers must have started.
+      const dueStart = addMonths(s.client.termStartedAt ?? now, s.monthIndex - 1);
+      if (now.getTime() < dueStart.getTime()) continue;
+      const intervalMs = (s.status === 'STARTED' ? 3 : 2) * 86_400_000;
+      const due = !s.lastReminderAt || now.getTime() - s.lastReminderAt.getTime() >= intervalMs;
+      if (!due) continue;
+
+      const verb = s.status === 'STARTED' ? 'is in progress but not finished' : 'has not been started';
+      await this.notify.notify(s.assigneeUserId, {
+        type: 'reporting',
+        title: `Email arrangement pending — ${s.client.name}`,
+        body: `The 80–100 email arrangement for ${s.client.name} (Month ${s.monthIndex}) ${verb}. Please action it.`,
+        emailHtml: `<p>The <strong>80–100 email arrangement</strong> for <strong>${escapeHtml(s.client.name)}</strong> (Month ${s.monthIndex}) ${verb}.</p><p>Please add next month's buyers/suppliers and set up the arrangement.</p>`,
+        whatsappText: `GrapMe: 80–100 email arrangement pending for ${s.client.name} (Month ${s.monthIndex}). ${s.status === 'STARTED' ? 'Started — please finish.' : 'Please start.'}`,
+        link: '/reporting',
+      }).catch((e) => this.logger.warn(`setup reminder failed for step ${s.id}: ${e}`));
+      await this.prisma.clientSetupStep.update({ where: { id: s.id }, data: { lastReminderAt: now } });
+      sent += 1;
+    }
+    if (sent) this.logger.log(`Setup reminders: sent ${sent} monthly-arrangement nudge(s)`);
+    return { sent };
+  }
+
   /** Staff members assignable as a step's "concern person". */
   async teamMembers(user: AuthUser) {
     if (!this.isAdmin(user) && user.role !== Role.SALES) throw new ForbiddenException('No access');
@@ -359,4 +488,16 @@ export class ReportingService {
 
 function slugify(s: string): string {
   return (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40) || 'step';
+}
+
+const ORDINALS = ['', 'First', 'Second', 'Third', 'Fourth', 'Fifth', 'Sixth', 'Seventh', 'Eighth', 'Ninth', 'Tenth', 'Eleventh', 'Twelfth'];
+function ordinal(n: number): string { return ORDINALS[n] ?? `${n}th`; }
+
+/** First day of the month that is `n` months after `d`. */
+function addMonths(d: Date, n: number): Date {
+  return new Date(d.getFullYear(), d.getMonth() + n, 1, 0, 0, 0, 0);
+}
+
+function escapeHtml(s: string): string {
+  return (s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }

@@ -10,7 +10,19 @@ export interface LiPlanForm {
 }
 
 export function emptyLiPlan(): LiPlanForm {
-  return { seats: 1, credits: 0, campaignLimit: 0, defaults: { ...LI_DEFAULTS } };
+  // Prefilled business-requirement defaults for a new client (admin can still edit).
+  return {
+    seats: 1,
+    credits: 4000,
+    campaignLimit: 0,
+    defaults: {
+      ...LI_DEFAULTS,
+      workStartHour: 9, workEndHour: 18, workDays: [1, 2, 3, 4, 5],
+      dailyConnectionLimit: 15, dailyMessageLimit: 30,
+      jitterMinSeconds: 300, jitterMaxSeconds: 600,
+      warmupEnabled: true, warmupStartLimit: 5, warmupDays: 28,
+    },
+  };
 }
 
 const DAYS = [

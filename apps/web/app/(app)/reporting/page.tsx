@@ -5,7 +5,7 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { PageHeader, EmptyState, Modal } from '@/components/ui';
 
-type Group = 'GENERAL' | 'EMAIL' | 'LINKEDIN';
+type Group = 'GENERAL' | 'EMAIL' | 'LINKEDIN' | 'MONTHLY';
 type Status = 'NOT_STARTED' | 'STARTED' | 'FINISHED';
 
 interface Progress { total: number; finished: number; started: number; percent: number }
@@ -22,12 +22,15 @@ interface Step {
   startedAt: string | null; finishedAt: string | null; updatedByName: string | null; updatedAt: string;
   events?: StepEvent[];
 }
-interface Detail { client: { id: string; name: string; emailEnabled: boolean; linkedInEnabled: boolean }; progress: Progress; steps: Step[] }
+interface Detail { client: { id: string; name: string; emailEnabled: boolean; linkedInEnabled: boolean; serviceMonths: number; setupNotifiedAt: string | null }; progress: Progress; steps: Step[] }
 interface Member { id: string; name: string; email: string; role: string }
 interface TemplateStep { id: string; key: string; label: string; group: Group; order: number; active: boolean }
 
-const GROUP_LABEL: Record<Group, string> = { GENERAL: 'General', EMAIL: 'Email Setup', LINKEDIN: 'LinkedIn Setup' };
-const GROUP_ORDER: Group[] = ['GENERAL', 'EMAIL', 'LINKEDIN'];
+const GROUP_LABEL: Record<Group, string> = { GENERAL: 'General', EMAIL: 'Email Setup', LINKEDIN: 'LinkedIn Setup', MONTHLY: 'Monthly Email Arrangement (internal)' };
+const GROUP_ORDER: Group[] = ['GENERAL', 'EMAIL', 'LINKEDIN', 'MONTHLY'];
+// MONTHLY steps are auto-generated from months-of-service, so they can't be added by hand.
+const ADDABLE_GROUPS: Group[] = ['GENERAL', 'EMAIL', 'LINKEDIN'];
+const emptyGroups = <T,>(): Record<Group, T[]> => ({ GENERAL: [], EMAIL: [], LINKEDIN: [], MONTHLY: [] });
 const STATUS: Record<Status, { label: string; cls: string; dot: string }> = {
   NOT_STARTED: { label: 'Not Yet Started', cls: 'bg-slate-100 text-slate-600', dot: 'bg-slate-400' },
   STARTED: { label: 'Process Started', cls: 'bg-amber-100 text-amber-700', dot: 'bg-amber-500' },
@@ -160,9 +163,22 @@ function ClientDetailModal({
     catch (e: any) { alert(e?.message ?? 'Could not remove'); }
     finally { setBusy(false); }
   }
+  async function setMonths(months: number) {
+    setBusy(true);
+    try { await api.patch(`/reporting/clients/${clientId}/months`, { months }); load(); onChanged(); }
+    catch (e: any) { alert(e?.message ?? 'Could not update'); }
+    finally { setBusy(false); }
+  }
+  async function notifyTeam() {
+    if (!confirm('Email + WhatsApp each assigned person about their pending setup tasks for this client?')) return;
+    setBusy(true);
+    try { const r = await api.post<{ notified: number }>(`/reporting/clients/${clientId}/notify`, {}); load(); alert(`Notified ${r.notified} assignee(s).`); }
+    catch (e: any) { alert(e?.message ?? 'Could not notify'); }
+    finally { setBusy(false); }
+  }
 
   const grouped = useMemo(() => {
-    const g: Record<Group, Step[]> = { GENERAL: [], EMAIL: [], LINKEDIN: [] };
+    const g = emptyGroups<Step>();
     (detail?.steps ?? []).forEach((s) => g[s.group].push(s));
     return g;
   }, [detail]);
@@ -178,6 +194,28 @@ function ClientDetailModal({
             <span className="text-sm font-semibold text-slate-700">{detail.progress.percent}%</span>
             <span className="text-xs text-slate-400">{detail.progress.finished}/{detail.progress.total} finished</span>
           </div>
+
+          {canManage && (
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2.5">
+              <label className="flex items-center gap-2 text-sm text-slate-600">
+                <span>Months of service:</span>
+                <select
+                  className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm"
+                  value={detail.client.serviceMonths}
+                  disabled={busy}
+                  onChange={(e) => setMonths(Number(e.target.value))}
+                  title="Generates a monthly Email-arrangement step for each month"
+                >
+                  <option value={0}>— none —</option>
+                  {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => <option key={m} value={m}>{m} month{m === 1 ? '' : 's'}</option>)}
+                </select>
+                <span className="text-xs text-slate-400">(monthly steps are internal — not shown to the client)</span>
+              </label>
+              <button className="btn-ghost text-sm" onClick={notifyTeam} disabled={busy} title="Email + WhatsApp each assigned person their pending tasks">
+                {detail.client.setupNotifiedAt ? '🔔 Re-notify team' : '🔔 Notify assigned team'}
+              </button>
+            </div>
+          )}
 
           {GROUP_ORDER.map((grp) => grouped[grp].length > 0 && (
             <div key={grp} className="mb-5">
@@ -196,7 +234,7 @@ function ClientDetailModal({
               <div className="flex flex-wrap items-center gap-2">
                 <input className="input flex-1" placeholder="Step name…" value={newLabel} onChange={(e) => setNewLabel(e.target.value)} />
                 <select className="input w-40" value={newGroup} onChange={(e) => setNewGroup(e.target.value as Group)}>
-                  {GROUP_ORDER.map((g) => <option key={g} value={g}>{GROUP_LABEL[g]}</option>)}
+                  {ADDABLE_GROUPS.map((g) => <option key={g} value={g}>{GROUP_LABEL[g]}</option>)}
                 </select>
                 <button className="btn-primary" onClick={addStep} disabled={busy || !newLabel.trim()}>Add</button>
               </div>
@@ -290,9 +328,15 @@ function ManageTemplateModal({ onClose }: { onClose: () => void }) {
     catch (e: any) { alert(e?.message ?? 'Failed'); }
     finally { setBusy(false); }
   }
+  async function move(r: TemplateStep, dir: 'up' | 'down') {
+    setBusy(true);
+    try { await api.patch(`/reporting/template/${r.id}/move`, { dir }); load(); }
+    catch (e: any) { alert(e?.message ?? 'Failed'); }
+    finally { setBusy(false); }
+  }
 
   const grouped = useMemo(() => {
-    const g: Record<Group, TemplateStep[]> = { GENERAL: [], EMAIL: [], LINKEDIN: [] };
+    const g = emptyGroups<TemplateStep>();
     rows.forEach((r) => g[r.group].push(r));
     return g;
   }, [rows]);
@@ -304,12 +348,16 @@ function ManageTemplateModal({ onClose }: { onClose: () => void }) {
         <div key={grp} className="mb-4">
           <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-400">{GROUP_LABEL[grp]}</div>
           <div className="space-y-1.5">
-            {grouped[grp].map((r) => (
-              <div key={r.id} className={`flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2 text-sm ${r.active ? '' : 'opacity-50'}`}>
-                <span className="text-slate-700">{r.label}</span>
-                <button className="text-xs text-slate-500 hover:underline" disabled={busy} onClick={() => toggle(r)}>
-                  {r.active ? 'Deactivate' : 'Reactivate'}
-                </button>
+            {grouped[grp].map((r, i) => (
+              <div key={r.id} className={`flex items-center justify-between gap-2 rounded-lg border border-slate-100 px-3 py-2 text-sm ${r.active ? '' : 'opacity-50'}`}>
+                <span className="min-w-0 flex-1 truncate text-slate-700">{r.label}</span>
+                <div className="flex shrink-0 items-center gap-1">
+                  <button className="grid h-6 w-6 place-items-center rounded border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-30" disabled={busy || i === 0} onClick={() => move(r, 'up')} title="Move up">▲</button>
+                  <button className="grid h-6 w-6 place-items-center rounded border border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-30" disabled={busy || i === grouped[grp].length - 1} onClick={() => move(r, 'down')} title="Move down">▼</button>
+                  <button className="ml-1 text-xs text-slate-500 hover:underline" disabled={busy} onClick={() => toggle(r)}>
+                    {r.active ? 'Deactivate' : 'Reactivate'}
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -320,7 +368,7 @@ function ManageTemplateModal({ onClose }: { onClose: () => void }) {
         <div className="flex flex-wrap items-center gap-2">
           <input className="input flex-1" placeholder="Step name…" value={label} onChange={(e) => setLabel(e.target.value)} />
           <select className="input w-40" value={group} onChange={(e) => setGroup(e.target.value as Group)}>
-            {GROUP_ORDER.map((g) => <option key={g} value={g}>{GROUP_LABEL[g]}</option>)}
+            {ADDABLE_GROUPS.map((g) => <option key={g} value={g}>{GROUP_LABEL[g]}</option>)}
           </select>
           <button className="btn-primary" onClick={add} disabled={busy || !label.trim()}>Add</button>
         </div>
