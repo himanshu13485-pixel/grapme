@@ -378,6 +378,24 @@ export class ReportingService {
     return out;
   }
 
+  /** Per-client monthly-arrangement statuses (for the little month squares). */
+  private async monthsForClients(clientIds: string[]): Promise<Map<string, { i: number; status: SetupStatus }[]>> {
+    const out = new Map<string, { i: number; status: SetupStatus }[]>();
+    if (!clientIds.length) return out;
+    const rows = await this.prisma.clientSetupStep.findMany({
+      where: { clientId: { in: clientIds }, group: 'MONTHLY' },
+      select: { clientId: true, monthIndex: true, status: true },
+      orderBy: { monthIndex: 'asc' },
+    });
+    for (const r of rows) {
+      if (r.monthIndex == null) continue;
+      const list = out.get(r.clientId) ?? [];
+      list.push({ i: r.monthIndex, status: r.status });
+      out.set(r.clientId, list);
+    }
+    return out;
+  }
+
   async listClients(user: AuthUser, search?: string) {
     if (!this.isAdmin(user) && user.role !== Role.SALES) throw new ForbiddenException('No access');
     const q = search?.trim();
@@ -395,13 +413,15 @@ export class ReportingService {
       },
     });
     const progress = await this.progressForClients(user, clients);
+    const months = await this.monthsForClients(clients.map((c) => c.id));
     return clients.map((c) => ({
       ...c,
       progress: progress.get(c.id) ?? { total: 0, finished: 0, started: 0, percent: 0 },
+      months: months.get(c.id) ?? [],
     }));
   }
 
-  /** { clientId: percent } for the Clients-Workspace box bar. */
+  /** { clientId: {percent, months[]} } for the Clients-Workspace box bar + month squares. */
   async progressMap(user: AuthUser) {
     if (!this.isAdmin(user) && user.role !== Role.SALES) return {};
     const clients = await this.prisma.client.findMany({
@@ -409,8 +429,9 @@ export class ReportingService {
       select: { id: true, emailEnabled: true, linkedInEnabled: true },
     });
     const progress = await this.progressForClients(user, clients);
-    const out: Record<string, { percent: number; finished: number; total: number }> = {};
-    for (const [id, p] of progress) out[id] = { percent: p.percent, finished: p.finished, total: p.total };
+    const months = await this.monthsForClients(clients.map((c) => c.id));
+    const out: Record<string, { percent: number; finished: number; total: number; months: { i: number; status: SetupStatus }[] }> = {};
+    for (const [id, p] of progress) out[id] = { percent: p.percent, finished: p.finished, total: p.total, months: months.get(id) ?? [] };
     return out;
   }
 

@@ -7,6 +7,7 @@ import { useCanDelete, useCanEdit, useAuth } from '@/lib/auth';
 import { usePlans, Plan } from '@/lib/plans';
 import { PageHeader, EmptyState, Modal, StatusBadge, Pagination } from '@/components/ui';
 import { LiClientPlanFields, LiClientSendWindowFields, LiPlanForm, emptyLiPlan } from '@/components/LiClientPlanFields';
+import { SetupMonthSquares } from '@/components/SetupMonthSquares';
 import { LiSubscription, LI_DEFAULTS } from '@/lib/linkedin';
 
 interface Client {
@@ -42,7 +43,7 @@ interface Client {
   validityStartAt?: string | null;
   validityEndAt?: string | null;
   _count?: { mailboxes: number; cohorts: number; enrollments: number; contacts: number };
-  stats?: { emailSent: number; emailOpens: number; contacts: number; liInvites: number; liConnected: number; liLeads: number };
+  stats?: { emailSent: number; emailOpens: number; emailClicks: number; contacts: number; liInvites: number; liConnected: number; liLeads: number };
   owner?: { id: string; name: string; email: string; contactMobile?: string | null; emailVerified?: boolean | null; pendingEmail?: string | null } | null;
   salesPerson?: { id: string; name: string; email: string } | null;
   operationContacts?: { name: string; email: string }[];
@@ -52,8 +53,8 @@ export default function ClientsPage() {
   const [clients, setClients] = useState<Client[]>([]);
   const [total, setTotal] = useState(0);
   const [loaded, setLoaded] = useState(false);
-  // Onboarding/setup progress per client (Reporting) → the "Account Setup" bar.
-  const [setupProgress, setSetupProgress] = useState<Record<string, { percent: number; finished: number; total: number }>>({});
+  // Onboarding/setup progress per client (Reporting) → the "Account Setup" bar + month squares.
+  const [setupProgress, setSetupProgress] = useState<Record<string, { percent: number; finished: number; total: number; months?: { i: number; status: 'NOT_STARTED' | 'STARTED' | 'FINISHED' }[] }>>({});
   const [show, setShow] = useState(false);
   const [viewing, setViewing] = useState<Client | null>(null);
   const [editing, setEditing] = useState<Client | null>(null);
@@ -135,7 +136,7 @@ export default function ClientsPage() {
   // Setup/onboarding progress for the "Account Setup" bar on each workspace box.
   useEffect(() => {
     if (!isAdmin) return;
-    api.get<Record<string, { percent: number; finished: number; total: number }>>('/reporting/progress')
+    api.get<Record<string, { percent: number; finished: number; total: number; months?: { i: number; status: 'NOT_STARTED' | 'STARTED' | 'FINISHED' }[] }>>('/reporting/progress')
       .then(setSetupProgress).catch(() => {});
   }, [isAdmin, loaded]);
 
@@ -395,7 +396,7 @@ export default function ClientsPage() {
               {c.emailEnabled !== false && (
                 <div className="mt-4 grid grid-cols-3 gap-2 text-center">
                   <Stat label="Sent" value={c.stats?.emailSent ?? 0} />
-                  <Stat label="Opens" value={c.stats?.emailOpens ?? 0} />
+                  <Stat label="Opens / Clicks" value={`${c.stats?.emailOpens ?? 0} / ${c.stats?.emailClicks ?? 0}`} />
                   <Stat label="Contacts" value={c.stats?.contacts ?? c._count?.contacts ?? 0} />
                 </div>
               )}
@@ -469,6 +470,7 @@ export default function ClientsPage() {
                       style={{ width: `${Math.min(100, Math.max(0, setupProgress[c.id].percent))}%` }}
                     />
                   </div>
+                  <SetupMonthSquares months={setupProgress[c.id].months} className="mt-2" />
                 </div>
               )}
             </Link>
@@ -650,7 +652,7 @@ function DetailSection({ title, rows }: { title: string; rows: DetailRow[] }) {
   );
 }
 
-function Stat({ label, value }: { label: string; value: number }) {
+function Stat({ label, value }: { label: string; value: number | string }) {
   return (
     <div className="rounded-lg bg-slate-50 py-2">
       <div className="text-lg font-semibold text-brand-700">{value}</div>

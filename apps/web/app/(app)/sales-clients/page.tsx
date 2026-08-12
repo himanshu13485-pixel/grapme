@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
+import { SetupMonthSquares } from '@/components/SetupMonthSquares';
 
 interface Client {
   id: string;
@@ -20,10 +21,12 @@ interface Client {
   followUpCount: number;
   monthlyQuota: number;
   stats?: {
-    emailSent: number; emailOpens: number; contacts: number;
+    emailSent: number; emailOpens: number; emailClicks: number; contacts: number;
     liInvites: number; liConnected: number; liLeads: number;
   };
 }
+
+type Setup = { percent: number; finished: number; total: number; months?: { i: number; status: 'NOT_STARTED' | 'STARTED' | 'FINISHED' }[] };
 
 function channelLabel(c: Client): string {
   if (c.linkedInEnabled && c.emailEnabled !== false) return '📧 Email + 🔗 LinkedIn';
@@ -35,9 +38,11 @@ export default function SalesClientsPage() {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
+  const [setup, setSetup] = useState<Record<string, Setup>>({});
 
   useEffect(() => {
     api.get<Client[]>('/sales/my/clients').then(setClients).finally(() => setLoading(false));
+    api.get<Record<string, Setup>>('/reporting/progress').then(setSetup).catch(() => {});
   }, []);
 
   const filtered = clients.filter(
@@ -101,7 +106,7 @@ export default function SalesClientsPage() {
                 {c.emailEnabled !== false && (
                   <div className="mt-4 grid grid-cols-3 gap-2 text-center">
                     <Stat label="Sent" value={c.stats?.emailSent ?? 0} />
-                    <Stat label="Opens" value={c.stats?.emailOpens ?? 0} />
+                    <Stat label="Opens / Clicks" value={`${c.stats?.emailOpens ?? 0} / ${c.stats?.emailClicks ?? 0}`} />
                     <Stat label="Contacts" value={c.stats?.contacts ?? 0} />
                   </div>
                 )}
@@ -117,6 +122,17 @@ export default function SalesClientsPage() {
                   <span>{c.dailyBatchSize}/day · {c.followUpCount} follow-ups · {c.monthlyQuota}/mo</span>
                   <span className="font-medium text-brand-600">View →</span>
                 </div>
+                {setup[c.id] && (
+                  <div className="mt-3 border-t border-slate-100 pt-3">
+                    <div className="mb-1 flex items-center justify-between text-[11px] font-medium text-slate-500">
+                      <span>Account Setup</span><span className="text-slate-700">{setup[c.id].percent}%</span>
+                    </div>
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                      <div className={`h-full rounded-full ${setup[c.id].percent >= 100 ? 'bg-emerald-500' : setup[c.id].percent > 0 ? 'bg-brand-500' : 'bg-slate-300'}`} style={{ width: `${Math.min(100, Math.max(0, setup[c.id].percent))}%` }} />
+                    </div>
+                    <SetupMonthSquares months={setup[c.id].months} className="mt-2" />
+                  </div>
+                )}
               </Link>
             );
           })}
@@ -126,7 +142,7 @@ export default function SalesClientsPage() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: number }) {
+function Stat({ label, value }: { label: string; value: number | string }) {
   return (
     <div className="rounded-lg bg-slate-50 py-2">
       <div className="text-base font-bold text-slate-800">{value}</div>

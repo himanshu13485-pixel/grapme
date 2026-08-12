@@ -49,8 +49,11 @@ interface Client {
   name: string;
   status: string;
   serviceType?: string | null;
+  emailEnabled?: boolean;
+  linkedInEnabled?: boolean;
   validityDays?: number | null;
   validityStartAt?: string | null;
+  stats?: { emailSent: number; emailOpens: number; emailClicks: number; contacts: number; liInvites: number; liConnected: number; liLeads: number };
 }
 
 interface SetupProgress {
@@ -227,31 +230,53 @@ export default function ClientHomePage() {
             </>
           )}
 
-          {/* Profile status + validity */}
+          {/* Workspace boxes — same layout as the admin/salesperson workspace card. */}
           {clients.length > 0 && (
             <div className="mb-8 grid grid-cols-1 gap-3 sm:grid-cols-2">
               {clients.map((c) => {
                 const active = (c.status ?? 'active').toLowerCase() === 'active';
+                const ws = setup?.workspaces.find((w) => w.id === c.id);
                 return (
-                  <div key={c.id} className="card flex items-center justify-between gap-3 p-4">
-                    <div className="min-w-0">
-                      <div className="truncate font-semibold text-slate-800">{c.name}</div>
-                      <div className="mt-1">
-                        <ValidityBadge days={c.validityDays} startAt={c.validityStartAt} />
+                  <div key={c.id} className="card p-5">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="truncate font-semibold text-slate-800">{c.name}</div>
+                        <div className="mt-1"><ValidityBadge days={c.validityDays} startAt={c.validityStartAt} /></div>
                       </div>
-                    </div>
-                    <div className="flex flex-col items-end gap-2">
-                      <span
-                        className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold ${
-                          active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'
-                        }`}
-                      >
+                      <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold ${active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'}`}>
                         <span className={`h-2 w-2 rounded-full ${active ? 'bg-emerald-500' : 'bg-slate-400'}`} />
                         {active ? 'Active' : 'Inactive'}
                       </span>
-                      <Link href={`/clients/${c.id}`} className="text-xs font-medium text-emerald-600 hover:underline">
-                        Open workspace →
-                      </Link>
+                    </div>
+
+                    {c.emailEnabled !== false && (
+                      <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+                        <MiniStat label="Sent" value={c.stats?.emailSent ?? 0} />
+                        <MiniStat label="Opens / Clicks" value={`${c.stats?.emailOpens ?? 0} / ${c.stats?.emailClicks ?? 0}`} />
+                        <MiniStat label="Contacts" value={c.stats?.contacts ?? 0} />
+                      </div>
+                    )}
+                    {c.linkedInEnabled && (
+                      <div className="mt-2 grid grid-cols-3 gap-2 text-center">
+                        <MiniStat label="Invites" value={c.stats?.liInvites ?? 0} />
+                        <MiniStat label="Connected" value={c.stats?.liConnected ?? 0} />
+                        <MiniStat label="Leads" value={c.stats?.liLeads ?? 0} />
+                      </div>
+                    )}
+
+                    {ws && ws.total > 0 && (
+                      <div className="mt-3 border-t border-slate-100 pt-3">
+                        <div className="mb-1 flex items-center justify-between text-[11px] font-medium text-slate-500">
+                          <span>Account Setup</span><span className="text-slate-700">{ws.percent}%</span>
+                        </div>
+                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                          <div className={`h-full rounded-full ${ws.percent >= 100 ? 'bg-emerald-500' : ws.percent > 0 ? 'bg-emerald-400' : 'bg-slate-300'}`} style={{ width: `${Math.min(100, Math.max(0, ws.percent))}%` }} />
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="mt-3 text-right">
+                      <Link href={`/clients/${c.id}`} className="text-xs font-medium text-emerald-600 hover:underline">Open workspace →</Link>
                     </div>
                   </div>
                 );
@@ -307,6 +332,15 @@ export default function ClientHomePage() {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+function MiniStat({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div className="rounded-lg bg-slate-50 py-2">
+      <div className="text-base font-bold text-slate-800">{value}</div>
+      <div className="text-[10px] uppercase tracking-wide text-slate-400">{label}</div>
     </div>
   );
 }

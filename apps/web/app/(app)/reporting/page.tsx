@@ -4,16 +4,19 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { PageHeader, EmptyState, Modal } from '@/components/ui';
+import { SetupMonthSquares } from '@/components/SetupMonthSquares';
 
 type Group = 'GENERAL' | 'EMAIL' | 'LINKEDIN' | 'MONTHLY';
 type Status = 'NOT_STARTED' | 'STARTED' | 'FINISHED';
 
 interface Progress { total: number; finished: number; started: number; percent: number }
+interface MonthCell { i: number; status: Status }
 interface ClientRow {
   id: string; name: string; invoiceNo?: string | null; plan: string; status: string;
   emailEnabled: boolean; linkedInEnabled: boolean;
   salesPerson?: { id: string; name: string } | null;
   progress: Progress;
+  months?: MonthCell[];
 }
 interface StepEvent { id: string; status: Status; actorName: string; at: string }
 interface Step {
@@ -107,6 +110,7 @@ export default function ReportingPage() {
                 {c.emailEnabled && <span className="rounded-full bg-brand-50 px-2 py-0.5 text-brand-700">Email</span>}
                 {c.linkedInEnabled && <span className="rounded-full bg-sky-50 px-2 py-0.5 text-sky-700">LinkedIn</span>}
               </div>
+              <SetupMonthSquares months={c.months} className="mt-3" />
             </button>
           ))}
         </div>

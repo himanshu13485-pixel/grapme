@@ -373,7 +373,8 @@ export default function ClientCockpit() {
               onChange={setTab}
               tabs={[
                 { key: 'mailboxes', label: 'Mailboxes', count: client.mailboxes.length },
-                { key: 'rotation', label: 'Mailbox Group', count: client.mailboxes.length },
+                // Mailbox Group is hidden from the client portal (security); staff only.
+                ...(!isClient ? [{ key: 'rotation', label: 'Mailbox Group', count: client.mailboxes.length }] : []),
                 { key: 'sequence', label: 'Sequence', count: client.followUpCount + 1 },
                 { key: 'cohorts', label: 'Cohorts', count: cohorts.length },
                 { key: 'contacts', label: 'Contacts & Lists', count: client._count?.contacts ?? 0 },
@@ -385,7 +386,7 @@ export default function ClientCockpit() {
 
             {tab === 'mailboxes' && <MailboxesManager clientId={client.id} />}
             {tab === 'inbox' && <MailboxManager clientId={client.id} />}
-            {tab === 'rotation' && (
+            {tab === 'rotation' && !isClient && (
               <MailboxGroup client={client} allMailboxes={allMailboxes} onChanged={() => { load(); flash('Mailbox group updated.'); }} />
             )}
             {tab === 'sequence' && (

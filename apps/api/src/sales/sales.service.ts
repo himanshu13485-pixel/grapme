@@ -253,7 +253,7 @@ export class SalesService {
 
     const stats = await Promise.all(
       clients.map(async (c) => {
-        const [emailSent, emailOpens, liByStatus] = await Promise.all([
+        const [emailSent, emailOpens, emailClicks, liByStatus] = await Promise.all([
           this.prisma.emailMessage.count({
             where: {
               emailAccount: { clientId: c.id },
@@ -264,6 +264,9 @@ export class SalesService {
           this.prisma.emailEvent.count({
             where: { eventType: EventType.OPEN, message: { emailAccount: { clientId: c.id } } },
           }),
+          this.prisma.emailEvent.count({
+            where: { eventType: EventType.CLICK, message: { emailAccount: { clientId: c.id } } },
+          }),
           this.prisma.liLead.groupBy({ by: ['status'], where: { campaign: { clientId: c.id } }, _count: { _all: true } }),
         ]);
         let liLeads = 0, liConnected = 0, liInvites = 0;
@@ -273,7 +276,7 @@ export class SalesService {
           if (['CONNECTED', 'MESSAGED', 'REPLIED'].includes(g.status)) liConnected += n;
           if (['CONNECTION_PENDING', 'CONNECTED', 'MESSAGED', 'REPLIED'].includes(g.status)) liInvites += n;
         }
-        return { id: c.id, emailSent, emailOpens, liLeads, liConnected, liInvites };
+        return { id: c.id, emailSent, emailOpens, emailClicks, liLeads, liConnected, liInvites };
       }),
     );
     const byId = new Map(stats.map((s) => [s.id, s]));
@@ -284,6 +287,7 @@ export class SalesService {
         stats: {
           emailSent: s?.emailSent ?? 0,
           emailOpens: s?.emailOpens ?? 0,
+          emailClicks: s?.emailClicks ?? 0,
           contacts: c._count.contacts ?? 0,
           liInvites: s?.liInvites ?? 0,
           liConnected: s?.liConnected ?? 0,

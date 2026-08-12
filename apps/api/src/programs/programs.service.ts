@@ -315,8 +315,8 @@ export class ProgramsService {
     salesPerson: { select: { id: true, name: true, email: true } },
   } as const;
 
-  listClients(user: AuthUser) {
-    return this.prisma.client.findMany({
+  async listClients(user: AuthUser) {
+    const clients = await this.prisma.client.findMany({
       where: {
         tenantId: user.tenantId,
         // Client-portal users only see the profiles they own.
@@ -325,6 +325,35 @@ export class ProgramsService {
       orderBy: { createdAt: 'desc' },
       include: this.clientListInclude,
     });
+    // Client portal: attach per-profile headline stats so the workspace card mirrors
+    // the admin card (Sent / Opens / Clicks / Contacts + LinkedIn). Cheap — a client
+    // owns only a handful of profiles.
+    if (user.role !== Role.CLIENT) return clients;
+    return Promise.all(
+      clients.map(async (c) => {
+        const [emailSent, emailOpens, emailClicks, liByStatus] = await Promise.all([
+          this.prisma.emailMessage.count({ where: { emailAccount: { clientId: c.id }, direction: MessageDirection.OUTBOUND, status: { in: [MessageStatus.SENT, MessageStatus.DELIVERED] } } }),
+          this.prisma.emailEvent.count({ where: { eventType: EventType.OPEN, message: { emailAccount: { clientId: c.id } } } }),
+          this.prisma.emailEvent.count({ where: { eventType: EventType.CLICK, message: { emailAccount: { clientId: c.id } } } }),
+          this.prisma.liLead.groupBy({ by: ['status'], where: { campaign: { clientId: c.id } }, _count: { _all: true } }),
+        ]);
+        let liLeads = 0, liConnected = 0, liInvites = 0;
+        for (const g of liByStatus) {
+          const n = g._count._all;
+          liLeads += n;
+          if (['CONNECTED', 'MESSAGED', 'REPLIED'].includes(g.status)) liConnected += n;
+          if (['CONNECTION_PENDING', 'CONNECTED', 'MESSAGED', 'REPLIED'].includes(g.status)) liInvites += n;
+        }
+        return {
+          ...c,
+          stats: {
+            emailSent, emailOpens, emailClicks,
+            contacts: (c as { _count?: { contacts?: number } })._count?.contacts ?? 0,
+            liInvites, liConnected, liLeads,
+          },
+        };
+      }),
+    );
   }
 
   /** Server-side paginated + filtered client list for the Workspace. */
@@ -441,12 +470,15 @@ export class ProgramsService {
     // LinkedIn: invites/connected/leads). Computed only for the visible page.
     const stats = await Promise.all(
       items.map(async (c) => {
-        const [emailSent, emailOpens, liByStatus] = await Promise.all([
+        const [emailSent, emailOpens, emailClicks, liByStatus] = await Promise.all([
           this.prisma.emailMessage.count({
             where: { emailAccount: { clientId: c.id }, direction: MessageDirection.OUTBOUND, status: { in: [MessageStatus.SENT, MessageStatus.DELIVERED] } },
           }),
           this.prisma.emailEvent.count({
             where: { eventType: EventType.OPEN, message: { emailAccount: { clientId: c.id } } },
+          }),
+          this.prisma.emailEvent.count({
+            where: { eventType: EventType.CLICK, message: { emailAccount: { clientId: c.id } } },
           }),
           this.prisma.liLead.groupBy({ by: ['status'], where: { campaign: { clientId: c.id } }, _count: { _all: true } }),
         ]);
@@ -457,7 +489,7 @@ export class ProgramsService {
           if (g.status === 'CONNECTED' || g.status === 'MESSAGED' || g.status === 'REPLIED') liConnected += n;
           if (g.status === 'CONNECTION_PENDING' || g.status === 'CONNECTED' || g.status === 'MESSAGED' || g.status === 'REPLIED') liInvites += n;
         }
-        return { id: c.id, emailSent, emailOpens, liLeads, liConnected, liInvites };
+        return { id: c.id, emailSent, emailOpens, emailClicks, liLeads, liConnected, liInvites };
       }),
     );
     const statsById = new Map(stats.map((s) => [s.id, s]));
@@ -468,6 +500,7 @@ export class ProgramsService {
         stats: {
           emailSent: s?.emailSent ?? 0,
           emailOpens: s?.emailOpens ?? 0,
+          emailClicks: s?.emailClicks ?? 0,
           contacts: c._count.contacts ?? 0,
           liInvites: s?.liInvites ?? 0,
           liConnected: s?.liConnected ?? 0,
