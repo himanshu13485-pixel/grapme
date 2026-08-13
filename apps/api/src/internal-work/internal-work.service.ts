@@ -64,14 +64,23 @@ export class InternalWorkService {
   }
 
   async remove(actor: AuthUser, id: string) {
-    const n = await this.prisma.internalNote.findFirst({ where: { id, tenantId: actor.tenantId }, select: { id: true, createdByUserId: true } });
+    const n = await this.prisma.internalNote.findFirst({ where: { id, tenantId: actor.tenantId }, select: { id: true } });
     if (!n) throw new NotFoundException('Note not found');
-    // Only the author or an admin can delete a note.
-    if (n.createdByUserId !== actor.userId && !ADMIN_ROLES.includes(actor.role as Role)) {
-      throw new ForbiddenException('Only the author or an admin can delete this note');
-    }
+    // Delete is gated by delete rights: super admin always; sub-admin only with full
+    // access or the delete flag; salespersons never.
+    await this.assertCanDelete(actor);
     await this.prisma.internalNote.delete({ where: { id } });
     return { ok: true };
+  }
+
+  /** Delete access: super admins always; sub-admins only with full access or the delete flag. */
+  private async assertCanDelete(user: AuthUser) {
+    if (user.role === Role.SUPER_ADMIN) return;
+    if (user.role === Role.SUB_ADMIN) {
+      const u = await this.prisma.user.findUnique({ where: { id: user.userId }, select: { fullAccess: true, canDelete: true } });
+      if (u?.fullAccess || u?.canDelete) return;
+    }
+    throw new ForbiddenException('You do not have delete access');
   }
 
   // ─────────────────────────── read ───────────────────────────

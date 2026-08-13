@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { api, ApiError } from '@/lib/api';
-import { useAuth } from '@/lib/auth';
+import { useAuth, useCanDelete } from '@/lib/auth';
 import { RichText } from '@/components/RichText';
 import { PageHeader } from '@/components/ui';
 
@@ -47,6 +47,7 @@ function InternalWorkInner() {
   const params = useSearchParams();
   const { user } = useAuth();
   const isSales = user?.role === 'SALES';
+  const canDelete = useCanDelete();
   const [notes, setNotes] = useState<NoteRow[]>([]);
   const [staff, setStaff] = useState<Staff[]>([]);
   const [clients, setClients] = useState<{ id: string; name: string }[]>([]);
@@ -278,7 +279,7 @@ function InternalWorkInner() {
                   <div className="flex justify-end gap-3 text-sm font-medium">
                     <button onClick={() => view(n.id)} className="text-brand-700 hover:underline">View</button>
                     {n.status === 'DRAFT' && <button onClick={() => loadDraft(n.id)} className="text-slate-600 hover:underline">Edit</button>}
-                    <button onClick={() => del(n.id)} className="text-rose-600 hover:underline">Delete</button>
+                    {canDelete && <button onClick={() => del(n.id)} className="text-rose-600 hover:underline">Delete</button>}
                   </div>
                 </td>
               </tr>
