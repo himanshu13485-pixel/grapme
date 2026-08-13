@@ -13,7 +13,7 @@ import { api, hasStashedAdmin, restoreAdminSession } from '@/lib/api';
 // "Email Outreach" header, the 'linkedin' group under a LinkedIn "More…" toggle.
 type NavItem = {
   href: string; label: string; icon: string; module: string;
-  admin?: boolean; superOnly?: boolean; sales?: boolean; inboxBadge?: boolean; updatesBadge?: boolean; supportBadge?: boolean; group?: 'email' | 'linkedin' | 'main';
+  admin?: boolean; superOnly?: boolean; sales?: boolean; inboxBadge?: boolean; updatesBadge?: boolean; supportBadge?: boolean; internalBadge?: boolean; group?: 'email' | 'linkedin' | 'main';
 };
 // Pages a salesperson may reach in their restricted panel (nothing else).
 const SALES_ALLOWED = ['/sales-home', '/sales-clients', '/reporting', '/internal-work', '/support', '/updates', '/my-profile'];
@@ -29,7 +29,7 @@ const NAV: NavItem[] = [
   { href: '/reporting', label: 'Reporting', icon: '📋', admin: true, module: 'reporting' },
   { href: '/support', label: 'Client Support', icon: '🎧', module: 'support', supportBadge: true },
   { href: '/broadcasts', label: 'Notifications', icon: '📢', admin: true, module: 'broadcasts' },
-  { href: '/internal-work', label: 'Internal Work', icon: '🗒', admin: true, module: 'internal-work' },
+  { href: '/internal-work', label: 'Internal Work', icon: '🗒', admin: true, module: 'internal-work', internalBadge: true },
   { href: '/sales-persons', label: 'Sales Persons', icon: '🧑‍💼', admin: true, module: 'sales-persons' },
   { href: '/live-clients', label: 'Live Clients', icon: '🟢', admin: true, module: 'live-clients' },
   { href: '/blog', label: 'Blog', icon: '📝', admin: true, module: 'blog' },
@@ -72,6 +72,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [unread, setUnread] = useState(0);
   const [updatesUnread, setUpdatesUnread] = useState(0);
   const [supportUnread, setSupportUnread] = useState(0);
+  const [internalUnread, setInternalUnread] = useState(0);
   const [broadcastUnread, setBroadcastUnread] = useState(0);
   const [toast, setToast] = useState('');
   const [updatesToast, setUpdatesToast] = useState('');
@@ -126,6 +127,27 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       stop = true;
       clearInterval(id);
       window.removeEventListener('support-changed', onChanged);
+    };
+  }, [user]);
+
+  // Internal Work unread badge — staff (admins, sub-admins, salespersons).
+  useEffect(() => {
+    if (!user || user.role === 'CLIENT') return;
+    let stop = false;
+    async function check() {
+      try {
+        const { count } = await api.get<{ count: number }>('/internal-work/unread');
+        if (!stop) setInternalUnread(count);
+      } catch { /* ignore */ }
+    }
+    check();
+    const id = setInterval(check, 60_000);
+    const onChanged = () => check();
+    window.addEventListener('internal-work-changed', onChanged);
+    return () => {
+      stop = true;
+      clearInterval(id);
+      window.removeEventListener('internal-work-changed', onChanged);
     };
   }, [user]);
 
@@ -602,6 +624,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   {item.supportBadge && supportUnread > 0 && (
                     <span className="rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white shadow">
                       {supportUnread}
+                    </span>
+                  )}
+                  {item.internalBadge && internalUnread > 0 && (
+                    <span className="rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white shadow">
+                      {internalUnread}
                     </span>
                   )}
                 </Link>

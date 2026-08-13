@@ -92,7 +92,11 @@ function InternalWorkInner() {
 
   async function view(id: string) {
     setReply('');
-    try { setViewing(await api.get<NoteFull>(`/internal-work/${id}`)); } catch { /* ignore */ }
+    try {
+      setViewing(await api.get<NoteFull>(`/internal-work/${id}`));
+      // Opening a note marks it read → refresh the nav unread badge.
+      window.dispatchEvent(new Event('internal-work-changed'));
+    } catch { /* ignore */ }
   }
 
   async function sendReply() {
@@ -157,6 +161,7 @@ function InternalWorkInner() {
       }
       setMsg(`Posted — shared with ${r.recipientCount} colleague${r.recipientCount === 1 ? '' : 's'}.`);
       resetForm(); load();
+      window.dispatchEvent(new Event('internal-work-changed'));
     } catch (e) { setErr(e instanceof ApiError ? e.message : 'Failed to post'); }
     finally { setBusy(false); }
   }
@@ -279,7 +284,7 @@ function InternalWorkInner() {
                   <div className="flex justify-end gap-3 text-sm font-medium">
                     <button onClick={() => view(n.id)} className="text-brand-700 hover:underline">View</button>
                     {n.status === 'DRAFT' && <button onClick={() => loadDraft(n.id)} className="text-slate-600 hover:underline">Edit</button>}
-                    {canDelete && <button onClick={() => del(n.id)} className="text-rose-600 hover:underline">Delete</button>}
+                    {canDelete && !isSales && <button onClick={() => del(n.id)} className="text-rose-600 hover:underline">Delete</button>}
                   </div>
                 </td>
               </tr>
