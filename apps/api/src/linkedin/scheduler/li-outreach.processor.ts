@@ -80,6 +80,15 @@ export class LiOutreachProcessor extends WorkerHost {
         await this.prisma.liScheduledAction.update({ where: { id: scheduledActionId }, data: { lastError: `Account needs attention — ${msg}` } });
         return this.scheduler.rearm(scheduledActionId, this.scheduler.nextDeferralSlot(ctx.campaign));
       }
+      // Permanent per-lead failure on a connection request (profile can't be resolved —
+      // bad/expired/corrupted URL). Don't retry forever: exclude the lead + backfill.
+      if ((job.name as LiJob) === LiJob.SendConnection && isUnresolvableLead(msg)) {
+        await this.prisma.liLead.update({ where: { id: ctx.lead.id }, data: { status: LiLeadStatus.EXCLUDED } }).catch(() => undefined);
+        await this.prisma.liScheduledAction.update({ where: { id: scheduledActionId }, data: { status: LiScheduledActionStatus.CANCELLED, lastError: `Excluded — unresolvable profile: ${msg}`.slice(0, 240) } });
+        await this.scheduler.claimNextConnection(ctx.campaign.id);
+        this.logger.warn(`Lead ${ctx.lead.id} excluded (unresolvable profile): ${msg}`);
+        return;
+      }
       const willRetry = job.attemptsMade + 1 < (job.opts.attempts ?? 1);
       await this.prisma.liScheduledAction.update({
         where: { id: scheduledActionId },
@@ -101,6 +110,17 @@ export class LiOutreachProcessor extends WorkerHost {
   }
 
   private async doSendConnection(actionId: string, ctx: LeadWithContext) {
+    // Corrupted profile link: a LinkedIn member-id slug (ACxAA…) that was lowercased by
+    // the old normalizer can never be resolved. Don't waste a send slot or clog the log —
+    // exclude the lead with a clear reason and backfill a fresh one so the campaign moves on.
+    if (!ctx.lead.unipileMemberId && isCorruptedMemberIdUrl(ctx.lead.profileUrl)) {
+      await this.prisma.liLead.update({ where: { id: ctx.lead.id }, data: { status: LiLeadStatus.EXCLUDED } });
+      await this.prisma.liScheduledAction.update({ where: { id: actionId }, data: { status: LiScheduledActionStatus.CANCELLED, lastError: 'Excluded — corrupted profile link (re-import this lead)' } });
+      await this.scheduler.claimNextConnection(ctx.campaign.id);
+      this.logger.warn(`Lead ${ctx.lead.id} excluded — corrupted member-id URL: ${ctx.lead.profileUrl}`);
+      return;
+    }
+
     const sentToday = await this.scheduler.invitesSentTodayForCampaign(ctx.campaign.id);
     const cap = this.scheduler.effectiveConnectionCap(ctx.campaign);
     if (sentToday >= cap) return this.scheduler.rearm(actionId, this.scheduler.nextDeferralSlot(ctx.campaign));
@@ -442,6 +462,24 @@ function isAlreadyInvited(err: unknown): boolean {
  */
 function isAccountDown(msg: string): boolean {
   return /checkpoint|disconnected|invalid[\s_-]*credential|credentials|re-?auth|unauthor|session[\s_-]*expired|not[\s_-]*connected|account[\s_-]*(restricted|suspended|blocked)|too[\s_-]*many[\s_-]*requests|rate[\s_-]*limit|\b401\b|\b403\b|\b429\b/i.test(msg);
+}
+
+/**
+ * A LinkedIn member-id slug (ACxAA…, base64url) that is ALL lowercase was corrupted by the
+ * old URL normalizer (correct ids are mixed-case) and can never be resolved → the lead is
+ * dead weight and should be excluded + backfilled rather than retried forever.
+ */
+function isCorruptedMemberIdUrl(url?: string | null): boolean {
+  if (!url) return false;
+  const m = url.match(/\/in\/([^/?#]+)/i);
+  return !!m && /^ac[a-z]aa[a-z0-9_-]{25,}$/.test(m[1]); // starts with acXaa, long, entirely lowercase
+}
+
+/** A permanent per-lead failure: the profile/member simply can't be resolved (not a transient
+ *  network blip like "fetch failed", not an account-level checkpoint). */
+function isUnresolvableLead(msg: string): boolean {
+  if (/fetch failed|timeout|ETIMEDOUT|ECONNRESET|network/i.test(msg)) return false; // transient → let it retry
+  return /not[\s_-]*found|no[\s_-]*such|unresolv|invalid[\s_-]*(identifier|profile|member|provider|url)|could[\s_-]*not[\s_-]*(resolve|find)|does[\s_-]*not[\s_-]*exist|unknown[\s_-]*(member|profile|user)/i.test(msg);
 }
 
 /**
