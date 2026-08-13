@@ -110,7 +110,14 @@ export class UnipileProvider implements LinkedInProvider {
   async resolveMember(accountId: string, profileUrl: string): Promise<ProviderMember> {
     const client = this.getClient();
     const identifier = this.publicIdentifier(profileUrl);
-    const p = await client.users.getProfile({ account_id: accountId, identifier });
+    let p: any;
+    try {
+      p = await client.users.getProfile({ account_id: accountId, identifier });
+    } catch (err) {
+      // Surface the real cause (checkpoint, disconnected account, rate limit, member
+      // not found…) instead of the SDK's bare "Error".
+      throw new Error(describeError(err));
+    }
     return {
       memberId: p?.provider_id ?? identifier,
       fullName: [p?.first_name, p?.last_name].filter(Boolean).join(' ') || p?.name,

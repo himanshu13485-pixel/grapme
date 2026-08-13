@@ -71,6 +71,15 @@ export class LiOutreachProcessor extends WorkerHost {
       }
     } catch (err) {
       const msg = ((err as Error)?.message || String(err) || '').trim() || 'Send failed (no detail returned by LinkedIn)';
+      // Account-level failure (checkpoint / re-auth needed / disconnected / rate-limited):
+      // it's the SEAT, not the lead. Flag the account for re-auth and DEFER this action to
+      // the next working day instead of burning the lead as Failed — so a whole campaign
+      // doesn't get wiped out when the LinkedIn account trips a security checkpoint.
+      if (isAccountDown(msg) && ctx.account) {
+        await this.flagAccountNeedsAuth(ctx.account, msg);
+        await this.prisma.liScheduledAction.update({ where: { id: scheduledActionId }, data: { lastError: `Account needs attention — ${msg}` } });
+        return this.scheduler.rearm(scheduledActionId, this.scheduler.nextDeferralSlot(ctx.campaign));
+      }
       const willRetry = job.attemptsMade + 1 < (job.opts.attempts ?? 1);
       await this.prisma.liScheduledAction.update({
         where: { id: scheduledActionId },
@@ -79,6 +88,16 @@ export class LiOutreachProcessor extends WorkerHost {
       if (willRetry) throw err;
       this.logger.error(`Action ${scheduledActionId} failed permanently: ${msg}`);
     }
+  }
+
+  /** Flip a LinkedIn seat to "needs re-auth" (once) when it trips a checkpoint/disconnect. */
+  private async flagAccountNeedsAuth(account: { id: string; status: string }, reason: string) {
+    if (account.status === 'CREDENTIALS' || account.status === 'DISCONNECTED') return; // already flagged
+    await this.prisma.linkedInAccount.update({
+      where: { id: account.id },
+      data: { status: 'CREDENTIALS' },
+    }).catch(() => undefined);
+    this.logger.warn(`LinkedIn account ${account.id} flagged for re-auth: ${reason}`);
   }
 
   private async doSendConnection(actionId: string, ctx: LeadWithContext) {
@@ -414,6 +433,15 @@ export class LiOutreachProcessor extends WorkerHost {
 function isAlreadyInvited(err: unknown): boolean {
   const msg = String((err as Error)?.message ?? err ?? '');
   return /cannot_resend_yet|already[\s_-]*(invited|connected|sent)|invitation already/i.test(msg);
+}
+
+/**
+ * Whether an error means the LinkedIn SEAT is the problem (not the lead): a security
+ * checkpoint, an expired/disconnected session, or the account being rate-limited by
+ * LinkedIn. These should flag the seat for re-auth and defer leads, not burn them.
+ */
+function isAccountDown(msg: string): boolean {
+  return /checkpoint|disconnected|invalid[\s_-]*credential|credentials|re-?auth|unauthor|session[\s_-]*expired|not[\s_-]*connected|account[\s_-]*(restricted|suspended|blocked)|too[\s_-]*many[\s_-]*requests|rate[\s_-]*limit|\b401\b|\b403\b|\b429\b/i.test(msg);
 }
 
 /**
