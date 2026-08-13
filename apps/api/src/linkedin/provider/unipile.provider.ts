@@ -114,8 +114,13 @@ export class UnipileProvider implements LinkedInProvider {
     try {
       p = await client.users.getProfile({ account_id: accountId, identifier });
     } catch (err) {
-      // Surface the real cause (checkpoint, disconnected account, rate limit, member
-      // not found…) instead of the SDK's bare "Error".
+      // If the /in/ slug is itself a LinkedIn member-id (ACoAA…/ACwAA…), we can still send
+      // the invite with it directly — don't fail the whole lead just because the enrichment
+      // profile fetch didn't resolve. Otherwise surface the real cause (checkpoint /
+      // disconnected / rate limit / member not found) instead of the SDK's bare "Error".
+      if (/^AC[a-zA-Z]AA/i.test(identifier)) {
+        return { memberId: identifier, profileUrl };
+      }
       throw new Error(describeError(err));
     }
     return {

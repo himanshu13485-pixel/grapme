@@ -60,7 +60,12 @@ export function normalizeProfileUrl(url?: string | null): string | null {
   if (!url) return null;
   const m = url.match(/\/in\/([^/?#]+)/i);
   if (!m) return url.trim() || null; // non-standard URL — keep as typed (trimmed)
-  return `https://www.linkedin.com/in/${decodeURIComponent(m[1]).toLowerCase()}`;
+  const raw = decodeURIComponent(m[1]);
+  // LinkedIn internal member-id slugs (ACoAA…/ACwAA… — base64url, case-SENSITIVE) must
+  // NOT be lowercased or the profile becomes unresolvable. Only vanity slugs (which are
+  // case-insensitive) get lowercased for consistent de-dup.
+  const slug = /^AC[a-zA-Z]AA/.test(raw) ? raw : raw.toLowerCase();
+  return `https://www.linkedin.com/in/${slug}`;
 }
 
 /**
