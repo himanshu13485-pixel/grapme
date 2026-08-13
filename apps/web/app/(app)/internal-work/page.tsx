@@ -3,8 +3,12 @@
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { api, ApiError } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
 import { RichText } from '@/components/RichText';
 import { PageHeader } from '@/components/ui';
+
+type Audience = 'ALL_STAFF' | 'ALL_STAFF_SALES' | 'USER';
+const roleLabel = (r: string) => r === 'SUPER_ADMIN' ? 'Admin' : r === 'SUB_ADMIN' ? 'Sub Admin' : r === 'SALES' ? 'Salesperson' : 'Staff';
 
 interface NoteRow {
   id: string;
@@ -22,10 +26,12 @@ interface NoteRow {
   createdAt: string;
   updatedAt: string;
 }
+interface NoteMessage { id: string; userId: string; authorName: string | null; body: string; createdAt: string }
 interface NoteFull extends NoteRow {
   bodyHtml: string;
-  audience: 'ALL_STAFF' | 'USER';
+  audience: Audience;
   targetUserId: string | null;
+  messages?: NoteMessage[];
 }
 interface Staff { id: string; name: string; email: string; role: string }
 
@@ -39,17 +45,21 @@ export default function InternalWorkPage() {
 
 function InternalWorkInner() {
   const params = useSearchParams();
+  const { user } = useAuth();
+  const isSales = user?.role === 'SALES';
   const [notes, setNotes] = useState<NoteRow[]>([]);
   const [staff, setStaff] = useState<Staff[]>([]);
   const [clients, setClients] = useState<{ id: string; name: string }[]>([]);
   const [viewing, setViewing] = useState<NoteFull | null>(null);
+  const [reply, setReply] = useState('');
+  const [replyBusy, setReplyBusy] = useState(false);
 
   // composer
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editorKey, setEditorKey] = useState(0);
   const [title, setTitle] = useState('');
   const [clientId, setClientId] = useState('');
-  const [audience, setAudience] = useState<'ALL_STAFF' | 'USER'>('ALL_STAFF');
+  const [audience, setAudience] = useState<Audience>('ALL_STAFF');
   const [targetUserId, setTargetUserId] = useState('');
   const [showInApp, setShowInApp] = useState(true);
   const [sendEmail, setSendEmail] = useState(false);
@@ -67,8 +77,10 @@ function InternalWorkInner() {
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
     api.get<Staff[]>('/internal-work/staff').then(setStaff).catch(() => {});
-    api.get<{ id: string; name: string }[]>('/clients').then((cs) => setClients(cs.map((c) => ({ id: c.id, name: c.name })))).catch(() => {});
-  }, []);
+    // Salespersons only pick from their own clients; admins from all.
+    const clientsUrl = isSales ? '/sales/my/clients' : '/clients';
+    api.get<{ id: string; name: string }[]>(clientsUrl).then((cs) => setClients(cs.map((c) => ({ id: c.id, name: c.name })))).catch(() => {});
+  }, [isSales]);
 
   // Deep link from the bell: /internal-work?note=<id>
   useEffect(() => {
@@ -78,7 +90,20 @@ function InternalWorkInner() {
   }, [params]);
 
   async function view(id: string) {
+    setReply('');
     try { setViewing(await api.get<NoteFull>(`/internal-work/${id}`)); } catch { /* ignore */ }
+  }
+
+  async function sendReply() {
+    if (!viewing || !reply.trim()) return;
+    setReplyBusy(true);
+    try {
+      await api.post(`/internal-work/${viewing.id}/messages`, { body: reply.trim() });
+      setReply('');
+      setViewing(await api.get<NoteFull>(`/internal-work/${viewing.id}`));
+      load();
+    } catch (e) { alert(e instanceof ApiError ? e.message : 'Could not send'); }
+    finally { setReplyBusy(false); }
   }
 
   function resetForm() {
@@ -175,16 +200,17 @@ function InternalWorkInner() {
               <label className="label">Share with *</label>
               <select
                 className="input"
-                value={audience === 'ALL_STAFF' ? 'ALL_STAFF' : `USER:${targetUserId}`}
+                value={audience === 'USER' ? `USER:${targetUserId}` : audience}
                 onChange={(e) => {
                   const v = e.target.value;
-                  if (v === 'ALL_STAFF') { setAudience('ALL_STAFF'); setTargetUserId(''); }
+                  if (v === 'ALL_STAFF' || v === 'ALL_STAFF_SALES') { setAudience(v); setTargetUserId(''); }
                   else { setAudience('USER'); setTargetUserId(v.slice(5)); }
                 }}
               >
                 <option value="ALL_STAFF">All admins &amp; sub-admins</option>
+                <option value="ALL_STAFF_SALES">All admins, sub-admins &amp; salespersons</option>
                 {staff.map((s) => (
-                  <option key={s.id} value={`USER:${s.id}`}>{s.name || s.email} · {s.role === 'SUPER_ADMIN' ? 'Admin' : 'Sub Admin'}</option>
+                  <option key={s.id} value={`USER:${s.id}`}>{s.name || s.email} · {roleLabel(s.role)}</option>
                 ))}
               </select>
             </div>
@@ -274,7 +300,42 @@ function InternalWorkInner() {
               <span>By: <strong className="text-slate-700">{viewing.createdByName ?? '—'}</strong></span>
               <span>{new Date(viewing.postedAt ?? viewing.createdAt).toLocaleString()}</span>
             </div>
-            <div className="prose prose-sm max-w-none text-slate-700" dangerouslySetInnerHTML={{ __html: viewing.bodyHtml }} />
+            {/* Opening post */}
+            <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+              <div className="mb-1 text-xs text-slate-500"><strong className="text-slate-700">{viewing.createdByName ?? 'Author'}</strong> · {new Date(viewing.postedAt ?? viewing.createdAt).toLocaleString()}</div>
+              <div className="prose prose-sm max-w-none text-slate-700" dangerouslySetInnerHTML={{ __html: viewing.bodyHtml }} />
+            </div>
+
+            {/* Discussion thread */}
+            {viewing.status === 'POSTED' && (
+              <div className="mt-4">
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Discussion</div>
+                <div className="max-h-72 space-y-3 overflow-y-auto pr-1">
+                  {(viewing.messages ?? []).length === 0 && <div className="text-xs text-slate-400">No messages yet — start the conversation.</div>}
+                  {(viewing.messages ?? []).map((m) => {
+                    const mine = m.userId === user?.id;
+                    return (
+                      <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm ${mine ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-800'}`}>
+                          {!mine && <div className="mb-0.5 text-[11px] font-semibold text-slate-500">{m.authorName ?? 'Someone'}</div>}
+                          <div className="whitespace-pre-wrap">{m.body}</div>
+                          <div className={`mt-0.5 text-[10px] ${mine ? 'text-white/70' : 'text-slate-400'}`}>{new Date(m.createdAt).toLocaleString()}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="mt-3 flex items-end gap-2 border-t border-slate-100 pt-3">
+                  <textarea
+                    className="input flex-1" rows={2} value={reply} disabled={replyBusy}
+                    placeholder="Write a message…"
+                    onChange={(e) => setReply(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) sendReply(); }}
+                  />
+                  <button className="btn-primary" disabled={replyBusy || !reply.trim()} onClick={sendReply}>{replyBusy ? '…' : 'Send'}</button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

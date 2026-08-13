@@ -1,10 +1,13 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InternalNoteAudience, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotifyService } from '../notifications/notify.service';
 import { ActivityService } from '../common/services/activity.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { CreateInternalNoteDto } from './dto/internal-work.dto';
+
+const ADMIN_ROLES: Role[] = [Role.SUPER_ADMIN, Role.SUB_ADMIN];
+const STAFF_ROLES: Role[] = [Role.SUPER_ADMIN, Role.SUB_ADMIN, Role.SALES];
 
 /**
  * Internal Work — the agency's private board. Notes and discussion about a client
@@ -43,14 +46,14 @@ export class InternalWorkService {
   }
 
   async updateDraft(actor: AuthUser, id: string, dto: CreateInternalNoteDto) {
-    await this.assertDraft(actor.tenantId, id);
+    await this.assertDraft(actor, id);
     const data = await this.composeData(actor, dto);
     await this.prisma.internalNote.update({ where: { id }, data });
     return { id };
   }
 
   async postDraft(actor: AuthUser, id: string) {
-    await this.assertDraft(actor.tenantId, id);
+    await this.assertDraft(actor, id);
     const count = await this.deliver(actor, id);
     await this.prisma.internalNote.update({
       where: { id },
@@ -61,22 +64,31 @@ export class InternalWorkService {
   }
 
   async remove(actor: AuthUser, id: string) {
-    const n = await this.prisma.internalNote.findFirst({ where: { id, tenantId: actor.tenantId }, select: { id: true } });
+    const n = await this.prisma.internalNote.findFirst({ where: { id, tenantId: actor.tenantId }, select: { id: true, createdByUserId: true } });
     if (!n) throw new NotFoundException('Note not found');
+    // Only the author or an admin can delete a note.
+    if (n.createdByUserId !== actor.userId && !ADMIN_ROLES.includes(actor.role as Role)) {
+      throw new ForbiddenException('Only the author or an admin can delete this note');
+    }
     await this.prisma.internalNote.delete({ where: { id } });
     return { ok: true };
   }
 
   // ─────────────────────────── read ───────────────────────────
 
-  /** The board: everything posted in this workspace, plus the author's own drafts. */
+  /** The board. Admins see the whole internal board; a salesperson sees only notes
+   *  they authored or were shared with. Drafts stay private to their author. */
   list(user: AuthUser, clientId?: string) {
+    const isAdmin = ADMIN_ROLES.includes(user.role as Role);
+    // Posted notes visible to this user.
+    const postedVisible = isAdmin
+      ? { status: 'POSTED' as const }
+      : { status: 'POSTED' as const, OR: [{ createdByUserId: user.userId }, { recipients: { some: { userId: user.userId } } }] };
     return this.prisma.internalNote.findMany({
       where: {
         tenantId: user.tenantId,
         ...(clientId ? { clientId } : {}),
-        // Drafts stay private to whoever wrote them; posted notes are shared.
-        OR: [{ status: 'POSTED' }, { status: 'DRAFT', createdByUserId: user.userId }],
+        OR: [postedVisible, { status: 'DRAFT', createdByUserId: user.userId }],
       },
       orderBy: { updatedAt: 'desc' },
       take: 200,
@@ -89,17 +101,68 @@ export class InternalWorkService {
   }
 
   async getOne(user: AuthUser, id: string) {
-    const n = await this.prisma.internalNote.findFirst({ where: { id, tenantId: user.tenantId } });
+    const n = await this.prisma.internalNote.findFirst({
+      where: { id, tenantId: user.tenantId },
+      include: { messages: { orderBy: { createdAt: 'asc' } }, recipients: { select: { userId: true } } },
+    });
     if (!n) throw new NotFoundException('Note not found');
-    if (n.status === 'DRAFT' && n.createdByUserId !== user.userId) {
-      throw new NotFoundException('Note not found');
+    if (n.status === 'DRAFT' && n.createdByUserId !== user.userId) throw new NotFoundException('Note not found');
+    // Salespersons may only open notes they authored or were shared with.
+    if (!ADMIN_ROLES.includes(user.role as Role)) {
+      const isParticipant = n.createdByUserId === user.userId || n.recipients.some((r) => r.userId === user.userId);
+      if (!isParticipant) throw new NotFoundException('Note not found');
     }
     // Opening it clears the reader's unread marker.
     await this.prisma.internalNoteRecipient.updateMany({
       where: { noteId: id, userId: user.userId, readAt: null },
       data: { readAt: new Date() },
     });
-    return n;
+    const { recipients, ...rest } = n;
+    return rest;
+  }
+
+  /** Post a chat reply into a note's thread and alert the other participants. */
+  async addMessage(user: AuthUser, id: string, body: string) {
+    const n = await this.prisma.internalNote.findFirst({
+      where: { id, tenantId: user.tenantId },
+      select: { id: true, title: true, clientName: true, status: true, createdByUserId: true, showInApp: true, recipients: { select: { userId: true } } },
+    });
+    if (!n) throw new NotFoundException('Note not found');
+    if (n.status !== 'POSTED') throw new BadRequestException('Post the note before chatting on it.');
+    const participants = new Set<string>([n.createdByUserId, ...n.recipients.map((r) => r.userId)]);
+    const isAdmin = ADMIN_ROLES.includes(user.role as Role);
+    if (!isAdmin && !participants.has(user.userId)) throw new ForbiddenException('You are not part of this discussion');
+
+    const authorName = await this.prisma.user
+      .findUnique({ where: { id: user.userId }, select: { name: true, email: true } })
+      .then((u) => u?.name ?? u?.email ?? 'Someone');
+    const trimmed = body.trim();
+    const message = await this.prisma.internalNoteMessage.create({
+      data: { noteId: id, userId: user.userId, authorName, body: trimmed },
+    });
+    // An admin replying joins the thread as a participant so they keep getting alerts.
+    if (isAdmin && !participants.has(user.userId)) {
+      await this.prisma.internalNoteRecipient.create({ data: { noteId: id, userId: user.userId, readAt: new Date() } }).catch(() => undefined);
+      participants.add(user.userId);
+    }
+    await this.prisma.internalNote.update({ where: { id }, data: { updatedAt: new Date() } });
+
+    // Alert every other participant (mark their unread + bell/email per the note's setting).
+    const others = [...participants].filter((uid) => uid !== user.userId);
+    if (others.length) {
+      await this.prisma.internalNoteRecipient.updateMany({ where: { noteId: id, userId: { in: others } }, data: { readAt: null } });
+      await this.notify.notifyMany(
+        others,
+        {
+          type: 'internal-work',
+          title: n.clientName ? `${n.title} — ${n.clientName}` : n.title,
+          body: `${authorName}: ${trimmed}`.slice(0, 280),
+          link: `/internal-work?note=${id}`,
+        },
+        { inApp: n.showInApp, email: false, whatsapp: false },
+      );
+    }
+    return message;
   }
 
   async unreadCount(user: AuthUser) {
@@ -109,10 +172,10 @@ export class InternalWorkService {
     return { count };
   }
 
-  /** Admins + sub-admins, for the "share with" picker. */
+  /** Admins, sub-admins + salespersons, for the "share with" picker. */
   staff(user: AuthUser) {
     return this.prisma.user.findMany({
-      where: { tenantId: user.tenantId, role: { in: [Role.SUPER_ADMIN, Role.SUB_ADMIN] }, status: 'ACTIVE' },
+      where: { tenantId: user.tenantId, role: { in: STAFF_ROLES }, status: 'ACTIVE' },
       select: { id: true, name: true, email: true, role: true },
       orderBy: [{ role: 'asc' }, { name: 'asc' }],
     });
@@ -128,7 +191,9 @@ export class InternalWorkService {
       ? await this.prisma.client.findFirst({ where: { id: dto.clientId, tenantId: actor.tenantId }, select: { id: true, name: true } })
       : null;
     let audienceLabel = 'All admins & sub-admins';
-    if (dto.audience === 'USER') {
+    if (dto.audience === 'ALL_STAFF_SALES') {
+      audienceLabel = 'All admins, sub-admins & salespersons';
+    } else if (dto.audience === 'USER') {
       const t = dto.targetUserId
         ? await this.prisma.user.findFirst({ where: { id: dto.targetUserId, tenantId: actor.tenantId }, select: { name: true, email: true } })
         : null;
@@ -158,19 +223,21 @@ export class InternalWorkService {
     if (n.audience === 'USER') {
       if (!n.targetUserId) throw new BadRequestException('Choose who to share this with.');
       const t = await this.prisma.user.findFirst({
-        where: { id: n.targetUserId, tenantId: n.tenantId, role: { in: [Role.SUPER_ADMIN, Role.SUB_ADMIN] } },
+        where: { id: n.targetUserId, tenantId: n.tenantId, role: { in: STAFF_ROLES } },
         select: { id: true },
       });
-      if (!t) throw new BadRequestException('That person is not an admin or sub-admin.');
+      if (!t) throw new BadRequestException('That person is not a staff member.');
       userIds = [t.id];
     } else {
+      // ALL_STAFF = admins + sub-admins; ALL_STAFF_SALES also includes salespersons.
+      const roles = n.audience === 'ALL_STAFF_SALES' ? STAFF_ROLES : ADMIN_ROLES;
       const staff = await this.prisma.user.findMany({
-        where: { tenantId: n.tenantId, role: { in: [Role.SUPER_ADMIN, Role.SUB_ADMIN] }, status: 'ACTIVE' },
+        where: { tenantId: n.tenantId, role: { in: roles }, status: 'ACTIVE' },
         select: { id: true },
       });
       userIds = staff.map((s) => s.id);
     }
-    // Don't nag the author about their own note.
+    // The author is always a participant, but don't nag them about their own note.
     userIds = userIds.filter((id) => id !== actor.userId);
     if (userIds.length === 0) return 0;
 
@@ -192,10 +259,13 @@ export class InternalWorkService {
     return userIds.length;
   }
 
-  private async assertDraft(tenantId: string, id: string) {
-    const n = await this.prisma.internalNote.findFirst({ where: { id, tenantId }, select: { id: true, status: true } });
+  private async assertDraft(actor: AuthUser, id: string) {
+    const n = await this.prisma.internalNote.findFirst({ where: { id, tenantId: actor.tenantId }, select: { id: true, status: true, createdByUserId: true } });
     if (!n) throw new NotFoundException('Note not found');
     if (n.status !== 'DRAFT') throw new BadRequestException('This note was already posted.');
+    if (n.createdByUserId !== actor.userId && !ADMIN_ROLES.includes(actor.role as Role)) {
+      throw new ForbiddenException('You can only edit your own drafts');
+    }
     return n;
   }
 

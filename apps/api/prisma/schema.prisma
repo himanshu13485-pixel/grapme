@@ -1637,7 +1637,8 @@ model BroadcastRecipient {
 // (title + rich body + drafts + in-app/email), but clients NEVER see these.
 enum InternalNoteAudience {
   ALL_STAFF // every admin + sub-admin
-  USER // one specific admin / sub-admin
+  ALL_STAFF_SALES // every admin, sub-admin & salesperson
+  USER // one specific staff member (admin / sub-admin / salesperson)
 }
 
 model InternalNote {
@@ -1662,8 +1663,25 @@ model InternalNote {
 
   tenant     Tenant                  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   recipients InternalNoteRecipient[]
+  messages   InternalNoteMessage[]
 
   @@index([tenantId, createdAt])
+}
+
+// A chat message in an internal note's thread — multi-way discussion between the
+// note's participants (admins / sub-admins / salespersons). The note's bodyHtml is
+// the opening post; these are the replies.
+model InternalNoteMessage {
+  id         String   @id @default(uuid())
+  noteId     String
+  userId     String // author (a staff user)
+  authorName String? // denormalized for display
+  body       String   @db.Text
+  createdAt  DateTime @default(now())
+
+  note InternalNote @relation(fields: [noteId], references: [id], onDelete: Cascade)
+
+  @@index([noteId])
 }
 
 model InternalNoteRecipient {

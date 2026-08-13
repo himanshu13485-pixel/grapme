@@ -16,7 +16,7 @@ type NavItem = {
   admin?: boolean; superOnly?: boolean; sales?: boolean; inboxBadge?: boolean; updatesBadge?: boolean; supportBadge?: boolean; group?: 'email' | 'linkedin' | 'main';
 };
 // Pages a salesperson may reach in their restricted panel (nothing else).
-const SALES_ALLOWED = ['/sales-home', '/sales-clients', '/reporting', '/support', '/updates', '/my-profile'];
+const SALES_ALLOWED = ['/sales-home', '/sales-clients', '/reporting', '/internal-work', '/support', '/updates', '/my-profile'];
 const NAV: NavItem[] = [
   // ── Salesperson panel (only these show for role SALES) ──
   { href: '/sales-home', label: 'Dashboard', icon: '▦', sales: true, module: 'sales-home' },
