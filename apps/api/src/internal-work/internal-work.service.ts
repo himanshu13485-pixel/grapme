@@ -159,6 +159,12 @@ export class InternalWorkService {
     // Alert every other participant (mark their unread + bell/email per the note's setting).
     const others = [...participants].filter((uid) => uid !== user.userId);
     if (others.length) {
+      // Ensure everyone has a row (e.g. the author, who has no recipient row by default),
+      // then flag them all unread so the nav badge lights for them.
+      await this.prisma.internalNoteRecipient.createMany({
+        data: others.map((userId) => ({ noteId: id, userId })),
+        skipDuplicates: true,
+      });
       await this.prisma.internalNoteRecipient.updateMany({ where: { noteId: id, userId: { in: others } }, data: { readAt: null } });
       await this.notify.notifyMany(
         others,
@@ -248,12 +254,18 @@ export class InternalWorkService {
     }
     // The author is always a participant, but don't nag them about their own note.
     userIds = userIds.filter((id) => id !== actor.userId);
-    if (userIds.length === 0) return 0;
 
     await this.prisma.internalNoteRecipient.createMany({
       data: userIds.map((userId) => ({ noteId, userId })),
       skipDuplicates: true,
     });
+    // Give the author a (pre-read) row too, so a later reply can flag THEM unread
+    // (the badge fix: the author is a first-class participant, not just the sender).
+    await this.prisma.internalNoteRecipient.createMany({
+      data: [{ noteId, userId: actor.userId, readAt: new Date() }],
+      skipDuplicates: true,
+    });
+    if (userIds.length === 0) return 0;
     await this.notify.notifyMany(
       userIds,
       {
