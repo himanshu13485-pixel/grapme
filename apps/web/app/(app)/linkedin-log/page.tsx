@@ -63,6 +63,12 @@ export default function LinkedInLogPage() {
   const [fFrom, setFFrom] = useState(todayStr());
   const [fTo, setFTo] = useState(todayStr());
   const [logLead, setLogLead] = useState<{ campaignId: string; id: string; name: string } | null>(null);
+  const [corrupted, setCorrupted] = useState<{ count: number; byClient: { clientId: string; name: string; count: number }[] } | null>(null);
+
+  useEffect(() => {
+    api.get<{ count: number; byClient: { clientId: string; name: string; count: number }[] }>('/linkedin/overview/excluded-corrupted')
+      .then(setCorrupted).catch(() => {});
+  }, []);
 
   useEffect(() => {
     const t = setTimeout(() => setDq(q.trim()), 300);
@@ -93,6 +99,19 @@ export default function LinkedInLogPage() {
         title="LinkedIn Log"
         subtitle="Every scheduled connection request & follow-up across all clients — step, status, planned and actual send time. Read-only (no LinkedIn calls)."
       />
+
+      {corrupted && corrupted.count > 0 && (
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <div className="font-medium">⚠ {corrupted.count} lead{corrupted.count === 1 ? '' : 's'} auto-excluded — corrupted profile link (re-import needed)</div>
+          {corrupted.byClient.length > 0 && (
+            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-amber-700">
+              {corrupted.byClient.slice(0, 12).map((c) => (
+                <span key={c.clientId}>{c.name}: <strong>{c.count}</strong></span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <input className="input max-w-xs" placeholder="Filter by client, company, or invoice…" value={q} onChange={(e) => setQ(e.target.value)} />

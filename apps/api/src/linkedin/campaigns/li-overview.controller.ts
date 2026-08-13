@@ -63,6 +63,12 @@ export class LiOverviewController {
     return this.campaigns.leadLog(campaignId, leadId);
   }
 
+  /** How many leads were auto-excluded for corrupted profile links (need re-import). */
+  @Get('excluded-corrupted')
+  excludedCorrupted(@CurrentUser() u: AuthUser) {
+    return this.campaigns.excludedCorruptedCount(u.tenantId);
+  }
+
   /** Cross-client LinkedIn activity log (scheduled actions), defaults to today. */
   @Get('actions')
   actions(

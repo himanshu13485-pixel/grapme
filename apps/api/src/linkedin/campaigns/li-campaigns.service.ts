@@ -872,6 +872,30 @@ export class LiCampaignsService {
    * and actual send time. Read-only over our own DB — no provider calls. Defaults to
    * today's activity (by scheduled time) when no date range is given.
    */
+  /** How many leads were auto-excluded because their profile link was corrupted/unresolvable
+   *  (so they need re-importing). Distinct leads across the tenant. */
+  async excludedCorruptedCount(tenantId: string): Promise<{ count: number; byClient: { clientId: string; name: string; count: number }[] }> {
+    const rows = await this.prisma.liScheduledAction.findMany({
+      where: {
+        status: LiScheduledActionStatus.CANCELLED,
+        lastError: { contains: 'corrupted profile link' },
+        lead: { campaign: { tenantId } },
+      },
+      select: { leadId: true, lead: { select: { campaign: { select: { clientId: true } } } } },
+      distinct: ['leadId'],
+    });
+    const perClient = new Map<string, number>();
+    for (const r of rows) {
+      const cid = r.lead.campaign.clientId;
+      perClient.set(cid, (perClient.get(cid) ?? 0) + 1);
+    }
+    const cmap = await this.clientMap([...perClient.keys()]);
+    const byClient = [...perClient.entries()]
+      .map(([clientId, count]) => ({ clientId, name: cmap.get(clientId)?.name ?? 'Unknown', count }))
+      .sort((a, b) => b.count - a.count);
+    return { count: rows.length, byClient };
+  }
+
   async globalActions(tenantId: string, opts: {
     clientSearch?: string; status?: LiScheduledActionStatus; type?: LiScheduledActionType;
     step?: number; from?: string; to?: string; page?: number; pageSize?: number;
