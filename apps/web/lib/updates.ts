@@ -2,6 +2,14 @@
 
 export type UpdateType = 'WORK' | 'MEETING' | 'NOTIFICATION';
 
+/** A read receipt: someone (of those it was shared with) who has seen a message. */
+export interface SeenReceipt {
+  userId: string;
+  name: string;
+  role: string;
+  at: string;
+}
+
 export interface UpdateReply {
   id: string;
   body: string;
@@ -10,6 +18,7 @@ export interface UpdateReply {
   createdAt: string;
   attachmentName?: string | null;
   attachmentMime?: string | null;
+  seenBy?: SeenReceipt[];
 }
 
 export interface UpdateThread {
@@ -28,6 +37,7 @@ export interface UpdateThread {
   clientName?: string | null;
   attachmentName?: string | null;
   attachmentMime?: string | null;
+  seenBy?: SeenReceipt[];
   _count?: { replies: number };
 }
 

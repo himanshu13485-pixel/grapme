@@ -5,6 +5,7 @@ import { api, fetchBlob } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { PageHeader, Tabs, Pagination, EmptyState, Modal } from '@/components/ui';
 import { RichText } from '@/components/RichText';
+import { SeenBy } from '@/components/SeenBy';
 import {
   UpdateThread, UpdatesPage, UpdateType, UPDATE_TYPES,
   updateTypeMeta, authorRoleLabel, timeAgo, dateTime,
@@ -387,6 +388,7 @@ function ThreadDetail({
             dangerouslySetInnerHTML={{ __html: t.bodyHtml }}
           />
           {t.attachmentName && <AttachmentChip path={`/updates/${t.id}/attachment`} name={t.attachmentName} />}
+          <SeenBy seen={t.seenBy} />
 
           {/* Replies */}
           <div className="mt-4 space-y-3">
@@ -401,6 +403,7 @@ function ThreadDetail({
                   </div>
                   <div className="whitespace-pre-wrap text-sm text-slate-800">{r.body}</div>
                   {r.attachmentName && <AttachmentChip path={`/updates/replies/${r.id}/attachment`} name={r.attachmentName} />}
+                  <SeenBy seen={r.seenBy} />
                 </div>
               </div>
             ))}

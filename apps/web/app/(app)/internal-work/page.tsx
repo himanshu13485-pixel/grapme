@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { api, ApiError } from '@/lib/api';
 import { useAuth, useCanDelete } from '@/lib/auth';
 import { RichText } from '@/components/RichText';
+import { SeenBy, type Seen } from '@/components/SeenBy';
 import { PageHeader } from '@/components/ui';
 
 type Audience = 'ALL_STAFF' | 'ALL_STAFF_SALES' | 'USER';
@@ -26,12 +27,13 @@ interface NoteRow {
   createdAt: string;
   updatedAt: string;
 }
-interface NoteMessage { id: string; userId: string; authorName: string | null; body: string; createdAt: string }
+interface NoteMessage { id: string; userId: string; authorName: string | null; body: string; createdAt: string; seenBy?: Seen[] }
 interface NoteFull extends NoteRow {
   bodyHtml: string;
   audience: Audience;
   targetUserId: string | null;
   messages?: NoteMessage[];
+  seenBy?: Seen[];
 }
 interface Staff { id: string; name: string; email: string; role: string }
 
@@ -310,6 +312,7 @@ function InternalWorkInner() {
             <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
               <div className="mb-1 text-xs text-slate-500"><strong className="text-slate-700">{viewing.createdByName ?? 'Author'}</strong> · {new Date(viewing.postedAt ?? viewing.createdAt).toLocaleString()}</div>
               <div className="prose prose-sm max-w-none text-slate-700" dangerouslySetInnerHTML={{ __html: viewing.bodyHtml }} />
+              <SeenBy seen={viewing.seenBy} />
             </div>
 
             {/* Discussion thread */}
@@ -321,12 +324,13 @@ function InternalWorkInner() {
                   {(viewing.messages ?? []).map((m) => {
                     const mine = m.userId === user?.id;
                     return (
-                      <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+                      <div key={m.id} className={`flex flex-col ${mine ? 'items-end' : 'items-start'}`}>
                         <div className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm ${mine ? 'bg-brand-600 text-white' : 'bg-slate-100 text-slate-800'}`}>
                           {!mine && <div className="mb-0.5 text-[11px] font-semibold text-slate-500">{m.authorName ?? 'Someone'}</div>}
                           <div className="whitespace-pre-wrap">{m.body}</div>
                           <div className={`mt-0.5 text-[10px] ${mine ? 'text-white/70' : 'text-slate-400'}`}>{new Date(m.createdAt).toLocaleString()}</div>
                         </div>
+                        <div className="max-w-[80%]"><SeenBy seen={m.seenBy} align={mine ? 'right' : 'left'} /></div>
                       </div>
                     );
                   })}

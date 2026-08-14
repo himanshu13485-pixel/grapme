@@ -112,7 +112,29 @@ export class UpdatesService {
     if (!thread || thread.tenantId !== user.tenantId) throw new NotFoundException('Update not found');
     await this.assertClientAccess(user, thread.clientId);
     const client = await this.prisma.client.findUnique({ where: { id: thread.clientId }, select: { name: true } });
-    return { ...thread, clientName: client?.name ?? null };
+
+    // Record that this viewer has seen the thread (monotonic), then compute the
+    // "seen by" roster for the opening post + each reply (transparency receipts).
+    const now = new Date();
+    const me = await this.prisma.user.findUnique({ where: { id: user.userId }, select: { name: true, email: true } });
+    await this.prisma.updateThreadRead.upsert({
+      where: { threadId_userId: { threadId: id, userId: user.userId } },
+      update: { seenAt: now, userName: me?.name ?? me?.email ?? 'Someone', userRole: user.role as Role },
+      create: { threadId: id, userId: user.userId, userName: me?.name ?? me?.email ?? 'Someone', userRole: user.role as Role, seenAt: now },
+    });
+    const reads = await this.prisma.updateThreadRead.findMany({ where: { threadId: id } });
+    const seenByAt = (at: Date, authorUserId: string) =>
+      reads
+        .map((r) => ({ ...r, seenAt: r.userId === user.userId ? now : r.seenAt })) // reflect this open now
+        .filter((r) => r.userId !== authorUserId && r.seenAt >= at)
+        .map((r) => ({ userId: r.userId, name: r.userName ?? 'Someone', role: r.userRole, at: r.seenAt }));
+
+    return {
+      ...thread,
+      clientName: client?.name ?? null,
+      seenBy: seenByAt(thread.createdAt, thread.authorUserId),
+      replies: thread.replies.map((rep) => ({ ...rep, seenBy: seenByAt(rep.createdAt, rep.authorUserId) })),
+    };
   }
 
   // ── create / reply ───────────────────────────────────────────────────

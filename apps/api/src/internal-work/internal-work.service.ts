@@ -113,7 +113,10 @@ export class InternalWorkService {
   async getOne(user: AuthUser, id: string) {
     const n = await this.prisma.internalNote.findFirst({
       where: { id, tenantId: user.tenantId },
-      include: { messages: { orderBy: { createdAt: 'asc' } }, recipients: { select: { userId: true } } },
+      include: {
+        messages: { orderBy: { createdAt: 'asc' } },
+        recipients: { select: { userId: true, seenAt: true, user: { select: { name: true, email: true, role: true } } } },
+      },
     });
     if (!n) throw new NotFoundException('Note not found');
     if (n.status === 'DRAFT' && n.createdByUserId !== user.userId) throw new NotFoundException('Note not found');
@@ -122,13 +125,39 @@ export class InternalWorkService {
       const isParticipant = n.createdByUserId === user.userId || n.recipients.some((r) => r.userId === user.userId);
       if (!isParticipant) throw new NotFoundException('Note not found');
     }
-    // Opening it clears the reader's unread marker.
-    await this.prisma.internalNoteRecipient.updateMany({
-      where: { noteId: id, userId: user.userId, readAt: null },
-      data: { readAt: new Date() },
+    // Opening it clears the reader's unread marker AND advances their monotonic
+    // last-seen time (for the "seen by" receipts). Ensure the viewer has a row.
+    const now = new Date();
+    const touched = await this.prisma.internalNoteRecipient.updateMany({
+      where: { noteId: id, userId: user.userId },
+      data: { readAt: now, seenAt: now },
     });
-    const { recipients, ...rest } = n;
-    return rest;
+    if (touched.count === 0) {
+      await this.prisma.internalNoteRecipient.create({ data: { noteId: id, userId: user.userId, readAt: now, seenAt: now } }).catch(() => undefined);
+    }
+
+    // Build the reader roster (dedup by user, keep latest seen), then attach the
+    // list of who had seen each message by the time they last opened it.
+    const readers = new Map<string, { userId: string; name: string; role: Role; seenAt: Date }>();
+    for (const r of n.recipients) {
+      const seen = r.userId === user.userId ? now : r.seenAt; // reflect this open immediately
+      if (!seen) continue;
+      const prev = readers.get(r.userId);
+      if (!prev || prev.seenAt < seen) {
+        readers.set(r.userId, { userId: r.userId, name: r.user?.name ?? r.user?.email ?? 'Someone', role: r.user?.role as Role, seenAt: seen });
+      }
+    }
+    const seenByAt = (at: Date, authorUserId: string) =>
+      [...readers.values()]
+        .filter((r) => r.userId !== authorUserId && r.seenAt >= at)
+        .map((r) => ({ userId: r.userId, name: r.name, role: r.role, at: r.seenAt }));
+
+    const { recipients, messages, ...rest } = n;
+    return {
+      ...rest,
+      seenBy: seenByAt(n.createdAt, n.createdByUserId), // for the opening post
+      messages: messages.map((m) => ({ ...m, seenBy: seenByAt(m.createdAt, m.userId) })),
+    };
   }
 
   /** Post a chat reply into a note's thread and alert the other participants. */

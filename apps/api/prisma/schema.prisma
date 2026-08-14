@@ -928,10 +928,27 @@ model UpdateThread {
   updatedAt       DateTime   @updatedAt
 
   replies UpdateReply[]
+  reads   UpdateThreadRead[]
 
   @@index([tenantId, type])
   @@index([clientId])
   @@index([lastActivityAt])
+}
+
+// Per-user monotonic "last seen" for an update thread — powers the "seen by"
+// read receipts shown under each message (transparency for who has read).
+model UpdateThreadRead {
+  id       String   @id @default(uuid())
+  threadId String
+  userId   String
+  userName String? // denormalized for display
+  userRole Role
+  seenAt   DateTime @default(now())
+
+  thread UpdateThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@unique([threadId, userId])
+  @@index([threadId])
 }
 
 model UpdateReply {
@@ -1719,7 +1736,8 @@ model InternalNoteRecipient {
   id        String    @id @default(uuid())
   noteId    String
   userId    String
-  readAt    DateTime?
+  readAt    DateTime? // unread marker (reset to null on each new message)
+  seenAt    DateTime? // monotonic last-seen time, for per-message read receipts
   createdAt DateTime  @default(now())
 
   note InternalNote @relation(fields: [noteId], references: [id], onDelete: Cascade)
