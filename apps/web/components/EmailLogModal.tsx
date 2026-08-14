@@ -13,7 +13,7 @@ interface LogResp {
 
 const DOT: Record<string, string> = {
   Sent: 'bg-slate-400', Delivered: 'bg-sky-500', Opened: 'bg-emerald-500', Clicked: 'bg-brand-500',
-  Replied: 'bg-emerald-600', Bounced: 'bg-rose-500', Unsubscribed: 'bg-amber-500', 'Marked as spam': 'bg-rose-600',
+  Replied: 'bg-emerald-600', Bounced: 'bg-rose-500', Failed: 'bg-rose-500', Unsubscribed: 'bg-amber-500', 'Marked as spam': 'bg-rose-600',
 };
 
 /** Timeline of one email's activity — sent, delivered, opens, clicks, reply, bounce. */

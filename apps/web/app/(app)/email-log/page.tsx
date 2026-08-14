@@ -19,6 +19,7 @@ interface Row {
   repliedAt: string | null;
   bounced: boolean;
   forwarded: boolean;
+  reason?: string | null;
 }
 
 const PAGE_SIZE = 25;
@@ -142,9 +143,10 @@ export default function EmailLogPage() {
                     <td className="px-4 py-3 text-xs"><EventCell at={m.repliedAt} /></td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-1">
-                        {m.bounced && <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs text-rose-700">Bounced</span>}
+                        {m.bounced && <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs text-rose-700" title={m.reason ?? 'Bounced'}>Bounced</span>}
                         {m.forwarded && <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs text-violet-700" title="Opened from 2+ locations — likely forwarded">Forwarded</span>}
                         {!m.bounced && !m.forwarded && <span className="text-slate-300">—</span>}
+                        {m.reason && m.bounced && <span className="block max-w-[220px] truncate text-[11px] text-rose-500" title={m.reason}>{m.reason}</span>}
                       </div>
                     </td>
                     <td className="px-4 py-3 text-right">

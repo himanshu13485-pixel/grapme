@@ -506,7 +506,7 @@ export class InboundMailService {
       this.logger.log(`Soft/transient bounce ignored (not suppressing): ${email}`);
       return;
     }
-    await this.bounce.recordHardBounce(tenantId, email);
+    await this.bounce.recordHardBounce(tenantId, email, { reason: bounceReason(raw) });
   }
 
   /** DSN severity: true = transient (4.x.x / delayed / greylist / quota / throttle). */
@@ -518,4 +518,15 @@ export class InboundMailService {
       raw,
     );
   }
+}
+
+/** Extract a short human-readable bounce reason from a DSN body. */
+function bounceReason(raw: string): string | undefined {
+  const diag = /Diagnostic-Code:\s*(?:smtp;\s*)?([^\r\n]+)/i.exec(raw);
+  if (diag) return diag[1].trim().slice(0, 300);
+  const status = /Status:\s*(5\.\d+\.\d+)/i.exec(raw);
+  // Common human phrases if no machine code is present.
+  const phrase = /((?:550|551|552|553|554)[^\r\n]{0,160})|(user\s+unknown|mailbox\s+(?:not\s+found|unavailable|does\s+not\s+exist)|no\s+such\s+user|recipient\s+(?:address\s+)?rejected|address\s+not\s+found|relay\s+denied|access\s+denied)/i.exec(raw);
+  if (phrase) return `${status ? status[1] + ' ' : ''}${(phrase[0] ?? '').trim()}`.trim().slice(0, 300);
+  return status ? `Delivery failed (${status[1]})` : undefined;
 }

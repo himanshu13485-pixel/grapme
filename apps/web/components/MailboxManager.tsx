@@ -42,6 +42,7 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
   const [page, setPage] = useState(1);
 
   const isInbox = tab === 'inbox';
+  const isFailed = tab === 'failed';
   const PAGE_SIZE = 25;
   const pageCount = Math.max(1, Math.ceil(messages.length / PAGE_SIZE));
   const pageSafe = Math.min(page, pageCount);
@@ -86,6 +87,27 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
       if (typeof window !== 'undefined') window.dispatchEvent(new Event('inbox-read'));
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to delete');
+    }
+  }
+
+  async function resendMessage(id: string) {
+    try {
+      await api.post(`/mailbox/${id}/resend`, {});
+      setMessages((prev) => prev.filter((m) => m.id !== id)); // no longer failed
+      alert('Email resent.');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Could not resend');
+    }
+  }
+  async function resendAll() {
+    if (!confirm('Resend up to 25 failed emails now? (Bounced / suppressed addresses are skipped.)')) return;
+    try {
+      const q = clientId ? `?clientId=${clientId}` : '';
+      const r = await api.post<{ attempted: number; sent: number; skipped: number }>(`/mailbox/resend-failed${q}`, {});
+      alert(`Resent ${r.sent} of ${r.attempted}${r.skipped ? ` (${r.skipped} skipped)` : ''}.`);
+      load();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Could not resend');
     }
   }
 
@@ -158,6 +180,11 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
             {syncing ? 'Syncing…' : 'Sync now'}
           </button>
         )}
+        {isFailed && messages.some((m) => m.status === 'FAILED') && (
+          <button className="btn-primary text-xs" onClick={resendAll} title="Retry failed sends (skips bounced/suppressed)">
+            ↻ Resend all
+          </button>
+        )}
         <button
           className="btn-ghost text-xs"
           onClick={load}
@@ -195,7 +222,7 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
                 <th className="px-5 py-3">{isInbox ? 'To mailbox' : 'Campaign'}</th>
                 <th className="px-5 py-3">Status</th>
                 <th className="px-5 py-3">When</th>
-                {canDelete && <th className="px-5 py-3"></th>}
+                {(canDelete || isFailed) && <th className="px-5 py-3"></th>}
               </tr>
             </thead>
             <tbody>
@@ -223,17 +250,26 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
                     <td className="px-5 py-3 text-slate-400">
                       {new Date(m.sentAt ?? m.createdAt).toLocaleString()}
                     </td>
-                    {canDelete && (
+                    {(canDelete || isFailed) && (
                       <td className="px-5 py-3 text-right">
-                        <button
-                          className="btn-ghost text-xs text-rose-600"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            deleteMessage(m.id);
-                          }}
-                        >
-                          Delete
-                        </button>
+                        <div className="flex items-center justify-end gap-2">
+                          {isFailed && m.status === 'FAILED' && (
+                            <button
+                              className="btn-ghost text-xs text-brand-600"
+                              onClick={(e) => { e.stopPropagation(); resendMessage(m.id); }}
+                            >
+                              Resend
+                            </button>
+                          )}
+                          {canDelete && (
+                            <button
+                              className="btn-ghost text-xs text-rose-600"
+                              onClick={(e) => { e.stopPropagation(); deleteMessage(m.id); }}
+                            >
+                              Delete
+                            </button>
+                          )}
+                        </div>
                       </td>
                     )}
                   </tr>

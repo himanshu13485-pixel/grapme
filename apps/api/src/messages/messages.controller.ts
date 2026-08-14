@@ -70,6 +70,18 @@ export class MessagesController {
     return this.messages.inbox(user, clientId);
   }
 
+  /** Re-send one failed email. */
+  @Post(':id/resend')
+  resend(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.messages.resend(user, id);
+  }
+
+  /** Re-send up to 25 failed emails (scoped to a client if given). */
+  @Post('resend-failed')
+  resendFailed(@CurrentUser() user: AuthUser, @Query('clientId') clientId?: string) {
+    return this.messages.resendFailed(user, clientId);
+  }
+
   /** Delete a single message from any folder (its events cascade). */
   @Delete(':id')
   remove(@CurrentUser() user: AuthUser, @Param('id') id: string) {

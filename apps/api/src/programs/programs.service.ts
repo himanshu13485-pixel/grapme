@@ -1794,7 +1794,7 @@ export class ProgramsService {
           where: { id: message.id },
           data: { status: MessageStatus.BOUNCED, error: String(err) },
         });
-        await this.bounce.recordHardBounce(enr.tenantId, contact.email, { messageId: message.id, campaignId: null });
+        await this.bounce.recordHardBounce(enr.tenantId, contact.email, { messageId: message.id, campaignId: null, reason: String((err as Error)?.message || err) });
         this.logger.warn(`Cohort send hard-bounced ${contact.email}: ${err}`);
         return false;
       }

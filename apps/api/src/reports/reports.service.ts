@@ -85,7 +85,7 @@ export class ReportsService {
     const rows = await this.prisma.emailMessage.findMany({
       where, orderBy: { sentAt: 'desc' }, skip: (page - 1) * pageSize, take: pageSize,
       select: {
-        id: true, subject: true, status: true, sentAt: true, cohortId: true,
+        id: true, subject: true, status: true, sentAt: true, cohortId: true, error: true,
         contact: { select: { email: true, firstName: true, lastName: true, company: true } },
         campaign: { select: { name: true, clientId: true } },
         events: { select: { eventType: true, occurredAt: true, meta: true } },
@@ -123,6 +123,8 @@ export class ReportsService {
         repliedAt: firstOf(EventType.REPLY),
         bounced: m.status === MessageStatus.BOUNCED || m.events.some((e) => e.eventType === EventType.BOUNCE),
         forwarded: openIps.size >= 2,
+        // Bounce/fail reason, from the BOUNCE event meta or the message error.
+        reason: ((m.events.find((e) => e.eventType === EventType.BOUNCE)?.meta as { reason?: string } | null)?.reason) ?? m.error ?? null,
       };
     });
     return { items, total, page, pageSize };
@@ -133,26 +135,35 @@ export class ReportsService {
     const m = await this.prisma.emailMessage.findUnique({
       where: { id: messageId },
       select: {
-        id: true, subject: true, status: true, sentAt: true,
+        id: true, subject: true, status: true, sentAt: true, createdAt: true, error: true,
         contact: { select: { email: true, firstName: true, lastName: true } },
         events: { orderBy: { occurredAt: 'asc' }, select: { eventType: true, occurredAt: true, meta: true } },
       },
     });
-    if (!m) return { subject: null, contact: null, status: null, entries: [] };
+    if (!m) return { subject: null, contact: null, status: null, error: null, entries: [] };
     const LABEL: Record<string, string> = {
       DELIVERED: 'Delivered', OPEN: 'Opened', CLICK: 'Clicked', REPLY: 'Replied',
       BOUNCE: 'Bounced', UNSUBSCRIBE: 'Unsubscribed', COMPLAINT: 'Marked as spam', SENT: 'Sent',
     };
     const entries: { label: string; at: Date; detail: string | null }[] = [];
     if (m.sentAt) entries.push({ label: 'Sent', at: m.sentAt, detail: null });
+    let sawBounce = false;
     for (const e of m.events) {
       if (e.eventType === EventType.SENT) continue; // sentAt already covers this
-      const meta = e.meta as { url?: string } | null;
-      entries.push({ label: LABEL[e.eventType] ?? e.eventType, at: e.occurredAt, detail: e.eventType === EventType.CLICK ? meta?.url ?? null : null });
+      const meta = e.meta as { url?: string; reason?: string } | null;
+      const detail = e.eventType === EventType.CLICK ? meta?.url ?? null
+        : e.eventType === EventType.BOUNCE ? (meta?.reason ?? m.error ?? null)
+        : null;
+      if (e.eventType === EventType.BOUNCE) sawBounce = true;
+      entries.push({ label: LABEL[e.eventType] ?? e.eventType, at: e.occurredAt, detail });
+    }
+    // A FAILED (SMTP-rejected, never delivered) message has an error but no bounce event.
+    if (!sawBounce && m.status === MessageStatus.FAILED && m.error) {
+      entries.push({ label: 'Failed', at: m.sentAt ?? m.createdAt, detail: m.error });
     }
     entries.sort((a, b) => +new Date(a.at) - +new Date(b.at));
     const name = [m.contact?.firstName, m.contact?.lastName].filter(Boolean).join(' ').trim();
-    return { subject: m.subject, contact: m.contact ? { name: name || m.contact.email, email: m.contact.email } : null, status: m.status, entries };
+    return { subject: m.subject, contact: m.contact ? { name: name || m.contact.email, email: m.contact.email } : null, status: m.status, error: m.error, entries };
   }
 
   /**

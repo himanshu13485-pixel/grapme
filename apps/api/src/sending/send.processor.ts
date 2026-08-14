@@ -194,7 +194,7 @@ export class SendProcessor extends WorkerHost {
           where: { id: message.id },
           data: { status: MessageStatus.BOUNCED, error: String(err) },
         });
-        await this.bounce.recordHardBounce(campaign.tenantId, contact.email, { messageId: message.id, campaignId });
+        await this.bounce.recordHardBounce(campaign.tenantId, contact.email, { messageId: message.id, campaignId, reason: String((err as Error)?.message || err) });
         return; // don't retry a permanent failure
       }
       await this.prisma.emailMessage.update({

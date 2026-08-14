@@ -47,8 +47,9 @@ export class BounceService {
   async recordHardBounce(
     tenantId: string,
     email: string,
-    opts?: { messageId?: string; campaignId?: string | null },
+    opts?: { messageId?: string; campaignId?: string | null; reason?: string },
   ): Promise<void> {
+    const reason = opts?.reason?.trim().slice(0, 500) || undefined;
     const addr = (email ?? '').trim();
     if (!addr) return;
     await this.prisma.suppression.upsert({
@@ -82,14 +83,14 @@ export class BounceService {
     }
     if (messageId) {
       await this.prisma.emailMessage
-        .update({ where: { id: messageId }, data: { status: MessageStatus.BOUNCED } })
+        .update({ where: { id: messageId }, data: { status: MessageStatus.BOUNCED, ...(reason ? { error: reason } : {}) } })
         .catch(() => undefined);
       const exists = await this.prisma.emailEvent.findFirst({
         where: { messageId, eventType: EventType.BOUNCE },
       });
       if (!exists) {
         await this.prisma.emailEvent.create({
-          data: { messageId, campaignId, eventType: EventType.BOUNCE },
+          data: { messageId, campaignId, eventType: EventType.BOUNCE, meta: reason ? { reason } : {} },
         });
       }
     }
