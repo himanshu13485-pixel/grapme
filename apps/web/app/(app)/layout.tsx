@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { api, hasStashedAdmin, restoreAdminSession } from '@/lib/api';
+import { NotificationBell } from '@/components/NotificationBell';
 
 // `superOnly` items are hidden from sub-admins entirely. All other items are
 // gated for sub-admins by their accessModules (unless fullAccess). `module` is
@@ -348,6 +349,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
     return (
       <div className="flex min-h-screen">
+        <NotificationBell />
         {sidebarOpen && (
           <div
             className="fixed inset-0 z-30 bg-black/50 md:hidden"
@@ -566,6 +568,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen">
+      <NotificationBell />
       {/* Mobile drawer backdrop */}
       {sidebarOpen && (
         <div

@@ -14,6 +14,7 @@ interface Client {
   id: string;
   name: string;
   invoiceNo?: string;
+  invoiceDate?: string | null;
   contactPerson?: string;
   email?: string;
   mobile?: string;
@@ -67,7 +68,7 @@ export default function ClientsPage() {
   const [channelFilter, setChannelFilter] = useState('ALL');
   const [salesFilter, setSalesFilter] = useState('ALL'); // ALL | none | <salespersonId>
   const [salesPersons, setSalesPersons] = useState<{ id: string; name: string }[]>([]);
-  const [dateField, setDateField] = useState<'expiry' | 'created'>('expiry');
+  const [dateField, setDateField] = useState<'expiry' | 'created' | 'invoice'>('expiry');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [page, setPage] = useState(1);
@@ -113,10 +114,10 @@ export default function ClientsPage() {
     if (planFilter !== 'ALL') params.set('plan', planFilter);
     if (channelFilter !== 'ALL') params.set('channel', channelFilter);
     if (salesFilter !== 'ALL') params.set('salesPersonId', salesFilter);
-    // Date range applies to either the subscription expiry or the created date.
+    // Date range applies to the subscription expiry, created, or invoice date.
     if (!isClient && (dateFrom || dateTo)) {
-      const fromKey = dateField === 'created' ? 'createdFrom' : 'expiryFrom';
-      const toKey = dateField === 'created' ? 'createdTo' : 'expiryTo';
+      const fromKey = dateField === 'created' ? 'createdFrom' : dateField === 'invoice' ? 'invoiceFrom' : 'expiryFrom';
+      const toKey = dateField === 'created' ? 'createdTo' : dateField === 'invoice' ? 'invoiceTo' : 'expiryTo';
       if (dateFrom) params.set(fromKey, dateFrom);
       if (dateTo) params.set(toKey, dateTo);
     }
@@ -313,11 +314,12 @@ export default function ClientsPage() {
               <select
                 className="input w-[7.5rem]"
                 value={dateField}
-                onChange={(e) => setDateField(e.target.value as 'expiry' | 'created')}
+                onChange={(e) => setDateField(e.target.value as 'expiry' | 'created' | 'invoice')}
                 title="Which date to search by"
               >
                 <option value="expiry">Expiry date</option>
                 <option value="created">Created date</option>
+                <option value="invoice">Invoice date</option>
               </select>
               <input
                 type="date"
@@ -382,6 +384,7 @@ export default function ClientsPage() {
               <div className="mt-1 text-xs text-slate-400">
                 {c.plan}
                 {c.invoiceNo && <span> · Invoice {c.invoiceNo}</span>}
+                {c.invoiceDate && <span> · {new Date(c.invoiceDate).toLocaleDateString()}</span>}
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 <span className="inline-flex items-center rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-700">
@@ -579,6 +582,7 @@ function ClientDetailView({ client }: { client: Client }) {
   const clientRows: DetailRow[] = [
     { label: 'Company name', value: client.name },
     { label: 'Invoice no.', value: client.invoiceNo || '—' },
+    { label: 'Invoice date', value: client.invoiceDate ? new Date(client.invoiceDate).toLocaleDateString() : '—' },
     { label: 'Contact person', value: client.contactPerson || '—' },
     { label: 'Contact email', value: client.email || '—' },
     { label: 'Login email', value: client.owner?.email ? `${client.owner.email}${client.owner.emailVerified === false ? ' · unverified' : ''}${client.owner.pendingEmail ? ` · change to ${client.owner.pendingEmail} pending confirmation` : ''}` : '— (no portal login)' },
@@ -696,6 +700,7 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
   const [form, setForm] = useState({
     name: isClient ? user?.companyName ?? '' : '',
     invoiceNo: '',
+    invoiceDate: '',
     contactPerson: isClient ? user?.name ?? '' : '',
     email: isClient ? user?.email ?? '' : '',
     mobile: isClient ? user?.contactMobile ?? '' : '',
@@ -747,6 +752,7 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
       const created = await api.post<{ id: string }>('/clients', {
         ...clientForm,
         invoiceNo: form.invoiceNo || undefined,
+        invoiceDate: form.invoiceDate || undefined,
         contactPerson: form.contactPerson || undefined,
         email: form.email || undefined,
         mobile: form.mobile || undefined,
@@ -846,6 +852,15 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
             value={form.invoiceNo}
             onChange={(e) => setForm({ ...form, invoiceNo: e.target.value })}
             placeholder="e.g. INV-2026-014"
+          />
+        </div>
+        <div>
+          <label className="label">Invoice date</label>
+          <input
+            type="date"
+            className="input"
+            value={form.invoiceDate}
+            onChange={(e) => setForm({ ...form, invoiceDate: e.target.value })}
           />
         </div>
         <div>
@@ -994,6 +1009,7 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
   const [form, setForm] = useState({
     name: client.name,
     invoiceNo: client.invoiceNo ?? '',
+    invoiceDate: client.invoiceDate ? String(client.invoiceDate).slice(0, 10) : '',
     contactPerson: client.contactPerson ?? '',
     email: client.email ?? '',
     mobile: client.mobile ?? '',
@@ -1193,6 +1209,7 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
       await api.patch(`/clients/${client.id}`, {
         name: form.name,
         invoiceNo: form.invoiceNo || undefined,
+        invoiceDate: form.invoiceDate, // '' clears it, yyyy-mm-dd sets it
         contactPerson: form.contactPerson || undefined,
         email: form.email || undefined,
         mobile: form.mobile || undefined,
@@ -1330,6 +1347,11 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
             <label className="label">Invoice no.</label>
             <input className="input" value={form.invoiceNo}
               onChange={(e) => setForm({ ...form, invoiceNo: e.target.value })} />
+          </div>
+          <div>
+            <label className="label">Invoice date</label>
+            <input type="date" className="input" value={form.invoiceDate}
+              onChange={(e) => setForm({ ...form, invoiceDate: e.target.value })} />
           </div>
           <div>
             <label className="label">Contact person</label>

@@ -242,6 +242,7 @@ export class SalesService {
       select: {
         ...CLIENT_CARD_SELECT,
         invoiceNo: true,
+        invoiceDate: true,
         dailyBatchSize: true,
         followUpCount: true,
         monthlyQuota: true,

@@ -160,7 +160,8 @@ export class ProgramsService {
       ownerData.ownerUserId = user.userId;
     }
     // `linkedin` is the client's self-service send-window request — not a Client column.
-    const { linkedin, validityDays, ...clientData } = dto;
+    const { linkedin, validityDays, invoiceDate, ...clientData } = dto;
+    const invoiceDateData = invoiceDate !== undefined ? { invoiceDate: invoiceDate ? new Date(invoiceDate) : null } : {};
     // Setting a validity window starts the clock now (mirrors the Validity menu).
     const validity: { validityDays?: number | null; validityStartAt?: Date | null } =
       validityDays === undefined ? {}
@@ -174,7 +175,7 @@ export class ProgramsService {
       clientData.linkedInEnabled = false;
     }
     const client = await this.prisma.client.create({
-      data: { tenantId: user.tenantId, ...clientData, ...validity, ...ownerData },
+      data: { tenantId: user.tenantId, ...clientData, ...validity, ...invoiceDateData, ...ownerData },
     });
 
     // Seed the subscription history if the client starts with a validity window.
@@ -374,6 +375,8 @@ export class ProgramsService {
       expiryTo?: string;
       createdFrom?: string;
       createdTo?: string;
+      invoiceFrom?: string;
+      invoiceTo?: string;
     },
   ) {
     const page = Math.max(1, parseInt(query.page ?? '1', 10) || 1);
@@ -421,6 +424,8 @@ export class ProgramsService {
     if (expiryRange) and.push({ validityEndAt: { not: null, ...expiryRange } });
     const createdRange = dateRange(query.createdFrom, query.createdTo);
     if (createdRange) and.push({ createdAt: createdRange });
+    const invoiceRange = dateRange(query.invoiceFrom, query.invoiceTo);
+    if (invoiceRange) and.push({ invoiceDate: { not: null, ...invoiceRange } });
 
     if (query.plan) and.push({ plan: query.plan });
     if (query.salesPersonId) {
@@ -617,8 +622,9 @@ export class ProgramsService {
   async updateClient(user: AuthUser, id: string, dto: UpdateClientDto) {
     const before = await this.assertClient(user, id);
     // Validity is stored with a start date; changing the window (re)starts the clock.
-    const { validityDays, operationContacts, ...rest } = dto;
+    const { validityDays, operationContacts, invoiceDate, ...rest } = dto;
     const data: Prisma.ClientUpdateInput = { ...rest };
+    if (invoiceDate !== undefined) data.invoiceDate = invoiceDate ? new Date(invoiceDate) : null;
     if (operationContacts !== undefined) {
       // Persist as a plain JSON array of { name, email }.
       data.operationContacts = operationContacts.map((o) => ({ name: o.name ?? '', email: o.email })) as Prisma.InputJsonValue;

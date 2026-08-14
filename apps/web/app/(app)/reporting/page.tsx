@@ -12,7 +12,7 @@ type Status = 'NOT_STARTED' | 'STARTED' | 'FINISHED';
 interface Progress { total: number; finished: number; started: number; percent: number }
 interface MonthCell { i: number; status: Status }
 interface ClientRow {
-  id: string; name: string; invoiceNo?: string | null; plan: string; status: string;
+  id: string; name: string; invoiceNo?: string | null; invoiceDate?: string | null; plan: string; status: string;
   emailEnabled: boolean; linkedInEnabled: boolean;
   salesPerson?: { id: string; name: string } | null;
   progress: Progress;
@@ -97,7 +97,7 @@ export default function ReportingPage() {
                 <div className="min-w-0">
                   <div className="truncate font-medium text-slate-800">{c.name}</div>
                   <div className="mt-0.5 text-xs text-slate-400">
-                    {c.plan}{c.invoiceNo ? ` · Invoice ${c.invoiceNo}` : ''}
+                    {c.plan}{c.invoiceNo ? ` · Invoice ${c.invoiceNo}` : ''}{c.invoiceDate ? ` · ${new Date(c.invoiceDate).toLocaleDateString()}` : ''}
                     {c.salesPerson ? ` · 🧑‍💼 ${c.salesPerson.name}` : ''}
                   </div>
                 </div>

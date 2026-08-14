@@ -30,6 +30,7 @@ export class LiClientSendWindowDto {
 export class CreateClientDto {
   @IsString() name: string;
   @IsOptional() @IsString() invoiceNo?: string;
+  @IsOptional() @IsString() invoiceDate?: string; // ISO date (yyyy-mm-dd) or empty
   @IsOptional() @IsString() contactPerson?: string;
   @IsOptional() @IsString() email?: string;
   @IsOptional() @IsString() mobile?: string;
@@ -64,6 +65,7 @@ export class UpdateClientDto {
   @IsOptional() @IsString() name?: string;
   @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => OperationContactDto) operationContacts?: OperationContactDto[];
   @IsOptional() @IsString() invoiceNo?: string;
+  @IsOptional() @IsString() invoiceDate?: string; // ISO date (yyyy-mm-dd) or empty
   @IsOptional() @IsString() contactPerson?: string;
   @IsOptional() @IsString() email?: string;
   @IsOptional() @IsString() mobile?: string;

@@ -434,7 +434,7 @@ export class ReportingService {
       where,
       orderBy: { createdAt: 'desc' },
       select: {
-        id: true, name: true, invoiceNo: true, plan: true, status: true,
+        id: true, name: true, invoiceNo: true, invoiceDate: true, plan: true, status: true,
         emailEnabled: true, linkedInEnabled: true,
         salesPerson: { select: { id: true, name: true } },
       },

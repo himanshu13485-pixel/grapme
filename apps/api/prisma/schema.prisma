@@ -935,6 +935,7 @@ model Client {
   tenantId                String
   name                    String
   invoiceNo               String? // company invoice / account reference
+  invoiceDate             DateTime? // date on the invoice (for filtering / reporting)
   contactPerson           String? // client-side point of contact (name)
   email                   String? // client contact email — also the report recipient
   ownerUserId             String? // client-portal login that owns this profile

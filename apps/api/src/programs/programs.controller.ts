@@ -62,6 +62,8 @@ export class ProgramsController {
     @Query('expiryTo') expiryTo?: string,
     @Query('createdFrom') createdFrom?: string,
     @Query('createdTo') createdTo?: string,
+    @Query('invoiceFrom') invoiceFrom?: string,
+    @Query('invoiceTo') invoiceTo?: string,
   ) {
     return this.programs.listClientsPaged(user, {
       page,
@@ -78,6 +80,8 @@ export class ProgramsController {
       expiryTo,
       createdFrom,
       createdTo,
+      invoiceFrom,
+      invoiceTo,
     });
   }
 

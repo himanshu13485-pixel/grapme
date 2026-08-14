@@ -14,6 +14,7 @@ interface Client {
   status: string;
   plan: string;
   invoiceNo: string | null;
+  invoiceDate?: string | null;
   emailEnabled: boolean;
   linkedInEnabled: boolean;
   validityEndAt: string | null;
@@ -96,6 +97,7 @@ export default function SalesClientsPage() {
                 <div className="mt-1 text-xs text-slate-400">
                   {c.plan}
                   {c.invoiceNo && <span> · Invoice {c.invoiceNo}</span>}
+                  {c.invoiceDate && <span> · {new Date(c.invoiceDate).toLocaleDateString()}</span>}
                 </div>
                 <div className="mt-2">
                   <span className="inline-flex items-center rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-700">
