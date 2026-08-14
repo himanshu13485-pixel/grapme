@@ -1,9 +1,10 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ApprovalEntity } from '@prisma/client';
+import { ApprovalEntity, ImportStatus } from '@prisma/client';
 import { createHash } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApprovalsService } from '../approvals/approvals.service';
@@ -231,6 +232,25 @@ export class ContactsService {
         select: { clientId: true },
       });
       clientId = list?.clientId ?? null;
+    }
+
+    // Guard against accidental double-submits (clicking Import 2–3 times): if the
+    // same file (same name + row count) for the same list/client is already
+    // awaiting approval, don't stage another copy.
+    const dupePending = await this.prisma.importJob.findFirst({
+      where: {
+        tenantId: user.tenantId,
+        userId: user.userId,
+        status: ImportStatus.PENDING,
+        filename: dto.filename,
+        totalRows: dto.rows.length,
+        listId: dto.listId ?? null,
+        clientId,
+      },
+      select: { id: true },
+    });
+    if (dupePending) {
+      throw new ConflictException('This list is already pending approval — no need to submit it again.');
     }
 
     const job = await this.prisma.importJob.create({

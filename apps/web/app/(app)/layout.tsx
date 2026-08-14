@@ -311,7 +311,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     if (user.role === 'SUPER_ADMIN') return true;
     if (user.role === 'SUB_ADMIN') {
       if (n.superOnly) return false; // e.g. managing other sub-admins
-      if (n.href === '/my-profile') return false; // no account page for sub-admins
+      if (n.href === '/my-profile') return true; // own account: WhatsApp/notify prefs
       if (n.href === '/dashboard') return true; // always available
       if (user.fullAccess) return true;
       return (user.accessModules ?? []).includes(n.module);

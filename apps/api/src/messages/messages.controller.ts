@@ -1,6 +1,7 @@
 import { Role as SalesGateRole } from '@prisma/client';
 import { Roles as SalesGateRoles } from '../common/decorators/roles.decorator';
 import {
+  Body,
   Controller,
   Delete,
   Get,
@@ -80,6 +81,12 @@ export class MessagesController {
   @Post('resend-failed')
   resendFailed(@CurrentUser() user: AuthUser, @Query('clientId') clientId?: string) {
     return this.messages.resendFailed(user, clientId);
+  }
+
+  /** Bulk-delete selected messages (super admin only). */
+  @Post('bulk-delete')
+  removeMany(@CurrentUser() user: AuthUser, @Body() body: { ids?: string[] }) {
+    return this.messages.removeMany(user, body.ids ?? []);
   }
 
   /** Delete a single message from any folder (its events cascade). */

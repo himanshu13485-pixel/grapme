@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
-import { useCanDelete } from '@/lib/auth';
+import { useAuth, useCanDelete } from '@/lib/auth';
 import { PageHeader, EmptyState } from '@/components/ui';
 
 interface Message {
@@ -38,6 +38,9 @@ type TabKey = (typeof TABS)[number]['key'];
  *  client's mail (its mailboxes + contacts) is shown. */
 export function MailboxManager({ clientId }: { clientId?: string }) {
   const canDelete = useCanDelete();
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === 'SUPER_ADMIN'; // bulk delete is super-admin only
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [tab, setTab] = useState<TabKey>('inbox');
   const [messages, setMessages] = useState<Message[]>([]);
   const [open, setOpen] = useState<string | null>(null);
@@ -93,9 +96,41 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
   }
   useEffect(() => {
     setPage(1);
+    setSelected(new Set());
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, clientId, mailboxFilter]);
+
+  function toggleSelect(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  const allOnPageSelected = paged.length > 0 && paged.every((m) => selected.has(m.id));
+  function toggleSelectPage() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allOnPageSelected) paged.forEach((m) => next.delete(m.id));
+      else paged.forEach((m) => next.add(m.id));
+      return next;
+    });
+  }
+  async function bulkDelete() {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    if (!confirm(`Permanently delete ${ids.length} selected message${ids.length === 1 ? '' : 's'}?`)) return;
+    try {
+      await api.post('/mailbox/bulk-delete', { ids });
+      setMessages((prev) => prev.filter((m) => !selected.has(m.id)));
+      setSelected(new Set());
+      if (typeof window !== 'undefined') window.dispatchEvent(new Event('inbox-read'));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Bulk delete failed');
+    }
+  }
 
   async function deleteMessage(id: string) {
     if (!confirm('Delete this message permanently?')) return;
@@ -187,6 +222,15 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
         ))}
       </div>
       <div className="flex items-center gap-3">
+        {isSuperAdmin && selected.size > 0 && (
+          <button
+            className="btn-ghost text-xs text-rose-600"
+            onClick={bulkDelete}
+            title="Permanently delete the selected messages"
+          >
+            🗑 Delete selected ({selected.size})
+          </button>
+        )}
         {mailboxes.length > 1 && (
           <select
             value={mailboxFilter}
@@ -256,6 +300,17 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase text-slate-400">
               <tr>
+                {isSuperAdmin && (
+                  <th className="px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={allOnPageSelected}
+                      onChange={toggleSelectPage}
+                      title="Select all on this page"
+                      aria-label="Select all on this page"
+                    />
+                  </th>
+                )}
                 <th className="px-5 py-3">{isInbox ? 'From' : 'Contact'}</th>
                 <th className="px-5 py-3">Subject</th>
                 <th className="px-5 py-3">{isInbox ? 'To mailbox' : 'Campaign'}</th>
@@ -271,6 +326,16 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
                     className={`border-t border-slate-100 ${isInbox ? 'cursor-pointer hover:bg-slate-50' : ''}`}
                     onClick={() => isInbox && setOpen(open === m.id ? null : m.id)}
                   >
+                    {isSuperAdmin && (
+                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={selected.has(m.id)}
+                          onChange={() => toggleSelect(m.id)}
+                          aria-label="Select message"
+                        />
+                      </td>
+                    )}
                     <td className="px-5 py-3 font-medium">
                       {isInbox
                         ? (m.fromAddress ?? m.contact?.email ?? '—')
@@ -314,7 +379,7 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
                   </tr>
                   {isInbox && open === m.id && (
                     <tr className="bg-slate-50">
-                      <td colSpan={canDelete ? 6 : 5} className="px-6 py-4">
+                      <td colSpan={(canDelete || isFailed ? 6 : 5) + (isSuperAdmin ? 1 : 0)} className="px-6 py-4">
                         <div className="mb-2 text-xs text-slate-400">
                           From {m.fromAddress ?? '—'} · received{' '}
                           {new Date(m.createdAt).toLocaleString()}

@@ -133,13 +133,15 @@ export function useAuth() {
 }
 
 /** Whether the signed-in user may use delete actions. Super admins always can;
- *  sub-admins only if granted (full access or the canDelete flag). */
+ *  sub-admins ONLY when explicitly granted the delete right — "Full access"
+ *  (which controls section visibility) does not by itself allow deleting. */
 export function useCanDelete(): boolean {
   const { user } = useAuth();
   if (!user) return false;
   if (user.role === 'SUPER_ADMIN') return true;
-  if (user.role === 'SUB_ADMIN') return !!(user.fullAccess || user.canDelete);
+  if (user.role === 'SUB_ADMIN') return !!user.canDelete;
   if (user.role === 'CLIENT') return false; // deletes go through admin
+  if (user.role === 'SALES') return false; // salespeople never delete
   return true;
 }
 

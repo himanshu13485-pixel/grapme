@@ -73,12 +73,13 @@ export class InternalWorkService {
     return { ok: true };
   }
 
-  /** Delete access: super admins always; sub-admins only with full access or the delete flag. */
+  /** Delete access: super admins always; sub-admins only with the explicit
+   *  delete flag ("Full access" alone does not grant deletion). */
   private async assertCanDelete(user: AuthUser) {
     if (user.role === Role.SUPER_ADMIN) return;
     if (user.role === Role.SUB_ADMIN) {
-      const u = await this.prisma.user.findUnique({ where: { id: user.userId }, select: { fullAccess: true, canDelete: true } });
-      if (u?.fullAccess || u?.canDelete) return;
+      const u = await this.prisma.user.findUnique({ where: { id: user.userId }, select: { canDelete: true } });
+      if (u?.canDelete) return;
     }
     throw new ForbiddenException('You do not have delete access');
   }

@@ -68,6 +68,7 @@ export class ApprovalsService {
         }),
       ]);
       const submitterIds = [
+        reviewer.userId, // their own submissions (e.g. a contact import they staged)
         ...rows.map((r) => r.assignedUserId!),
         ...clientUsers.map((u) => u.id),
       ];

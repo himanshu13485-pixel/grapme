@@ -146,6 +146,20 @@ export class MessagesService {
     return { ok: true, pendingApproval: true };
   }
 
+  /** Bulk hard-delete messages (super-admin only; used by the Inbox/Sent bulk
+   *  selection). Scoped to the tenant; ignores ids that don't belong to it. */
+  async removeMany(user: AuthUser, ids: string[]) {
+    if (user.role !== Role.SUPER_ADMIN) {
+      throw new BadRequestException('Only a super admin can bulk-delete messages.');
+    }
+    const clean = [...new Set((ids ?? []).filter(Boolean))];
+    if (clean.length === 0) return { deleted: 0 };
+    const res = await this.prisma.emailMessage.deleteMany({
+      where: { id: { in: clean }, tenantId: user.tenantId },
+    });
+    return { deleted: res.count };
+  }
+
   /** Re-send one FAILED email now (instant, for the per-row button). */
   async resend(user: AuthUser, id: string): Promise<{ ok: boolean }> {
     const m = await this.loadResendable(id, user.tenantId);
