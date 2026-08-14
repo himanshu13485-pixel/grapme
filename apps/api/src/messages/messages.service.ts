@@ -23,7 +23,7 @@ export class MessagesService {
     @Optional() @InjectQueue(QUEUE_SEND) private sendQueue?: Queue,
   ) {}
 
-  private base(user: AuthUser, where: object, clientId?: string) {
+  private base(user: AuthUser, where: object, clientId?: string, mailboxId?: string) {
     // Scope to one client = messages either sent through one of its mailboxes
     // or addressed to/from one of its contacts.
     const clientScope = clientId
@@ -34,27 +34,32 @@ export class MessagesService {
           ],
         }
       : {};
+    // Optional single-mailbox filter — the shared inbox aggregates every
+    // registered address, so this narrows the view to one mailbox (matched on
+    // whichever mailbox sent/received the message).
+    const mailboxScope = mailboxId ? { emailAccountId: mailboxId } : {};
     return this.prisma.emailMessage.findMany({
-      where: { tenantId: user.tenantId, ...clientScope, ...where },
+      where: { tenantId: user.tenantId, ...clientScope, ...mailboxScope, ...where },
       orderBy: { createdAt: 'desc' },
       take: 200,
       include: {
         contact: { select: { email: true } },
         campaign: { select: { name: true } },
-        emailAccount: { select: { emailAddress: true, label: true } },
+        emailAccount: { select: { id: true, emailAddress: true, label: true } },
       },
     });
   }
 
-  sent(user: AuthUser, clientId?: string) {
+  sent(user: AuthUser, clientId?: string, mailboxId?: string) {
     return this.base(
       user,
       { direction: MessageDirection.OUTBOUND, status: MessageStatus.SENT },
       clientId,
+      mailboxId,
     );
   }
 
-  failed(user: AuthUser, clientId?: string) {
+  failed(user: AuthUser, clientId?: string, mailboxId?: string) {
     return this.base(
       user,
       {
@@ -62,22 +67,25 @@ export class MessagesService {
         status: { in: [MessageStatus.FAILED, MessageStatus.BOUNCED] },
       },
       clientId,
+      mailboxId,
     );
   }
 
-  scheduled(user: AuthUser, clientId?: string) {
+  scheduled(user: AuthUser, clientId?: string, mailboxId?: string) {
     return this.base(
       user,
       { direction: MessageDirection.OUTBOUND, status: MessageStatus.QUEUED },
       clientId,
+      mailboxId,
     );
   }
 
-  drafts(user: AuthUser, clientId?: string) {
+  drafts(user: AuthUser, clientId?: string, mailboxId?: string) {
     return this.base(
       user,
       { direction: MessageDirection.OUTBOUND, status: MessageStatus.DRAFT },
       clientId,
+      mailboxId,
     );
   }
 
@@ -213,11 +221,12 @@ export class MessagesService {
     }
   }
 
-  async inbox(user: AuthUser, clientId?: string) {
+  async inbox(user: AuthUser, clientId?: string, mailboxId?: string) {
     const rows = await this.base(
       user,
       { direction: MessageDirection.INBOUND },
       clientId,
+      mailboxId,
     );
     // Newest-received first, by the real email date (sentAt) when we captured
     // it, else by when we stored it.

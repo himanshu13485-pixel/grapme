@@ -15,7 +15,13 @@ interface Message {
   fromAddress?: string;
   contact?: { email: string };
   campaign?: { name: string };
-  emailAccount?: { emailAddress: string; label?: string };
+  emailAccount?: { id?: string; emailAddress: string; label?: string };
+}
+
+interface MailboxOption {
+  id: string;
+  emailAddress: string;
+  label?: string;
 }
 
 const TABS = [
@@ -40,6 +46,8 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [syncNote, setSyncNote] = useState('');
   const [page, setPage] = useState(1);
+  const [mailboxes, setMailboxes] = useState<MailboxOption[]>([]);
+  const [mailboxFilter, setMailboxFilter] = useState(''); // '' = all registered mailboxes
 
   const isInbox = tab === 'inbox';
   const isFailed = tab === 'failed';
@@ -48,15 +56,31 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
   const pageSafe = Math.min(page, pageCount);
   const paged = messages.slice((pageSafe - 1) * PAGE_SIZE, pageSafe * PAGE_SIZE);
 
+  // clientId scope (used by sync / mark-read); the list also adds the mailbox filter.
+  const scopeQ = clientId ? `?clientId=${clientId}` : '';
+
+  // Populate the "From mailbox" filter with the registered mailboxes in scope.
+  useEffect(() => {
+    api
+      .get<MailboxOption[]>(`/email-accounts${scopeQ}`)
+      .then(setMailboxes)
+      .catch(() => setMailboxes([]));
+    setMailboxFilter('');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientId]);
+
   async function load() {
-    const q = clientId ? `?clientId=${clientId}` : '';
+    const params = new URLSearchParams();
+    if (clientId) params.set('clientId', clientId);
+    if (mailboxFilter) params.set('mailbox', mailboxFilter);
+    const listQ = params.toString() ? `?${params.toString()}` : '';
     setRefreshing(true);
     try {
-      const data = await api.get<Message[]>(`/mailbox/${tab}${q}`);
+      const data = await api.get<Message[]>(`/mailbox/${tab}${listQ}`);
       setMessages(data);
       // Viewing the Inbox marks its replies read, clearing the badge/alert.
       if (tab === 'inbox') {
-        await api.post(`/mailbox/mark-read${q}`).catch(() => {});
+        await api.post(`/mailbox/mark-read${scopeQ}`).catch(() => {});
         if (typeof window !== 'undefined')
           window.dispatchEvent(new Event('inbox-read'));
       }
@@ -71,7 +95,7 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
     setPage(1);
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, clientId]);
+  }, [tab, clientId, mailboxFilter]);
 
   async function deleteMessage(id: string) {
     if (!confirm('Delete this message permanently?')) return;
@@ -163,6 +187,21 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
         ))}
       </div>
       <div className="flex items-center gap-3">
+        {mailboxes.length > 1 && (
+          <select
+            value={mailboxFilter}
+            onChange={(e) => setMailboxFilter(e.target.value)}
+            className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-600 focus:border-brand-400 focus:outline-none"
+            title="Filter by the mailbox that sent/received the message"
+          >
+            <option value="">All mailboxes</option>
+            {mailboxes.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.emailAddress}
+              </option>
+            ))}
+          </select>
+        )}
         {syncNote && <span className="text-xs text-slate-400">{syncNote}</span>}
         {updatedAt && (
           <span className="text-xs text-slate-400">

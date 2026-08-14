@@ -46,28 +46,28 @@ export class MessagesController {
   }
 
   @Get('sent')
-  sent(@CurrentUser() user: AuthUser, @Query('clientId') clientId?: string) {
-    return this.messages.sent(user, clientId);
+  sent(@CurrentUser() user: AuthUser, @Query('clientId') clientId?: string, @Query('mailbox') mailbox?: string) {
+    return this.messages.sent(user, clientId, mailbox);
   }
 
   @Get('failed')
-  failed(@CurrentUser() user: AuthUser, @Query('clientId') clientId?: string) {
-    return this.messages.failed(user, clientId);
+  failed(@CurrentUser() user: AuthUser, @Query('clientId') clientId?: string, @Query('mailbox') mailbox?: string) {
+    return this.messages.failed(user, clientId, mailbox);
   }
 
   @Get('scheduled')
-  scheduled(@CurrentUser() user: AuthUser, @Query('clientId') clientId?: string) {
-    return this.messages.scheduled(user, clientId);
+  scheduled(@CurrentUser() user: AuthUser, @Query('clientId') clientId?: string, @Query('mailbox') mailbox?: string) {
+    return this.messages.scheduled(user, clientId, mailbox);
   }
 
   @Get('drafts')
-  drafts(@CurrentUser() user: AuthUser, @Query('clientId') clientId?: string) {
-    return this.messages.drafts(user, clientId);
+  drafts(@CurrentUser() user: AuthUser, @Query('clientId') clientId?: string, @Query('mailbox') mailbox?: string) {
+    return this.messages.drafts(user, clientId, mailbox);
   }
 
   @Get('inbox')
-  inbox(@CurrentUser() user: AuthUser, @Query('clientId') clientId?: string) {
-    return this.messages.inbox(user, clientId);
+  inbox(@CurrentUser() user: AuthUser, @Query('clientId') clientId?: string, @Query('mailbox') mailbox?: string) {
+    return this.messages.inbox(user, clientId, mailbox);
   }
 
   /** Re-send one failed email. */
