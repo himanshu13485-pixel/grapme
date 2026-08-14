@@ -53,6 +53,7 @@ const NAV: NavItem[] = [
   { href: '/validity', label: 'Subscription Management', icon: '🔁', admin: true, module: 'validity', group: 'main' },
   { href: '/approvals', label: 'Approvals', icon: '✓', admin: true, module: 'approvals', group: 'main' },
   { href: '/compliance', label: 'Compliance', icon: '⚖', admin: true, module: 'compliance', group: 'main' },
+  { href: '/duplicate-emails', label: 'Duplicate Email', icon: '⧉', admin: true, module: 'duplicate-emails', group: 'main' },
   { href: '/greetings', label: 'Greetings', icon: '👋', admin: true, module: 'greetings', group: 'main' },
   { href: '/sub-admins', label: 'Sub Admins', icon: '⚇', admin: true, superOnly: true, module: 'sub-admins', group: 'main' },
   { href: '/activity-logs', label: 'Activity Logs', icon: '◷', admin: true, module: 'activity-logs', group: 'main' },

@@ -182,6 +182,7 @@ model Tenant {
   supportTickets    SupportTicket[]
   broadcasts        Broadcast[]
   internalNotes     InternalNote[]
+  duplicateEmails   DuplicateEmail[]
 }
 
 // Uploaded images (e.g. for email templates), served publicly by id so mail
@@ -637,6 +638,30 @@ model ImportJob {
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
+}
+
+// Audit of emails that were already in the tenant when a new list was imported:
+// e.g. importing List-2 (80 rows) where 10 already existed in List-1. Records the
+// incoming file/list/company and where the address already lived, for a
+// downloadable "Duplicate Email" report.
+model DuplicateEmail {
+  id                String   @id @default(uuid())
+  tenantId          String
+  email             String
+  fileName          String? // the import file the duplicate arrived on
+  importJobId       String?
+  newListId         String? // the list being uploaded into (List-2)
+  newListName       String?
+  newCompany        String? // company on the incoming row
+  existingListNames String? // comma-joined lists the address already belonged to (List-1)
+  existingCompany   String? // company already on file for the address
+  existingClientId  String?
+  createdAt         DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, createdAt])
 }
 
 // ───────────────────────── Templates & Campaigns ─────────────────────────

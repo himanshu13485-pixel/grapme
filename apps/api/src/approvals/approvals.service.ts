@@ -6,6 +6,7 @@ import {
   ImportStatus,
   LiCampaignStatus,
   MailboxStatus,
+  Prisma,
   Role,
   ScheduleStatus,
 } from '@prisma/client';
@@ -462,10 +463,43 @@ export class ApprovalsService {
     if (!job) return;
 
     const rows = (job.payload as Array<Record<string, string>>) ?? [];
+
+    // The list being uploaded into (List-2), for the duplicate report.
+    const newListName = job.listId
+      ? (await this.prisma.contactList.findUnique({ where: { id: job.listId }, select: { name: true } }))?.name ?? null
+      : null;
+    const dupes: Prisma.DuplicateEmailCreateManyInput[] = [];
+
     for (const row of rows) {
       const hash = createHash('sha256')
         .update((row.email ?? '').trim().toLowerCase())
         .digest('hex');
+
+      // Already in the tenant? Then this row is a duplicate (e.g. it already
+      // lived in List-1). Record where it came from and where it already exists.
+      const existing = await this.prisma.contact.findUnique({
+        where: { tenantId_dedupeHash: { tenantId: job.tenantId, dedupeHash: hash } },
+        select: {
+          company: true,
+          clientId: true,
+          lists: { select: { list: { select: { name: true } } } },
+        },
+      });
+      if (existing) {
+        dupes.push({
+          tenantId: job.tenantId,
+          email: (row.email ?? '').trim(),
+          fileName: job.filename,
+          importJobId: job.id,
+          newListId: job.listId,
+          newListName,
+          newCompany: row.company ?? null,
+          existingListNames:
+            existing.lists.map((l) => l.list.name).filter(Boolean).join(', ') || null,
+          existingCompany: existing.company ?? null,
+          existingClientId: existing.clientId ?? null,
+        });
+      }
 
       const contact = await this.prisma.contact.upsert({
         where: { tenantId_dedupeHash: { tenantId: job.tenantId, dedupeHash: hash } },
@@ -497,6 +531,10 @@ export class ApprovalsService {
           create: { listId: job.listId, contactId: contact.id },
         });
       }
+    }
+
+    if (dupes.length) {
+      await this.prisma.duplicateEmail.createMany({ data: dupes });
     }
 
     await this.prisma.importJob.update({

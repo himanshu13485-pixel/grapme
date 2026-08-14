@@ -38,6 +38,7 @@ const MODULES: { key: string; label: string }[] = [
   { key: 'linkedin-leads', label: 'LinkedIn Leads' },
   { key: 'approvals', label: 'Approvals' },
   { key: 'compliance', label: 'Compliance' },
+  { key: 'duplicate-emails', label: 'Duplicate Email' },
   { key: 'activity-logs', label: 'Activity Logs' },
 ];
 
