@@ -1,9 +1,24 @@
-import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import { Prisma, Role, SetupGroup, SetupStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotifyService } from '../notifications/notify.service';
+import { QUEUE_ENROLL, JOB_SETUP_NOTIFY } from '../queue/queue.constants';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { AddClientStepDto, AddTemplateStepDto, UpdateSetupStepDto, UpdateTemplateStepDto } from './dto/reporting.dto';
+
+/** A single staggered reminder job: one channel to one owner about one client's pending work. */
+export interface SetupNotifyJob {
+  userId: string;
+  channel: 'email' | 'whatsapp' | 'inApp';
+  title: string;
+  body: string;
+  emailHtml?: string;
+  whatsappText?: string;
+  link?: string;
+}
+const REMINDER_GAP_MS = 60_000; // ≥60s between email↔whatsapp and between recipients
 
 /** The managed default checklist seeded per tenant. Order is global across groups. */
 const DEFAULT_TEMPLATE: { key: string; label: string; group: SetupGroup }[] = [
@@ -29,6 +44,7 @@ export class ReportingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notify: NotifyService,
+    @Optional() @InjectQueue(QUEUE_ENROLL) private readonly queue?: Queue,
   ) {}
 
   private isAdmin(user: AuthUser) {
@@ -479,47 +495,110 @@ export class ReportingService {
     return { workspaces, overall: { total, finished, percent: total ? Math.round((finished / total) * 100) : 0 } };
   }
 
+  // ── settings (global on/off for setup reminders) ─────────────────────
+  async getSettings(user: AuthUser) {
+    if (!this.isAdmin(user) && user.role !== Role.SALES) throw new ForbiddenException('No access');
+    const t = await this.prisma.tenant.findUnique({ where: { id: user.tenantId }, select: { setupRemindersEnabled: true } });
+    return { remindersEnabled: t?.setupRemindersEnabled ?? true };
+  }
+  async setRemindersEnabled(user: AuthUser, enabled: boolean) {
+    this.assertAdmin(user);
+    await this.prisma.tenant.update({ where: { id: user.tenantId }, data: { setupRemindersEnabled: !!enabled } });
+    return { ok: true, remindersEnabled: !!enabled };
+  }
+
+  /** Called by the reminder queue: send ONE channel of ONE reminder (staggered). */
+  async sendReminderChannel(job: SetupNotifyJob) {
+    await this.notify.notify(
+      job.userId,
+      { type: 'reporting', title: job.title, body: job.body, emailHtml: job.emailHtml, whatsappText: job.whatsappText, link: job.link },
+      { inApp: job.channel === 'inApp', email: job.channel === 'email', whatsapp: job.channel === 'whatsapp' },
+    ).catch((e) => this.logger.warn(`reminder ${job.channel} to ${job.userId} failed: ${e}`));
+  }
+
   /**
-   * Reminder sweep for the monthly "Email arrangement" ops steps. Safe to run often
-   * (idempotent via lastReminderAt): for each due, not-finished, assigned monthly step —
-   *  - first nudge once the service month has begun,
-   *  - then re-nudge every 2 days while NOT_STARTED, every 3 days while STARTED,
-   * emailing + WhatsApping the assignee. Internal only (never shown to the client).
+   * Daily reminder sweep. When the tenant has reminders ON: nudge each assigned owner about
+   * their still-pending setup steps —
+   *   • General / Email / LinkedIn steps: once per day until Finished,
+   *   • MONTHLY "email arrangement": from the service month's start, every 2 days (NOT_STARTED)
+   *     / 3 days (STARTED).
+   * Email + WhatsApp for each alert are staggered ≥60s apart, and consecutive recipients are
+   * spaced too, via delayed queue jobs. Internal only (never shown to the client).
    */
   async runSetupReminders(): Promise<{ sent: number }> {
     const now = new Date();
+    const enabledTenants = new Set(
+      (await this.prisma.tenant.findMany({ where: { setupRemindersEnabled: true }, select: { id: true } })).map((t) => t.id),
+    );
+    if (enabledTenants.size === 0) return { sent: 0 };
+
     const steps = await this.prisma.clientSetupStep.findMany({
-      where: { group: 'MONTHLY', status: { not: 'FINISHED' }, assigneeUserId: { not: null } },
+      where: { status: { not: 'FINISHED' }, assigneeUserId: { not: null }, tenantId: { in: [...enabledTenants] } },
       select: {
-        id: true, label: true, monthIndex: true, status: true, lastReminderAt: true, assigneeUserId: true,
+        id: true, label: true, group: true, monthIndex: true, status: true, lastReminderAt: true, assigneeUserId: true,
         client: { select: { name: true, status: true, termStartedAt: true } },
       },
     });
-    let sent = 0;
-    for (const s of steps) {
-      if (!s.assigneeUserId || !s.monthIndex) continue;
-      if ((s.client.status ?? 'active').toLowerCase() !== 'active') continue;
-      // The service month this arrangement covers must have started.
-      const dueStart = addMonths(s.client.termStartedAt ?? now, s.monthIndex - 1);
-      if (now.getTime() < dueStart.getTime()) continue;
-      const intervalMs = (s.status === 'STARTED' ? 3 : 2) * 86_400_000;
-      const due = !s.lastReminderAt || now.getTime() - s.lastReminderAt.getTime() >= intervalMs;
-      if (!due) continue;
 
-      const verb = s.status === 'STARTED' ? 'is in progress but not finished' : 'has not been started';
-      await this.notify.notify(s.assigneeUserId, {
-        type: 'reporting',
-        title: `Email arrangement pending — ${s.client.name}`,
-        body: `The 80–100 email arrangement for ${s.client.name} (Month ${s.monthIndex}) ${verb}. Please action it.`,
-        emailHtml: `<p>The <strong>80–100 email arrangement</strong> for <strong>${escapeHtml(s.client.name)}</strong> (Month ${s.monthIndex}) ${verb}.</p><p>Please add next month's buyers/suppliers and set up the arrangement.</p>`,
-        whatsappText: `GrapMe: 80–100 email arrangement pending for ${s.client.name} (Month ${s.monthIndex}). ${s.status === 'STARTED' ? 'Started — please finish.' : 'Please start.'}`,
-        link: '/reporting',
-      }).catch((e) => this.logger.warn(`setup reminder failed for step ${s.id}: ${e}`));
-      await this.prisma.clientSetupStep.update({ where: { id: s.id }, data: { lastReminderAt: now } });
-      sent += 1;
+    // Build the list of due reminders (one per owner+step).
+    const due: { stepId: string; job: Omit<SetupNotifyJob, 'channel'> }[] = [];
+    for (const s of steps) {
+      if (!s.assigneeUserId) continue;
+      if ((s.client.status ?? 'active').toLowerCase() !== 'active') continue;
+      const statusWord = s.status === 'STARTED' ? 'is in progress but not finished' : 'has not been started';
+
+      if (s.group === 'MONTHLY') {
+        if (!s.monthIndex) continue;
+        const dueStart = addMonths(s.client.termStartedAt ?? now, s.monthIndex - 1);
+        if (now.getTime() < dueStart.getTime()) continue;
+        const intervalMs = (s.status === 'STARTED' ? 3 : 2) * 86_400_000;
+        if (s.lastReminderAt && now.getTime() - s.lastReminderAt.getTime() < intervalMs) continue;
+        due.push({ stepId: s.id, job: {
+          userId: s.assigneeUserId,
+          title: `Email arrangement pending — ${s.client.name}`,
+          body: `The 80–100 email arrangement for ${s.client.name} (Month ${s.monthIndex}) ${statusWord}. Please action it.`,
+          emailHtml: `<p>The <strong>80–100 email arrangement</strong> for <strong>${escapeHtml(s.client.name)}</strong> (Month ${s.monthIndex}) ${statusWord}.</p><p>Please add next month's buyers/suppliers and set up the arrangement.</p>`,
+          whatsappText: `GrapMe: 80–100 email arrangement pending for ${s.client.name} (Month ${s.monthIndex}). ${s.status === 'STARTED' ? 'Started — please finish.' : 'Please start.'}`,
+          link: '/reporting',
+        } });
+      } else {
+        // General / Email / LinkedIn: once per day (≥20h since last) until finished.
+        if (s.lastReminderAt && now.getTime() - s.lastReminderAt.getTime() < 20 * 3_600_000) continue;
+        due.push({ stepId: s.id, job: {
+          userId: s.assigneeUserId,
+          title: `Setup task pending — ${s.client.name}`,
+          body: `"${s.label}" for ${s.client.name} ${statusWord}. Please update it in Reporting.`,
+          emailHtml: `<p>Your setup task <strong>"${escapeHtml(s.label)}"</strong> for <strong>${escapeHtml(s.client.name)}</strong> ${statusWord}.</p><p>Please move it forward (Not started → Started → Finished) in Reporting.</p>`,
+          whatsappText: `GrapMe: setup task "${s.label}" for ${s.client.name} ${statusWord}. Please update.`,
+          link: '/reporting',
+        } });
+      }
     }
-    if (sent) this.logger.log(`Setup reminders: sent ${sent} monthly-arrangement nudge(s)`);
-    return { sent };
+    if (due.length === 0) return { sent: 0 };
+
+    // Mark all as reminded now (so the next hourly sweep doesn't re-enqueue today).
+    await this.prisma.clientSetupStep.updateMany({ where: { id: { in: due.map((d) => d.stepId) } }, data: { lastReminderAt: now } });
+
+    // Dispatch: bell immediately; email + WhatsApp staggered ≥60s apart and between recipients.
+    let slot = 0;
+    for (const { job } of due) {
+      const base = slot * 2 * REMINDER_GAP_MS; // 2 slots per recipient (email + whatsapp)
+      await this.enqueueReminder({ ...job, channel: 'inApp' }, 0);
+      await this.enqueueReminder({ ...job, channel: 'email' }, base);
+      await this.enqueueReminder({ ...job, channel: 'whatsapp' }, base + REMINDER_GAP_MS);
+      slot += 1;
+    }
+    this.logger.log(`Setup reminders: dispatched ${due.length} reminder(s) (staggered)`);
+    return { sent: due.length };
+  }
+
+  /** Queue a single staggered channel send; if the queue is off (no Redis), send inline. */
+  private async enqueueReminder(job: SetupNotifyJob, delayMs: number) {
+    if (this.queue) {
+      await this.queue.add(JOB_SETUP_NOTIFY, job, { delay: Math.max(0, delayMs), removeOnComplete: 1000, removeOnFail: 500 }).catch(() => this.sendReminderChannel(job));
+    } else {
+      await this.sendReminderChannel(job);
+    }
   }
 
   /** Staff members assignable as a step's "concern person". */

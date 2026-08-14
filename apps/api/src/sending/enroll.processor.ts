@@ -10,7 +10,9 @@ import {
   QUEUE_ENROLL,
   JOB_RUN_AUTO_COHORT,
   JOB_SEND_REPORTS,
+  JOB_SETUP_NOTIFY,
 } from '../queue/queue.constants';
+import type { SetupNotifyJob } from '../reporting/reporting.service';
 
 /**
  * Repeatable tick that drives the GRAPOUT cohort engine: every interval it
@@ -33,7 +35,9 @@ export class EnrollProcessor extends WorkerHost {
   }
 
   async process(job: Job): Promise<void> {
-    if (job.name === JOB_RUN_AUTO_COHORT) {
+    if (job.name === JOB_SETUP_NOTIFY) {
+      await this.reporting.sendReminderChannel(job.data as SetupNotifyJob);
+    } else if (job.name === JOB_RUN_AUTO_COHORT) {
       await this.programs.runAutoCohorts();
     } else if (job.name === JOB_SEND_REPORTS) {
       await this.clientReports.runDueReports();

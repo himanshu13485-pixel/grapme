@@ -39,6 +39,19 @@ export class ReportingController {
     return this.reporting.teamMembers(user);
   }
 
+  // ── daily-reminder global setting ──
+  @Roles(...STAFF)
+  @Get('settings')
+  settings(@CurrentUser() user: AuthUser) {
+    return this.reporting.getSettings(user);
+  }
+
+  @Roles(...ADMIN)
+  @Patch('settings')
+  setSettings(@CurrentUser() user: AuthUser, @Body('remindersEnabled') remindersEnabled: boolean) {
+    return this.reporting.setRemindersEnabled(user, !!remindersEnabled);
+  }
+
   // ── managed default checklist ──
   @Roles(...ADMIN)
   @Get('template')

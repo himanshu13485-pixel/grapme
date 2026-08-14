@@ -61,6 +61,15 @@ export default function ReportingPage() {
   const [team, setTeam] = useState<Member[]>([]);
   const [openClient, setOpenClient] = useState<{ id: string; name: string } | null>(null);
   const [manageTpl, setManageTpl] = useState(false);
+  const [remindersOn, setRemindersOn] = useState<boolean | null>(null);
+
+  useEffect(() => { api.get<{ remindersEnabled: boolean }>('/reporting/settings').then((r) => setRemindersOn(r.remindersEnabled)).catch(() => {}); }, []);
+  async function toggleReminders() {
+    const next = !remindersOn;
+    setRemindersOn(next);
+    try { await api.patch('/reporting/settings', { remindersEnabled: next }); }
+    catch { setRemindersOn(!next); }
+  }
 
   useEffect(() => { const t = setTimeout(() => setDq(q.trim()), 300); return () => clearTimeout(t); }, [q]);
 
@@ -82,7 +91,22 @@ export default function ReportingPage() {
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <input className="input max-w-xs" placeholder="Search client, invoice, product…" value={q} onChange={(e) => setQ(e.target.value)} />
-        <SetupMonthLegend />
+        <div className="flex items-center gap-4">
+          {remindersOn !== null && (
+            <label className={`flex items-center gap-2 text-sm ${canManage ? 'cursor-pointer' : 'cursor-default'} text-slate-600`} title="Daily email + WhatsApp nudges to each step's owner until it's finished">
+              <span>Daily reminders</span>
+              <button
+                type="button"
+                disabled={!canManage}
+                onClick={canManage ? toggleReminders : undefined}
+                className={`relative h-5 w-9 rounded-full transition ${remindersOn ? 'bg-emerald-500' : 'bg-slate-300'} ${canManage ? '' : 'opacity-70'}`}
+              >
+                <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${remindersOn ? 'left-[1.15rem]' : 'left-0.5'}`} />
+              </button>
+            </label>
+          )}
+          <SetupMonthLegend />
+        </div>
       </div>
 
       {!loaded ? (

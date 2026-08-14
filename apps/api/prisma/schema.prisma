@@ -153,6 +153,7 @@ model Tenant {
   status           String   @default("active")
   settings         Json     @default("{}")
   greetingsEnabled Boolean  @default(true) // show a daily login greeting to clients
+  setupRemindersEnabled Boolean @default(true) // daily email/WhatsApp nudges to setup-step owners
   reportMailboxId  String? // explicit mailbox client reports are sent from (else auto-resolved)
   paymentMode      String   @default("MANUAL") // AUTO (Cashfree self-serve) | MANUAL (offline via request)
   createdAt        DateTime @default(now())
