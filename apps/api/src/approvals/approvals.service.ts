@@ -486,6 +486,9 @@ export class ApprovalsService {
         },
       });
       if (existing) {
+        // Duplicate: record it and EXCLUDE it entirely — the address is not
+        // touched and is NOT added to the new list. Only genuinely new
+        // contacts flow into List-2.
         dupes.push({
           tenantId: job.tenantId,
           email: (row.email ?? '').trim(),
@@ -499,17 +502,11 @@ export class ApprovalsService {
           existingCompany: existing.company ?? null,
           existingClientId: existing.clientId ?? null,
         });
+        continue;
       }
 
-      const contact = await this.prisma.contact.upsert({
-        where: { tenantId_dedupeHash: { tenantId: job.tenantId, dedupeHash: hash } },
-        update: {
-          firstName: row.firstName,
-          lastName: row.lastName,
-          company: row.company,
-          country: row.country,
-        },
-        create: {
+      const contact = await this.prisma.contact.create({
+        data: {
           tenantId: job.tenantId,
           userId: job.userId,
           email: row.email,
@@ -523,12 +520,8 @@ export class ApprovalsService {
       });
 
       if (job.listId) {
-        await this.prisma.contactListMember.upsert({
-          where: {
-            listId_contactId: { listId: job.listId, contactId: contact.id },
-          },
-          update: {},
-          create: { listId: job.listId, contactId: contact.id },
+        await this.prisma.contactListMember.create({
+          data: { listId: job.listId, contactId: contact.id },
         });
       }
     }
