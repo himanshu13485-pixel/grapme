@@ -100,11 +100,11 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
     }
   }
   async function resendAll() {
-    if (!confirm('Resend up to 25 failed emails now? (Bounced / suppressed addresses are skipped.)')) return;
+    if (!confirm('Queue all failed emails for a background resend? (Bounced / suppressed addresses are skipped automatically.)')) return;
     try {
       const q = clientId ? `?clientId=${clientId}` : '';
-      const r = await api.post<{ attempted: number; sent: number; skipped: number }>(`/mailbox/resend-failed${q}`, {});
-      alert(`Resent ${r.sent} of ${r.attempted}${r.skipped ? ` (${r.skipped} skipped)` : ''}.`);
+      const r = await api.post<{ queued: number }>(`/mailbox/resend-failed${q}`, {});
+      alert(`Queued ${r.queued} email${r.queued === 1 ? '' : 's'} for background resend — they'll leave the Failed tab as they go out.`);
       load();
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Could not resend');

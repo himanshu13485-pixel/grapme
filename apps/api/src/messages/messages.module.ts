@@ -10,6 +10,6 @@ import { BounceModule } from '../bounce/bounce.module';
   imports: [ApprovalsModule, MailerModule, BounceModule],
   controllers: [MessagesController],
   providers: [MessagesService, InboundMailService],
-  exports: [InboundMailService],
+  exports: [InboundMailService, MessagesService],
 })
 export class MessagesModule {}

@@ -13,9 +13,10 @@ import { PrismaService } from '../prisma/prisma.service';
 import { MailerService } from './mailer.service';
 import { renderTemplate } from '../templates/templates.service';
 import { instrumentHtml } from './tracking.util';
-import { QUEUE_SEND } from '../queue/queue.constants';
+import { QUEUE_SEND, JOB_RESEND_MESSAGE } from '../queue/queue.constants';
 import { SendEmailJob } from './sending.service';
 import { BounceService } from '../bounce/bounce.service';
+import { MessagesService } from '../messages/messages.service';
 
 @Processor(QUEUE_SEND, { concurrency: 5 })
 export class SendProcessor extends WorkerHost {
@@ -26,12 +27,18 @@ export class SendProcessor extends WorkerHost {
     private mailer: MailerService,
     private config: ConfigService,
     private bounce: BounceService,
+    private messages: MessagesService,
     @InjectQueue(QUEUE_SEND) private sendQueue: Queue,
   ) {
     super();
   }
 
-  async process(job: Job<SendEmailJob>): Promise<void> {
+  async process(job: Job<SendEmailJob & { messageId?: string }>): Promise<void> {
+    // Background resend of a previously-FAILED email (from the Failed tab "Resend all").
+    if (job.name === JOB_RESEND_MESSAGE) {
+      await this.messages.resendById(String((job.data as { messageId?: string }).messageId)).catch((e) => this.logger.warn(`resend ${(job.data as { messageId?: string }).messageId} failed: ${e}`));
+      return;
+    }
     const { campaignId, contactId, stepId, templateId } = job.data;
 
     const campaign = await this.prisma.campaign.findUnique({

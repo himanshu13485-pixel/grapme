@@ -12,6 +12,7 @@ export const JOB_RUN_ENROLL = 'run-enrollments';
 export const JOB_RUN_AUTO_COHORT = 'run-auto-cohorts';
 export const JOB_SEND_REPORTS = 'send-client-reports';
 export const JOB_SETUP_NOTIFY = 'setup-notify'; // one staggered reminder channel (email/whatsapp/bell)
+export const JOB_RESEND_MESSAGE = 'resend-message'; // re-send one previously-FAILED email in the background
 
 export interface SendEmailJob {
   messageId: string;
