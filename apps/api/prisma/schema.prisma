@@ -960,6 +960,10 @@ model Client {
   // "Email arrangement" ops steps. setupNotifiedAt guards the first "notify the team" send.
   serviceMonths           Int       @default(0)
   setupNotifiedAt         DateTime?
+  // Onboarding stopwatch shown on the Reporting client box (staff only): start ticks
+  // from workspace creation; finish is stamped once the setup checklist hits 100%.
+  setupStartedAt          DateTime?
+  setupFinishedAt         DateTime?
   reportDaily             Boolean   @default(false) // email a daily performance report
   reportWeekly            Boolean   @default(false) // email a weekly report (Mondays)
   reportMonthly           Boolean   @default(false) // email a monthly report (1st)

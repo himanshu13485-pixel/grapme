@@ -451,17 +451,49 @@ export class ReportingService {
       orderBy: { createdAt: 'desc' },
       select: {
         id: true, name: true, invoiceNo: true, invoiceDate: true, plan: true, status: true,
-        emailEnabled: true, linkedInEnabled: true,
+        emailEnabled: true, linkedInEnabled: true, createdAt: true,
+        setupStartedAt: true, setupFinishedAt: true,
         salesPerson: { select: { id: true, name: true } },
       },
     });
     const progress = await this.progressForClients(user, clients);
     const months = await this.monthsForClients(clients.map((c) => c.id));
+    const stopwatch = await this.syncStopwatch(clients, progress);
     return clients.map((c) => ({
       ...c,
       progress: progress.get(c.id) ?? { total: 0, finished: 0, started: 0, percent: 0 },
       months: months.get(c.id) ?? [],
+      ...stopwatch.get(c.id)!,
     }));
+  }
+
+  /**
+   * Keeps the onboarding stopwatch in sync and returns the effective values:
+   *  - startedAt: stamped once, lazily — existing/running boxes start ticking
+   *    "from now" the first time they're viewed after this shipped.
+   *  - finishedAt: stamped when the checklist first reaches 100%, cleared again
+   *    if a step is later re-opened (so it always reflects the current state).
+   */
+  private async syncStopwatch(
+    clients: { id: string; setupStartedAt: Date | null; setupFinishedAt: Date | null }[],
+    progress: Map<string, { percent: number }>,
+  ): Promise<Map<string, { setupStartedAt: Date; setupFinishedAt: Date | null }>> {
+    const now = new Date();
+    const out = new Map<string, { setupStartedAt: Date; setupFinishedAt: Date | null }>();
+    for (const c of clients) {
+      const percent = progress.get(c.id)?.percent ?? 0;
+      let startedAt = c.setupStartedAt;
+      let finishedAt = c.setupFinishedAt;
+      const patch: { setupStartedAt?: Date; setupFinishedAt?: Date | null } = {};
+      if (!startedAt) { startedAt = now; patch.setupStartedAt = now; }
+      if (percent >= 100 && !finishedAt) { finishedAt = now; patch.setupFinishedAt = now; }
+      else if (percent < 100 && finishedAt) { finishedAt = null; patch.setupFinishedAt = null; }
+      if (Object.keys(patch).length) {
+        await this.prisma.client.update({ where: { id: c.id }, data: patch }).catch(() => undefined);
+      }
+      out.set(c.id, { setupStartedAt: startedAt, setupFinishedAt: finishedAt });
+    }
+    return out;
   }
 
   /** { clientId: {percent, months[]} } for the Clients-Workspace box bar + month squares. */

@@ -175,7 +175,8 @@ export class ProgramsService {
       clientData.linkedInEnabled = false;
     }
     const client = await this.prisma.client.create({
-      data: { tenantId: user.tenantId, ...clientData, ...validity, ...invoiceDateData, ...ownerData },
+      // setupStartedAt starts the onboarding stopwatch from workspace creation.
+      data: { tenantId: user.tenantId, setupStartedAt: new Date(), ...clientData, ...validity, ...invoiceDateData, ...ownerData },
     });
 
     // Seed the subscription history if the client starts with a validity window.

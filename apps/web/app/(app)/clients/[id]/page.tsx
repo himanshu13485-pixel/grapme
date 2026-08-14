@@ -34,6 +34,7 @@ interface Mailbox {
   emailAddress: string;
   status: string;
   rotationOrder?: number;
+  clientId?: string | null;
 }
 interface SeqStep {
   id: string;
@@ -180,9 +181,11 @@ export default function ClientCockpit() {
   useEffect(() => {
     if (!id) return;
     load();
+    // Scope every workspace picker to THIS client so one client never sees
+    // another client's mailboxes / templates / contact lists.
     api.get<Mailbox[]>('/email-accounts').then(setAllMailboxes).catch(() => {});
-    api.get<Template[]>('/templates').then(setTemplates).catch(() => {});
-    api.get<ContactList[]>('/contact-lists').then(setLists).catch(() => {});
+    api.get<Template[]>(`/templates?clientId=${id}`).then(setTemplates).catch(() => {});
+    api.get<ContactList[]>(`/contact-lists?clientId=${id}`).then(setLists).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
@@ -440,7 +443,9 @@ function MailboxGroup({
   onChanged: () => void;
 }) {
   const assignedIds = new Set(client.mailboxes.map((m) => m.id));
-  const available = allMailboxes.filter((m) => !assignedIds.has(m.id));
+  // Only offer mailboxes not already assigned to ANY client — assigning one that
+  // belongs to another client would silently steal it from their rotation.
+  const available = allMailboxes.filter((m) => !assignedIds.has(m.id) && !m.clientId);
   const [pick, setPick] = useState('');
   const [order, setOrder] = useState(client.mailboxes.length + 1);
   const [showCreate, setShowCreate] = useState(false);

@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
+import { resourceClientScope } from '../common/client-scope';
 import { UpsertTemplateDto } from './templates.controller';
 
 /** Pulls {{variable}} tokens out of subject + body for the builder UI. */
@@ -29,11 +30,12 @@ export function renderTemplate(
 export class TemplatesService {
   constructor(private prisma: PrismaService) {}
 
-  list(user: AuthUser, clientId?: string) {
+  async list(user: AuthUser, clientId?: string) {
+    const scope = await resourceClientScope(this.prisma, user, clientId);
     return this.prisma.emailTemplate.findMany({
       where: {
         tenantId: user.tenantId,
-        ...(clientId ? { clientId } : {}),
+        ...scope,
       },
       orderBy: { updatedAt: 'desc' },
       include: { client: { select: { id: true, name: true } } },

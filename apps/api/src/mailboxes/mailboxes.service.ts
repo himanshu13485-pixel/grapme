@@ -10,6 +10,7 @@ import {
   decryptCredential,
 } from '../common/crypto/credential-crypto';
 import { AuthUser } from '../common/decorators/current-user.decorator';
+import { resourceClientScope } from '../common/client-scope';
 import {
   CreateMailboxDto,
   SendTestEmailDto,
@@ -52,11 +53,12 @@ export class MailboxesService {
     private mailer: MailerService,
   ) {}
 
-  list(user: AuthUser, clientId?: string) {
+  async list(user: AuthUser, clientId?: string) {
+    const scope = await resourceClientScope(this.prisma, user, clientId);
     return this.prisma.emailAccount.findMany({
       where: {
         tenantId: user.tenantId,
-        ...(clientId ? { clientId } : {}),
+        ...scope,
       },
       select: SAFE,
       orderBy: { createdAt: 'desc' },

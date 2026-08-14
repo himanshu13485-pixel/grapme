@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { ActivityService } from '../common/services/activity.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
+import { resourceClientScope } from '../common/client-scope';
 import {
   CreateContactDto,
   CreateListDto,
@@ -30,10 +31,11 @@ export class ContactsService {
 
   // ── Contacts ──────────────────────────────────────────────
   async list(user: AuthUser, clientId?: string) {
+    const scope = await resourceClientScope(this.prisma, user, clientId);
     const contacts = await this.prisma.contact.findMany({
       where: {
         tenantId: user.tenantId,
-        ...(clientId ? { clientId } : {}),
+        ...scope,
       },
       orderBy: { createdAt: 'desc' },
       take: 500,
@@ -178,11 +180,12 @@ export class ContactsService {
   }
 
   // ── Lists ─────────────────────────────────────────────────
-  listLists(user: AuthUser, clientId?: string) {
+  async listLists(user: AuthUser, clientId?: string) {
+    const scope = await resourceClientScope(this.prisma, user, clientId);
     return this.prisma.contactList.findMany({
       where: {
         tenantId: user.tenantId,
-        ...(clientId ? { clientId } : {}),
+        ...scope,
       },
       orderBy: { createdAt: 'desc' },
       include: {

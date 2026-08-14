@@ -17,6 +17,8 @@ interface ClientRow {
   salesPerson?: { id: string; name: string } | null;
   progress: Progress;
   months?: MonthCell[];
+  setupStartedAt?: string | null;
+  setupFinishedAt?: string | null;
 }
 interface StepEvent { id: string; status: Status; actorName: string; at: string }
 interface Step {
@@ -40,6 +42,42 @@ const STATUS: Record<Status, { label: string; cls: string; dot: string }> = {
   FINISHED: { label: 'Process Finished', cls: 'bg-emerald-100 text-emerald-700', dot: 'bg-emerald-500' },
 };
 const roleLabel = (r: string) => r === 'SUPER_ADMIN' ? 'Admin' : r === 'SUB_ADMIN' ? 'Sub-admin' : r === 'SALES' ? 'Salesperson' : 'Staff';
+
+/** Formats a millisecond span as `days:hh:mm:ss` (e.g. "2d 03:15:42"). */
+function fmtDuration(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const days = Math.floor(s / 86400);
+  const hh = String(Math.floor((s % 86400) / 3600)).padStart(2, '0');
+  const mm = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
+  const ss = String(s % 60).padStart(2, '0');
+  return `${days}d ${hh}:${mm}:${ss}`;
+}
+
+/** Onboarding stopwatch: live-ticks from workspace creation, freezes on 100%.
+ *  Shown on the Reporting client box (staff only — never the client panel). */
+function SetupTimer({ startedAt, finishedAt }: { startedAt?: string | null; finishedAt?: string | null }) {
+  const start = startedAt ? new Date(startedAt).getTime() : null;
+  const [now, setNow] = useState(() => (start ?? Date.now()));
+  useEffect(() => {
+    setNow(Date.now());
+    if (finishedAt || start == null) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [finishedAt, start]);
+  if (start == null) return null;
+  if (finishedAt) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 font-medium text-emerald-700" title={`Started ${new Date(startedAt!).toLocaleString()} · finished ${new Date(finishedAt).toLocaleString()}`}>
+        ✅ Finished in {fmtDuration(new Date(finishedAt).getTime() - start)}
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-600 tabular-nums" title={`Setup running since ${new Date(startedAt!).toLocaleString()}`}>
+      ⏱ {fmtDuration(now - start)}
+    </span>
+  );
+}
 
 function ProgressBar({ percent }: { percent: number }) {
   const color = percent >= 100 ? 'bg-emerald-500' : percent > 0 ? 'bg-brand-500' : 'bg-slate-300';
@@ -117,6 +155,9 @@ export default function ReportingPage() {
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           {clients.map((c) => (
             <button key={c.id} onClick={() => setOpenClient({ id: c.id, name: c.name })} className="card p-5 text-left transition hover:border-brand-300 hover:shadow-sm">
+              <div className="mb-2 flex justify-end text-[11px]">
+                <SetupTimer startedAt={c.setupStartedAt} finishedAt={c.setupFinishedAt} />
+              </div>
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <div className="truncate font-medium text-slate-800">{c.name}</div>
