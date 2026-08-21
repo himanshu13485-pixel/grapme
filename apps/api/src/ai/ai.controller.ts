@@ -40,6 +40,12 @@ export class AiController {
     return this.ai.setSettings(user, dto);
   }
 
+  /** Verify the key + model with a tiny call (tests the typed key if given, else stored). */
+  @Post('settings/test')
+  test(@CurrentUser() user: AuthUser, @Body() dto: AiSettingsDto) {
+    return this.ai.testKey(user, dto);
+  }
+
   @Post('templates/generate')
   generate(@CurrentUser() user: AuthUser, @Body() dto: GenerateDto) {
     return this.ai.generateBatch(user, dto);

@@ -319,6 +319,18 @@ function AiSettingsCard() {
       setErr(e instanceof Error ? e.message : 'Could not save.');
     } finally { setBusy(false); }
   }
+  async function testKey() {
+    setBusy(true); setMsg(''); setErr('');
+    try {
+      const body: { apiKey?: string; model?: string } = {};
+      if (apiKey.trim()) body.apiKey = apiKey.trim();
+      if (model.trim()) body.model = model.trim();
+      const r = await api.post<{ ok: boolean; model: string }>('/ai/settings/test', body);
+      setMsg(`✓ Key works with ${r.model}.`);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Test failed.');
+    } finally { setBusy(false); }
+  }
   async function clearKey() {
     if (!confirm('Remove the stored OpenAI key? Template generation will stop working until a new key is added.')) return;
     setBusy(true); setMsg(''); setErr('');
@@ -365,6 +377,7 @@ function AiSettingsCard() {
       </div>
       <div className="mt-4 flex items-center gap-3">
         <button type="button" className="btn-primary" disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Save AI settings'}</button>
+        <button type="button" className="btn-ghost text-sm" disabled={busy || (!configured && !apiKey.trim())} onClick={testKey} title="Make a tiny OpenAI call to verify the key and model">Test key</button>
         {configured && <button type="button" className="btn-ghost text-sm text-rose-600" disabled={busy} onClick={clearKey}>Remove key</button>}
         {msg && <span className="text-xs text-emerald-600">{msg}</span>}
         {err && <span className="text-xs text-rose-600">{err}</span>}

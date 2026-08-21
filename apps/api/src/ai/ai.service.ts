@@ -110,21 +110,42 @@ export class AiService {
     return { kind: 'rewrite', name: '', subject, bodyHtml };
   }
 
-  // ── OpenAI plumbing ─────────────────────────────────────────────────────
-  private async callOpenAI(tenantId: string, messages: { role: string; content: string }[]): Promise<any> {
-    const t = await this.prisma.tenant.findUnique({ where: { id: tenantId }, select: { aiApiKey: true, aiModel: true } });
-    if (!t?.aiApiKey) throw new BadRequestException('No OpenAI key configured. Ask a super admin to add it in My Account.');
-    let key: string;
-    try { key = decryptCredential(t.aiApiKey); } catch { throw new BadRequestException('The stored OpenAI key could not be read — please re-enter it.'); }
-    const model = t.aiModel || DEFAULT_MODEL;
+  /** Quick verification that the key + model actually work (a tiny, cheap call).
+   *  Tests the typed key/model when provided, else the stored settings. */
+  async testKey(user: AuthUser, override?: { apiKey?: string; model?: string }): Promise<{ ok: boolean; model: string }> {
+    this.assertStaff(user);
+    const { key, model } = await this.resolveKeyModel(user.tenantId, override);
+    await this.chat(key, model, [{ role: 'user', content: 'Reply with the single word: ok' }], false);
+    return { ok: true, model };
+  }
 
+  // ── OpenAI plumbing ─────────────────────────────────────────────────────
+  private async resolveKeyModel(tenantId: string, override?: { apiKey?: string; model?: string }): Promise<{ key: string; model: string }> {
+    const t = await this.prisma.tenant.findUnique({ where: { id: tenantId }, select: { aiApiKey: true, aiModel: true } });
+    const model = override?.model?.trim() || t?.aiModel || DEFAULT_MODEL;
+    const overrideKey = override?.apiKey?.trim();
+    if (overrideKey) return { key: overrideKey, model };
+    if (!t?.aiApiKey) throw new BadRequestException('No OpenAI key configured. Ask a super admin to add it in My Account.');
+    try { return { key: decryptCredential(t.aiApiKey), model }; }
+    catch { throw new BadRequestException('The stored OpenAI key could not be read — please re-enter it.'); }
+  }
+
+  private async callOpenAI(tenantId: string, messages: { role: string; content: string }[]): Promise<any> {
+    const { key, model } = await this.resolveKeyModel(tenantId);
+    const content = await this.chat(key, model, messages, true);
+    try { return JSON.parse(content); } catch { throw new BadRequestException('OpenAI returned malformed output — try again.'); }
+  }
+
+  private async chat(key: string, model: string, messages: { role: string; content: string }[], jsonMode: boolean): Promise<string> {
+    const body: Record<string, unknown> = { model, messages };
+    // No custom temperature — some models reject it; the prompt drives variety.
+    if (jsonMode) body.response_format = { type: 'json_object' };
     let res: Response;
     try {
       res = await fetch(OPENAI_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-        // No custom temperature — some models reject it; the prompt drives variety.
-        body: JSON.stringify({ model, messages, response_format: { type: 'json_object' } }),
+        body: JSON.stringify(body),
       });
     } catch (err) {
       this.logger.warn(`OpenAI request failed: ${err}`);
@@ -134,13 +155,14 @@ export class AiService {
       const text = await res.text().catch(() => '');
       this.logger.warn(`OpenAI ${res.status}: ${text.slice(0, 300)}`);
       if (res.status === 401) throw new BadRequestException('OpenAI rejected the API key (401) — check the key in My Account.');
+      if (res.status === 404) throw new BadRequestException(`OpenAI doesn't recognise the model "${model}" (404) — check the model name in My Account.`);
       if (res.status === 429) throw new BadRequestException('OpenAI rate limit / quota reached (429) — try later or check billing.');
       throw new BadRequestException(`OpenAI error (${res.status}). ${extractErr(text)}`);
     }
     const data = await res.json().catch(() => null) as { choices?: { message?: { content?: string } }[] } | null;
     const content = data?.choices?.[0]?.message?.content;
     if (!content) throw new BadRequestException('OpenAI returned an empty response — try again.');
-    try { return JSON.parse(content); } catch { throw new BadRequestException('OpenAI returned malformed output — try again.'); }
+    return content;
   }
 
   private coerceTemplates(parsed: any): DraftTemplate[] {
