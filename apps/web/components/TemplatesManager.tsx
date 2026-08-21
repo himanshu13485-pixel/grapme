@@ -9,8 +9,16 @@ import {
   type DragEvent as ReactDragEvent,
 } from 'react';
 import { api } from '@/lib/api';
-import { useCanDelete } from '@/lib/auth';
+import { useAuth, useCanDelete } from '@/lib/auth';
 import { PageHeader, EmptyState, Pagination } from '@/components/ui';
+
+/** AI template generation is for staff only — never the client portal. */
+function useCanUseAi(): boolean {
+  const { user } = useAuth();
+  return user?.role === 'SUPER_ADMIN' || user?.role === 'SUB_ADMIN';
+}
+
+interface AiDraft { kind: string; name: string; subject: string; bodyHtml: string }
 
 interface Template {
   id: string;
@@ -42,8 +50,10 @@ function renderPreview(html: string): string {
  */
 export function TemplatesManager({ clientId }: { clientId?: string }) {
   const canDelete = useCanDelete();
+  const canUseAi = useCanUseAi();
   const [templates, setTemplates] = useState<Template[]>([]);
   const [editing, setEditing] = useState<Template | 'new' | null>(null);
+  const [aiOpen, setAiOpen] = useState(false);
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 20;
   const paged = templates.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -76,21 +86,35 @@ export function TemplatesManager({ clientId }: { clientId?: string }) {
           title="Email templates"
           subtitle="Visual editor + HTML source, merge variables, live preview"
           action={
-            <button className="btn-primary" onClick={() => setEditing('new')}>
-              + New template
-            </button>
+            <div className="flex gap-2">
+              {canUseAi && !editing && !aiOpen && (
+                <button className="btn-ghost" onClick={() => setAiOpen(true)}>✨ Generate with AI</button>
+              )}
+              <button className="btn-primary" onClick={() => setEditing('new')}>
+                + New template
+              </button>
+            </div>
           }
         />
       )}
-      {clientId && !editing && (
-        <div className="mb-4">
+      {clientId && !editing && !aiOpen && (
+        <div className="mb-4 flex gap-2">
           <button className="btn-primary" onClick={() => setEditing('new')}>
             + New template
           </button>
+          {canUseAi && (
+            <button className="btn-ghost" onClick={() => setAiOpen(true)}>✨ Generate with AI</button>
+          )}
         </div>
       )}
 
-      {editing ? (
+      {aiOpen ? (
+        <AiBatchPanel
+          clientId={clientId}
+          onClose={() => setAiOpen(false)}
+          onSavedAny={load}
+        />
+      ) : editing ? (
         <TemplateEditor
           template={editing === 'new' ? null : editing}
           clientId={clientId}
@@ -142,6 +166,155 @@ export function TemplatesManager({ clientId }: { clientId?: string }) {
   );
 }
 
+/** Batch template drafting with AI. Generates a set (optional initial + follow-up
+ *  + N monthly variations); each draft is reviewed and saved explicitly. */
+function AiBatchPanel({
+  clientId,
+  onClose,
+  onSavedAny,
+}: {
+  clientId?: string;
+  onClose: () => void;
+  onSavedAny: () => void;
+}) {
+  const [form, setForm] = useState({
+    context: '',
+    clientName: '',
+    tone: 'professional, warm, concise',
+    monthlyCount: 11,
+    includeInitial: true,
+    includeFollowup: true,
+    namePrefix: '',
+  });
+  const [drafts, setDrafts] = useState<AiDraft[] | null>(null);
+  const [saved, setSaved] = useState<Set<number>>(new Set());
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  async function generate() {
+    setError('');
+    if (!form.context.trim()) { setError('Describe what the emails are about first.'); return; }
+    setBusy(true);
+    setDrafts(null);
+    setSaved(new Set());
+    try {
+      const res = await api.post<{ templates: AiDraft[] }>('/ai/templates/generate', {
+        context: form.context.trim(),
+        clientName: form.clientName.trim() || undefined,
+        tone: form.tone,
+        monthlyCount: Number(form.monthlyCount) || 0,
+        includeInitial: form.includeInitial,
+        includeFollowup: form.includeFollowup,
+        namePrefix: form.namePrefix.trim() || undefined,
+      });
+      setDrafts(res.templates);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Generation failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function editDraft(i: number, patch: Partial<AiDraft>) {
+    setDrafts((prev) => prev ? prev.map((d, idx) => (idx === i ? { ...d, ...patch } : d)) : prev);
+  }
+
+  async function saveDraft(i: number) {
+    const d = drafts?.[i];
+    if (!d || saved.has(i)) return;
+    try {
+      await api.post('/templates', { name: d.name, subject: d.subject, bodyHtml: d.bodyHtml || '<p></p>', clientId: clientId || undefined });
+      setSaved((prev) => new Set(prev).add(i));
+      onSavedAny();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Could not save this template');
+    }
+  }
+  async function saveAll() {
+    if (!drafts) return;
+    for (let i = 0; i < drafts.length; i++) if (!saved.has(i)) await saveDraft(i);
+  }
+
+  const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }));
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="font-medium">✨ Generate templates with AI</h3>
+        <button type="button" className="btn-ghost text-xs" onClick={onClose}>← Back to list</button>
+      </div>
+
+      <div className="rounded-lg border border-slate-200 p-4">
+        <label className="label">What are these emails about? *</label>
+        <textarea
+          className="input min-h-20"
+          placeholder="e.g. Cold outreach to hardware & sanitaryware importers in the UK on behalf of a steel-fittings exporter. Friendly, no hard sell."
+          value={form.context}
+          onChange={(e) => set({ context: e.target.value })}
+        />
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <div>
+            <label className="label">Client / company (optional)</label>
+            <input className="input" value={form.clientName} onChange={(e) => set({ clientName: e.target.value })} />
+          </div>
+          <div>
+            <label className="label">Tone</label>
+            <input className="input" value={form.tone} onChange={(e) => set({ tone: e.target.value })} />
+          </div>
+          <div>
+            <label className="label">Name prefix (optional)</label>
+            <input className="input" placeholder="e.g. BHAVYA STEEL-RFM-1" value={form.namePrefix} onChange={(e) => set({ namePrefix: e.target.value })} />
+          </div>
+          <div>
+            <label className="label">Monthly variations</label>
+            <input type="number" min={0} max={12} className="input" value={form.monthlyCount} onChange={(e) => set({ monthlyCount: Number(e.target.value) })} />
+          </div>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-4 text-sm text-slate-600">
+          <label className="flex items-center gap-2"><input type="checkbox" checked={form.includeInitial} onChange={(e) => set({ includeInitial: e.target.checked })} /> Initial email</label>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={form.includeFollowup} onChange={(e) => set({ includeFollowup: e.target.checked })} /> Follow-up email</label>
+        </div>
+        <div className="mt-4 flex items-center gap-3">
+          <button type="button" className="btn-primary" disabled={busy} onClick={generate}>
+            {busy ? 'Generating…' : 'Generate'}
+          </button>
+          <span className="text-xs text-slate-400">Uses your tenant OpenAI key · review each draft before saving.</span>
+        </div>
+        {error && <p className="mt-2 text-sm text-rose-600">{error}</p>}
+      </div>
+
+      {drafts && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="text-sm text-slate-500">{drafts.length} draft{drafts.length === 1 ? '' : 's'} · {saved.size} saved</div>
+            <button type="button" className="btn-primary text-sm" onClick={saveAll} disabled={saved.size === drafts.length}>Save all</button>
+          </div>
+          {drafts.map((d, i) => (
+            <div key={i} className="rounded-lg border border-slate-200 p-3">
+              <div className="flex items-center gap-2">
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] uppercase text-slate-500">{d.kind}</span>
+                <input
+                  className="input flex-1 text-sm"
+                  value={d.name}
+                  onChange={(e) => editDraft(i, { name: e.target.value })}
+                  disabled={saved.has(i)}
+                />
+                {saved.has(i) ? (
+                  <span className="text-xs font-medium text-emerald-600">✓ Saved</span>
+                ) : (
+                  <button type="button" className="btn-ghost text-xs text-brand-600" onClick={() => saveDraft(i)}>Save</button>
+                )}
+              </div>
+              <div className="mt-2 text-sm font-medium text-slate-700">{renderPreview(d.subject)}</div>
+              <div className="mt-1 max-h-40 overflow-auto rounded border border-slate-100 bg-slate-50/60 p-2 text-sm text-slate-600" dangerouslySetInnerHTML={{ __html: renderPreview(d.bodyHtml) }} />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface SpamResult {
   score: number;
   spamTriggerWords: string[];
@@ -172,7 +345,9 @@ function TemplateEditor({
   const [mode, setMode] = useState<'visual' | 'html'>('visual');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [aiBusy, setAiBusy] = useState(false);
   const [spam, setSpam] = useState<SpamResult | null>(null);
+  const canUseAi = useCanUseAi();
   const visualRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -343,6 +518,25 @@ function TemplateEditor({
     });
   }
 
+  // AI: rewrite the current subject+body to reduce spam-filter risk, then load
+  // the result back into the editor as an unsaved draft (you still hit Save).
+  async function aiRewrite() {
+    setError('');
+    setAiBusy(true);
+    const liveBody = mode === 'visual' && visualRef.current ? visualRef.current.innerHTML : bodyHtml;
+    try {
+      const res = await api.post<{ subject: string; bodyHtml: string }>('/ai/templates/rewrite', { subject, bodyHtml: liveBody });
+      setSubject(res.subject || subject);
+      setBodyHtml(res.bodyHtml || liveBody);
+      if (mode === 'visual' && visualRef.current) visualRef.current.innerHTML = res.bodyHtml || liveBody;
+      setSpam(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Rewrite failed');
+    } finally {
+      setAiBusy(false);
+    }
+  }
+
   const tool = 'rounded border border-slate-200 px-2 py-1 text-xs hover:bg-slate-50';
 
   return (
@@ -501,6 +695,11 @@ function TemplateEditor({
         <button type="button" className="btn-ghost" onClick={runSpamCheck}>
           Spam check
         </button>
+        {canUseAi && (
+          <button type="button" className="btn-ghost" onClick={aiRewrite} disabled={aiBusy} title="Rewrite the wording with AI to reduce spam-filter risk (keeps variables + meaning)">
+            {aiBusy ? '✨ Rewriting…' : '✨ Rewrite to reduce spam'}
+          </button>
+        )}
         <button className="btn-primary flex-1" disabled={busy}>
           {busy ? 'Saving…' : template ? 'Save changes' : 'Create template'}
         </button>

@@ -233,6 +233,9 @@ export default function MyProfilePage() {
         </div>
       </div>
 
+      {/* AI template assistant (super admin only) */}
+      {user?.role === 'SUPER_ADMIN' && <AiSettingsCard />}
+
       {/* Password change */}
       <div className="card p-5">
         <h2 className="mb-3 text-sm font-semibold text-slate-700">Change password</h2>
@@ -281,6 +284,90 @@ export default function MyProfilePage() {
             {pwBusy ? 'Please wait…' : 'Update password'}
           </button>
         </form>
+      </div>
+    </div>
+  );
+}
+
+/** OpenAI key + model for the AI template assistant. One key per tenant, set by
+ *  the super admin, used by admins/sub-admins to draft templates. Write-only:
+ *  the key never comes back to the browser — only a "configured" status. */
+function AiSettingsCard() {
+  const [configured, setConfigured] = useState(false);
+  const [model, setModel] = useState('gpt-5.6-luna');
+  const [apiKey, setApiKey] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    api.get<{ configured: boolean; model: string }>('/ai/settings')
+      .then((s) => { setConfigured(s.configured); setModel(s.model || 'gpt-5.6-luna'); })
+      .catch(() => {});
+  }, []);
+
+  async function save() {
+    setBusy(true); setMsg(''); setErr('');
+    try {
+      // Only send the key when the admin actually typed a new one (blank keeps the current).
+      const body: { model: string; apiKey?: string } = { model: model.trim() };
+      if (apiKey.trim()) body.apiKey = apiKey.trim();
+      const s = await api.put<{ configured: boolean; model: string }>('/ai/settings', body);
+      setConfigured(s.configured); setModel(s.model); setApiKey('');
+      setMsg('AI settings saved.');
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Could not save.');
+    } finally { setBusy(false); }
+  }
+  async function clearKey() {
+    if (!confirm('Remove the stored OpenAI key? Template generation will stop working until a new key is added.')) return;
+    setBusy(true); setMsg(''); setErr('');
+    try {
+      const s = await api.put<{ configured: boolean; model: string }>('/ai/settings', { apiKey: '' });
+      setConfigured(s.configured); setApiKey('');
+      setMsg('Key removed.');
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Could not remove.');
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="card mb-6 p-5">
+      <h2 className="mb-1 text-sm font-semibold text-slate-700">AI template assistant (OpenAI)</h2>
+      <p className="mb-3 text-xs text-slate-500">
+        Powers ✨ Generate with AI on the client-workspace Templates tab (admins &amp; sub-admins only).
+        The key is stored encrypted and never shown again. Get a key from platform.openai.com.
+      </p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-500">
+            OpenAI API key {configured && <span className="text-emerald-600">· ✓ configured</span>}
+          </label>
+          <input
+            type="password"
+            className="input"
+            autoComplete="off"
+            placeholder={configured ? '•••••••• (leave blank to keep)' : 'sk-…'}
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-500">Model</label>
+          <input
+            className="input"
+            placeholder="gpt-5.6-luna"
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+          />
+          <p className="mt-1 text-[11px] text-slate-400">Default gpt-5.6-luna (cheapest). Others: gpt-5.6-terra, gpt-5.6-sol.</p>
+        </div>
+      </div>
+      <div className="mt-4 flex items-center gap-3">
+        <button type="button" className="btn-primary" disabled={busy} onClick={save}>{busy ? 'Saving…' : 'Save AI settings'}</button>
+        {configured && <button type="button" className="btn-ghost text-sm text-rose-600" disabled={busy} onClick={clearKey}>Remove key</button>}
+        {msg && <span className="text-xs text-emerald-600">{msg}</span>}
+        {err && <span className="text-xs text-rose-600">{err}</span>}
       </div>
     </div>
   );

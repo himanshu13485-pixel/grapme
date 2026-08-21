@@ -21,6 +21,7 @@ import { MessagesModule } from './messages/messages.module';
 import { DeliverabilityModule } from './deliverability/deliverability.module';
 import { ComplianceModule } from './compliance/compliance.module';
 import { DuplicateEmailsModule } from './duplicate-emails/duplicate-emails.module';
+import { AiModule } from './ai/ai.module';
 import { ProgramsModule } from './programs/programs.module';
 import { PlansModule } from './plans/plans.module';
 import { BillingModule } from './billing/billing.module';
@@ -72,6 +73,7 @@ const engineModules = queueEnabled
     DeliverabilityModule,
     ComplianceModule,
     DuplicateEmailsModule,
+    AiModule,
     ProgramsModule,
     PlansModule,
     BillingModule,
