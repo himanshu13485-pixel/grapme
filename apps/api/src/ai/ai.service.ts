@@ -119,6 +119,23 @@ export class AiService {
     return { ok: true, model };
   }
 
+  /** Is a tenant OpenAI key configured? (used by other engines, e.g. LinkedIn). */
+  async tenantConfigured(tenantId: string): Promise<boolean> {
+    const t = await this.prisma.tenant.findUnique({ where: { id: tenantId }, select: { aiApiKey: true } });
+    return !!t?.aiApiKey;
+  }
+
+  /** Generic JSON generation with the tenant's OpenAI key — shared by other
+   *  modules (LinkedIn). Tolerant parse so callers can ask for an array or object. */
+  async generateJsonForTenant<T = unknown>(tenantId: string, system: string, user: string): Promise<T> {
+    const { key, model } = await this.resolveKeyModel(tenantId);
+    const content = await this.chat(key, model, [
+      { role: 'system', content: system },
+      { role: 'user', content: user },
+    ], false);
+    return looseJsonParse(content) as T;
+  }
+
   // ── OpenAI plumbing ─────────────────────────────────────────────────────
   private async resolveKeyModel(tenantId: string, override?: { apiKey?: string; model?: string }): Promise<{ key: string; model: string }> {
     const t = await this.prisma.tenant.findUnique({ where: { id: tenantId }, select: { aiApiKey: true, aiModel: true } });
@@ -187,4 +204,16 @@ export class AiService {
 
 function extractErr(text: string): string {
   try { const j = JSON.parse(text); return String(j?.error?.message ?? '').slice(0, 200); } catch { return ''; }
+}
+
+/** Parse JSON from a model reply that may be wrapped in ``` fences or prose. */
+function looseJsonParse(raw: string): unknown {
+  const s = String(raw ?? '').trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
+  try { return JSON.parse(s); } catch { /* fall through to substring extraction */ }
+  const first = Math.min(...['[', '{'].map((c) => { const i = s.indexOf(c); return i < 0 ? Infinity : i; }));
+  const last = Math.max(s.lastIndexOf(']'), s.lastIndexOf('}'));
+  if (first !== Infinity && last > first) {
+    try { return JSON.parse(s.slice(first, last + 1)); } catch { /* ignore */ }
+  }
+  throw new BadRequestException('The AI returned malformed output — try again.');
 }

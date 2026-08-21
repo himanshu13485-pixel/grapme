@@ -70,6 +70,42 @@ export function LiRegularWizard({
   const [followUps, setFollowUps] = useState<FollowUp[]>([
     { waitHours: 2, body: 'Hi {first_name}, thanks for connecting. Would love to share how we help teams like {company}.', variants: [], condition: 'IF_ACCEPTED', randomWithNext: false },
   ]);
+  // AI message drafting for this step (uses the tenant OpenAI key from My Account).
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiForm, setAiForm] = useState({ context: '', followUps: 2, variants: 2 });
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiErr, setAiErr] = useState('');
+
+  async function aiDraftMessages() {
+    setAiErr('');
+    setAiBusy(true);
+    try {
+      const res = await api.post<{ steps: { type: string; note?: string; body?: string; waitHours: number; variants?: string[] }[]; source: string }>(
+        `${base}/campaigns/draft-messages`,
+        { clientId, context: aiForm.context.trim() || undefined, outreachType, followUps: aiForm.followUps, variants: aiForm.variants },
+      );
+      const conn = res.steps.find((s) => s.type === 'CONNECTION_REQUEST');
+      if (outreachType === 'WITH_CONNECTION') {
+        setNote(conn?.note ?? '');
+        setNoteVariants(cleanVariants(conn?.variants ?? []));
+      }
+      const msgs = res.steps.filter((s) => s.type === 'MESSAGE');
+      if (msgs.length) {
+        setFollowUps(msgs.map((s, i) => ({
+          waitHours: outreachType === 'DIRECT_MESSAGES' && i === 0 ? 0 : Number(s.waitHours) || 24,
+          body: s.body ?? '',
+          variants: cleanVariants(s.variants ?? []),
+          condition: 'IF_ACCEPTED' as StepCondition,
+          randomWithNext: false,
+        })));
+      }
+      setAiOpen(false);
+    } catch (e) {
+      setAiErr(e instanceof Error ? e.message : 'Generation failed');
+    } finally {
+      setAiBusy(false);
+    }
+  }
   const [sched, setSched] = useState({
     timezone: 'Asia/Kolkata', run247: false, workStartHour: 9, workEndHour: 18,
     workDays: [1, 2, 3, 4, 5] as number[], dailyConnectionLimit: 20, dailyMessageLimit: 20,
@@ -419,6 +455,45 @@ export function LiRegularWizard({
                 ))}
               </div>
             </Field>
+
+            {/* AI drafting — staff only; fills the note + follow-ups below, you still review & save. */}
+            {!isPortal && (
+            <div className="mb-3 rounded-xl border border-violet-200 bg-violet-50/40 p-4">
+              {!aiOpen ? (
+                <button type="button" className="text-sm font-medium text-violet-700 hover:underline" onClick={() => setAiOpen(true)}>
+                  ✨ Generate with AI
+                </button>
+              ) : (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="font-medium text-slate-800">✨ Generate messages with AI</div>
+                    <button type="button" className="text-xs text-slate-400 hover:text-slate-600" onClick={() => setAiOpen(false)}>Close</button>
+                  </div>
+                  <textarea
+                    className="input"
+                    rows={2}
+                    placeholder="What's this outreach about? (optional — leave blank to use the client's product/service). e.g. Reaching engineering buyers in the UK for brass components."
+                    value={aiForm.context}
+                    onChange={(e) => setAiForm((f) => ({ ...f, context: e.target.value }))}
+                  />
+                  <div className="flex flex-wrap items-end gap-4 text-sm">
+                    <label className="text-slate-600">Follow-ups
+                      <input type="number" min={1} max={5} className="ml-2 w-16 rounded border border-slate-300 px-2 py-0.5" value={aiForm.followUps} onChange={(e) => setAiForm((f) => ({ ...f, followUps: Number(e.target.value) }))} />
+                    </label>
+                    <label className="text-slate-600">Wordings / step
+                      <input type="number" min={1} max={3} className="ml-2 w-16 rounded border border-slate-300 px-2 py-0.5" value={aiForm.variants} onChange={(e) => setAiForm((f) => ({ ...f, variants: Number(e.target.value) }))} />
+                    </label>
+                    <button type="button" className="btn-primary text-sm" disabled={aiBusy} onClick={aiDraftMessages}>
+                      {aiBusy ? 'Generating…' : 'Generate'}
+                    </button>
+                  </div>
+                  <p className="text-xs text-slate-400">Usually 2 follow-ups (bump to 3 if you like). Fills the fields below — nothing is saved until you finish the wizard.</p>
+                  {aiErr && <p className="text-sm text-rose-600">{aiErr}</p>}
+                </div>
+              )}
+            </div>
+            )}
+
             {outreachType === 'WITH_CONNECTION' && (
               <div className="mb-3 rounded-xl border border-brand-200 p-4">
                 <div className="font-medium text-slate-800">Connection Request</div>

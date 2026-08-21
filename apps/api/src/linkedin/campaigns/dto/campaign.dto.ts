@@ -107,3 +107,12 @@ export class GenerateLiMessagesDto {
   // Wordings to generate per step (1 = single, up to 3 for human-like variation).
   @IsOptional() @IsInt() @Min(1) @Max(3) variants?: number;
 }
+
+// Prompt-based draft for the MANUAL campaign editor (no knowledge profile needed).
+export class DraftLiMessagesDto {
+  @IsString() clientId!: string;
+  @IsOptional() @IsString() context?: string;
+  @IsOptional() @IsEnum(LiOutreachType) outreachType?: LiOutreachType;
+  @IsOptional() @IsInt() @Min(1) @Max(5) followUps?: number;
+  @IsOptional() @IsInt() @Min(1) @Max(3) variants?: number;
+}

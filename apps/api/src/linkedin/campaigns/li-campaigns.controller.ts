@@ -7,6 +7,7 @@ import { LiGenerationService } from './li-generation.service';
 import {
   CreateLiCampaignDto, UpdateLiCampaignDto, UpdateLiSequenceDto,
   UpsertLiAudienceDto, UpdateLiScheduleDto, ImportLiLeadsDto, GenerateLiMessagesDto,
+  DraftLiMessagesDto,
 } from './dto/campaign.dto';
 
 @Controller('linkedin/campaigns')
@@ -118,6 +119,14 @@ export class LiCampaignsController {
   @Post(':id/generate-messages')
   generateMessages(@Param('id') id: string, @Body() dto: GenerateLiMessagesDto) {
     return this.generation.generateMessages(id, dto);
+  }
+
+  /** Prompt-based sequence draft for the manual editor (no knowledge needed,
+   *  nothing persisted — the editor fills the form and the user saves). */
+  @Post('draft-messages')
+  draftMessages(@Body() dto: DraftLiMessagesDto) {
+    const { clientId, ...rest } = dto;
+    return this.generation.draftMessages(clientId, rest);
   }
 
   @Post(':id/source-leads')

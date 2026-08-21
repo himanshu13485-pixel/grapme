@@ -2,6 +2,7 @@ import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common'
 import { LiCreditReason, LiLeadStatus, LiOutreachType, LiStepType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LiAiService } from '../ai/ai.service';
+import { AiService } from '../../ai/ai.service';
 import { LiCampaignsService } from './li-campaigns.service';
 import { LinkedInSubscriptionService } from '../subscription/linkedin-subscription.service';
 import { LINKEDIN_PROVIDER, LinkedInProvider } from '../provider/linkedin-provider.interface';
@@ -18,10 +19,28 @@ export class LiGenerationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly ai: LiAiService,
+    private readonly openai: AiService,
     private readonly campaigns: LiCampaignsService,
     private readonly subs: LinkedInSubscriptionService,
     @Inject(LINKEDIN_PROVIDER) private readonly provider: LinkedInProvider,
   ) {}
+
+  /**
+   * Unified AI JSON generation: prefer the tenant's OpenAI key (set in Admin →
+   * My Account), fall back to the server Claude key, then to null so the caller
+   * uses its canned fallback. Never throws — generation degrades gracefully.
+   */
+  private async aiJson<T>(tenantId: string, system: string, user: string): Promise<T | null> {
+    if (await this.openai.tenantConfigured(tenantId).catch(() => false)) {
+      try { return await this.openai.generateJsonForTenant<T>(tenantId, system, user); }
+      catch (e) { this.logger.warn(`OpenAI generation failed, falling back: ${e}`); }
+    }
+    if (this.ai.configured) {
+      try { return await this.ai.generateJson<T>(system, user); }
+      catch (e) { this.logger.warn(`Claude generation failed: ${e}`); }
+    }
+    return null;
+  }
 
   // ── Audience-based lead sourcing (LinkedIn search → Target Audience) ──────
   private leadSlug(url?: string | null): string | null {
@@ -227,20 +246,15 @@ export class LiGenerationService {
   }
 
   async generateAudience(campaignId: string) {
-    const { business, strategy } = await this.loadKnowledge(campaignId);
-    let spec: UpsertLiAudienceDto;
-    if (this.ai.configured) {
-      const system = 'You are a B2B LinkedIn targeting expert. Respond with ONLY a JSON object.';
-      const user =
-        `BUSINESS PROFILE:\n${JSON.stringify(business)}\n\nSTRATEGY:\n${JSON.stringify(strategy)}\n\n` +
-        `Return JSON with keys: countries[], cities[], industries[], companySizes[], departments[], ` +
-        `jobTitles[], seniorities[], companyKeywordsInclude[], companyKeywordsExclude[], ` +
-        `personKeywordsInclude[], personKeywordsExclude[]. ` +
-        `companySizes MUST be from: ${JSON.stringify(COMPANY_SIZES)}. Keep each array <=8.`;
-      spec = await this.ai.generateJson<UpsertLiAudienceDto>(system, user);
-    } else {
-      spec = this.fallbackAudience(business, strategy);
-    }
+    const { campaign, business, strategy } = await this.loadKnowledge(campaignId);
+    const system = 'You are a B2B LinkedIn targeting expert. Respond with ONLY a JSON object.';
+    const user =
+      `BUSINESS PROFILE:\n${JSON.stringify(business)}\n\nSTRATEGY:\n${JSON.stringify(strategy)}\n\n` +
+      `Return JSON with keys: countries[], cities[], industries[], companySizes[], departments[], ` +
+      `jobTitles[], seniorities[], companyKeywordsInclude[], companyKeywordsExclude[], ` +
+      `personKeywordsInclude[], personKeywordsExclude[]. ` +
+      `companySizes MUST be from: ${JSON.stringify(COMPANY_SIZES)}. Keep each array <=8.`;
+    const spec = (await this.aiJson<UpsertLiAudienceDto>(campaign.tenantId, system, user)) ?? this.fallbackAudience(business, strategy);
     return this.campaigns.upsertAudience(campaignId, spec);
   }
 
@@ -253,31 +267,75 @@ export class LiGenerationService {
     const variants = Math.min(3, Math.max(1, opts.variants ?? 1));
     const extra = variants - 1;
 
-    let steps: LiSequenceStepDto[];
-    if (this.ai.configured) {
-      const system =
-        'You are an expert LinkedIn outreach copywriter. Write short, human, non-salesy messages. ' +
-        'Use only these tokens where natural: {first_name} {last_name} {company} {title}. Respond with ONLY a JSON array.';
-      const user =
-        `BUSINESS:\n${JSON.stringify(business)}\n\nSTRATEGY:\n${JSON.stringify(strategy)}\n\n` +
-        `Outreach type: ${outreachType}. Produce a JSON array of steps.\n` +
-        (direct
-          ? `First step type "MESSAGE" (no connection request). `
-          : `First step type "CONNECTION_REQUEST" with an optional short "note". `) +
-        `Then ${followUps} steps of type "MESSAGE". Each MESSAGE has: type, waitHours (integer), body. ` +
-        (extra > 0
-          ? `Also give each MESSAGE (and the CONNECTION_REQUEST note) a "variants" array of ${extra} ALTERNATE wording(s) that say the SAME thing differently (for human-like variation, never duplicates of "body"). `
-          : '') +
-        `Use waitHours like 24, 48, 72. Keep bodies under 100 words.`;
-      steps = await this.ai.generateJson<LiSequenceStepDto[]>(system, user);
-    } else {
-      steps = this.fallbackMessages(direct, followUps, business, strategy);
-    }
+    const system =
+      'You are an expert LinkedIn outreach copywriter. Write short, human, non-salesy messages. ' +
+      'Use only these tokens where natural: {first_name} {last_name} {company} {title}. Respond with ONLY a JSON array.';
+    const user =
+      `BUSINESS:\n${JSON.stringify(business)}\n\nSTRATEGY:\n${JSON.stringify(strategy)}\n\n` +
+      `Outreach type: ${outreachType}. Produce a JSON array of steps.\n` +
+      (direct
+        ? `First step type "MESSAGE" (no connection request). `
+        : `First step type "CONNECTION_REQUEST" with an optional short "note". `) +
+      `Then ${followUps} steps of type "MESSAGE". Each MESSAGE has: type, waitHours (integer), body. ` +
+      (extra > 0
+        ? `Also give each MESSAGE (and the CONNECTION_REQUEST note) a "variants" array of ${extra} ALTERNATE wording(s) that say the SAME thing differently (for human-like variation, never duplicates of "body"). `
+        : '') +
+      `Use waitHours like 24, 48, 72. Keep bodies under 100 words.`;
+    const steps: LiSequenceStepDto[] =
+      (await this.aiJson<LiSequenceStepDto[]>(campaign.tenantId, system, user)) ??
+      this.fallbackMessages(direct, followUps, business, strategy);
 
     if (opts.outreachType) {
       await this.prisma.liCampaign.update({ where: { id: campaignId }, data: { outreachType } });
     }
     return this.campaigns.updateSequence(campaignId, { steps });
+  }
+
+  /**
+   * Prompt-based sequence draft for the MANUAL campaign editor — no knowledge
+   * profile required (unlike generateMessages). Returns steps for the editor to
+   * fill; it does NOT persist anything, so existing campaigns are untouched.
+   */
+  async draftMessages(
+    clientId: string,
+    dto: { context?: string; outreachType?: LiOutreachType; followUps?: number; variants?: number },
+  ): Promise<{ steps: LiSequenceStepDto[]; source: 'ai' | 'fallback' }> {
+    const client = await this.prisma.client.findUnique({
+      where: { id: clientId },
+      select: { tenantId: true, name: true, productCategory: true, serviceType: true },
+    });
+    if (!client) throw new BadRequestException('Client not found');
+
+    const outreachType = dto.outreachType ?? LiOutreachType.WITH_CONNECTION;
+    const direct = outreachType === LiOutreachType.DIRECT_MESSAGES;
+    const followUps = Math.min(5, Math.max(1, dto.followUps ?? 2)); // usually 2, up to 3+
+    const extra = Math.min(3, Math.max(1, dto.variants ?? 1)) - 1;
+    const ctx = (dto.context || '').trim()
+      || [client.name, client.productCategory, client.serviceType].filter(Boolean).join(' — ')
+      || client.name;
+
+    const system =
+      'You are an expert LinkedIn outreach copywriter. Write short, human, non-salesy messages that fit LinkedIn ' +
+      '(a connection note must be under 300 characters). Use only these tokens where natural: ' +
+      '{first_name} {last_name} {company} {title}. Respond with ONLY a JSON array.';
+    const user =
+      `CONTEXT: ${ctx}\n\n` +
+      `Outreach type: ${outreachType}. Produce a JSON array of steps.\n` +
+      (direct
+        ? `First step type "MESSAGE" (no connection request). `
+        : `First step type "CONNECTION_REQUEST" with a short "note" (<=300 chars). `) +
+      `Then ${followUps} steps of type "MESSAGE". Each MESSAGE has: type, waitHours (integer), body. ` +
+      (extra > 0
+        ? `Also give each MESSAGE (and the CONNECTION_REQUEST note) a "variants" array of ${extra} ALTERNATE wording(s) that say the SAME thing differently (never a duplicate of "body"). `
+        : '') +
+      `Use waitHours like 2, 24, 48. Keep bodies under 90 words.`;
+
+    const ai = await this.aiJson<LiSequenceStepDto[]>(client.tenantId, system, user);
+    if (Array.isArray(ai) && ai.length) return { steps: ai, source: 'ai' };
+    return {
+      steps: this.fallbackMessages(direct, followUps, { coreProblemSolved: client.productCategory ?? undefined } as Content, {}),
+      source: 'fallback',
+    };
   }
 
   private async loadKnowledge(campaignId: string) {
