@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { decryptCredential } from '../common/crypto/credential-crypto';
-import { MessagingChannel, channelMeta } from './channels';
+import { MESSAGING_CHANNELS, MessagingChannel, channelMeta } from './channels';
 
 export interface PortalSendResult {
   ok: boolean;
@@ -31,9 +31,14 @@ export interface PortalStatus {
 }
 
 /**
- * Sends messages through our self-hosted portal, which holds one account per
+ * Sends messages on whichever network a channel names.
+ *
+ * Two of them go through our self-hosted portal, which holds one account per
  * project — a WhatsApp number on one, a Telegram account on another — and
- * talks to the right bridge on its own server.
+ * talks to the right bridge on its own server. Netvork is our own app and has
+ * no portal: it is reached as an ordinary user of it, sending a direct message
+ * from an account we hold a token for. Which of the two a channel uses is
+ * `transport` in its ChannelMeta; everything above that line is identical.
  *
  * The portal's API is identical for both networks: the project's own channel
  * decides where a message goes, so nothing here says "WhatsApp" or "Telegram"
@@ -72,9 +77,7 @@ export class PortalService {
   /** Every channel this workspace can currently send on. */
   async activeChannels(tenantId: string | null | undefined): Promise<MessagingChannel[]> {
     const checks = await Promise.all(
-      (['whatsapp', 'telegram'] as MessagingChannel[]).map(async (c) =>
-        ((await this.configFor(tenantId, c)) ? c : null),
-      ),
+      MESSAGING_CHANNELS.map(async (c) => ((await this.configFor(tenantId, c)) ? c : null)),
     );
 
     return checks.filter((c): c is MessagingChannel => !!c);
@@ -97,6 +100,11 @@ export class PortalService {
     const cfg = await this.configFor(tenantId, channel);
     if (!cfg) {
       return { ok: false, error: `${channelMeta(channel).label} is not set up for this workspace.` };
+    }
+
+    // Netvork is not a portal — it is our own app, reached as a user of it.
+    if (channelMeta(channel).transport === 'netvork') {
+      return this.sendViaNetvork(cfg, to, text);
     }
 
     const isAsync = !!opts.async;
@@ -139,6 +147,10 @@ export class PortalService {
       return { ok: false, error: 'Add the portal URL and API key first.' };
     }
 
+    if (channelMeta(channel).transport === 'netvork') {
+      return this.netvorkStatus(cfg);
+    }
+
     try {
       const res = await fetch(`${cfg.baseUrl}/api/v1/status`, {
         method: 'GET',
@@ -179,6 +191,151 @@ export class PortalService {
   /** Whether the env fallback is present, so the UI can say where sending comes from. */
   envConfigured(channel: MessagingChannel): boolean {
     return !!this.envConfig(channel);
+  }
+
+  // -- Netvork --------------------------------------------------------------
+
+  /**
+   * Direct conversations already opened, keyed by install + App ID.
+   *
+   * Netvork addresses a message by conversation, not by person, so reaching
+   * someone is two calls: find the thread, then post to it. The thread is
+   * permanent once made — Conversation::directBetween returns the same one
+   * every time — so remembering it turns the steady state into one call.
+   *
+   * In-process and unbounded on purpose: an entry is two short strings, and
+   * the population is "people this workspace sends alerts to". A restart
+   * simply pays for the lookup once more.
+   */
+  private readonly netvorkThreads = new Map<string, string>();
+
+  /**
+   * Send as a direct message from the account whose token we hold.
+   *
+   * `async` has no meaning here and is ignored: Netvork returns as soon as the
+   * message is stored and does its own fan-out to the bell and the recipient's
+   * devices from a queue on its side.
+   */
+  private async sendViaNetvork(cfg: PortalConfig, to: string, text: string): Promise<PortalSendResult> {
+    const appId = to.trim();
+    if (!appId) return { ok: false, error: 'No Netvork App ID for this user.' };
+
+    const key = `${cfg.baseUrl}|${appId.toLowerCase()}`;
+
+    for (const attempt of [1, 2]) {
+      const thread = this.netvorkThreads.get(key) ?? (await this.netvorkThread(cfg, appId));
+      if (typeof thread !== 'string') return thread;
+
+      try {
+        const res = await fetch(`${cfg.baseUrl}/api/v1/conversations/${thread}/messages`, {
+          method: 'POST',
+          headers: this.netvorkHeaders(cfg),
+          body: JSON.stringify({ body: text, type: 'text' }),
+          signal: AbortSignal.timeout(15000),
+        });
+
+        // The thread we remembered is gone — forget it and look it up again,
+        // once. Anything else is reported as it stands.
+        if (res.status === 404 && attempt === 1) {
+          this.netvorkThreads.delete(key);
+          continue;
+        }
+
+        const body = (await res.json().catch(() => ({}))) as Record<string, any>;
+
+        if (!res.ok) {
+          const error = body?.message ?? `Netvork responded ${res.status}.`;
+          this.logger.warn(`netvork send failed: ${error}`);
+          return { ok: false, error };
+        }
+
+        this.netvorkThreads.set(key, thread);
+
+        return { ok: true, messageId: body?.data?.uuid ?? null };
+      } catch (err) {
+        this.logger.warn(`netvork send error: ${err}`);
+        return { ok: false, error: 'Could not reach Netvork.' };
+      }
+    }
+
+    return { ok: false, error: 'Could not open a Netvork conversation.' };
+  }
+
+  /** The direct conversation with this App ID, opening it if there isn't one. */
+  private async netvorkThread(cfg: PortalConfig, appId: string): Promise<string | PortalSendResult> {
+    try {
+      const res = await fetch(`${cfg.baseUrl}/api/v1/conversations`, {
+        method: 'POST',
+        headers: this.netvorkHeaders(cfg),
+        body: JSON.stringify({ app_id: appId }),
+        signal: AbortSignal.timeout(10000),
+      });
+
+      const body = (await res.json().catch(() => ({}))) as Record<string, any>;
+
+      if (!res.ok) {
+        /*
+         * Netvork's own words, passed through rather than flattened.
+         *
+         * The two that matter both need the user to do something, and only
+         * Netvork can say which: "no user found for that App ID", and the
+         * privacy setting that means our sending account has to be one of
+         * their connections first. A generic "send failed" here would leave
+         * an admin with no idea which.
+         */
+        const error = body?.message ?? `Netvork responded ${res.status}.`;
+        this.logger.warn(`netvork conversation failed: ${error}`);
+        return { ok: false, error };
+      }
+
+      const uuid = body?.data?.uuid;
+      if (typeof uuid !== 'string' || !uuid) {
+        return { ok: false, error: 'Netvork did not return a conversation.' };
+      }
+
+      return uuid;
+    } catch (err) {
+      this.logger.warn(`netvork conversation error: ${err}`);
+      return { ok: false, error: 'Could not reach Netvork.' };
+    }
+  }
+
+  /**
+   * Whether the token works, answered by asking Netvork who we are. Names the
+   * account, so an admin can see which identity their people will hear from.
+   */
+  private async netvorkStatus(cfg: PortalConfig): Promise<PortalStatus> {
+    try {
+      const res = await fetch(`${cfg.baseUrl}/api/v1/me`, {
+        headers: this.netvorkHeaders(cfg),
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (res.status === 401) {
+        return { ok: false, error: 'Netvork rejected this token. Sign in as the sending account and issue a new one.' };
+      }
+
+      const body = (await res.json().catch(() => ({}))) as Record<string, any>;
+
+      if (!res.ok) {
+        return { ok: false, error: body?.message ?? `Netvork responded ${res.status}.` };
+      }
+
+      const me = body?.data ?? body;
+      const who = me?.app_id ?? me?.username ?? me?.name;
+
+      return { ok: true, project: who ? String(who) : undefined, channel: 'netvork' };
+    } catch {
+      return { ok: false, error: 'Could not reach Netvork at that URL.' };
+    }
+  }
+
+  private netvorkHeaders(cfg: PortalConfig): Record<string, string> {
+    return {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      Authorization: `Bearer ${cfg.apiKey}`,
+    };
   }
 
   // -- resolution ---------------------------------------------------------

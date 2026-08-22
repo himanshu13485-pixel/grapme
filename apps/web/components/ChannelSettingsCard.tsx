@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 
-export type MessagingChannel = 'whatsapp' | 'telegram';
+export type MessagingChannel = 'whatsapp' | 'telegram' | 'netvork';
 
 export interface ChannelSettings {
   channel: MessagingChannel;
@@ -27,29 +27,72 @@ interface TestResult {
   error?: string;
 }
 
-/** The wording that genuinely differs between the two networks. */
-const COPY: Record<MessagingChannel, { icon: string; account: string; link: string; notConnected: string }> = {
+interface ChannelCopy {
+  icon: string;
+  account: string;
+  link: string;
+  notConnected: string;
+  /** What the two credential fields are called on this network. */
+  urlLabel: string;
+  urlHint: string;
+  keyLabel: string;
+  keyHint: string;
+  /** Where messages appear to come from. */
+  sends: string;
+}
+
+/** The wording that genuinely differs between the networks. */
+const COPY: Record<MessagingChannel, ChannelCopy> = {
   whatsapp: {
     icon: '💬',
     account: 'WhatsApp number',
     link: 'scan the QR for this project',
     notConnected: 'Open the portal and scan the QR for this project.',
+    urlLabel: 'Portal URL',
+    urlHint: 'Just the address — no path. The same portal serves both phone networks; only the API key differs.',
+    keyLabel: 'API key',
+    keyHint: 'From the portal: this project’s card → Integration details.',
+    sends: 'Messages send from the WhatsApp number linked to your project in the portal.',
   },
   telegram: {
     icon: '✈️',
     account: 'Telegram account',
     link: 'link this project’s account',
     notConnected: 'Open the portal and link this project — it asks for a phone number and a login code.',
+    urlLabel: 'Portal URL',
+    urlHint: 'Just the address — no path. The same portal serves both phone networks; only the API key differs.',
+    keyLabel: 'API key',
+    keyHint: 'From the portal: this project’s card → Integration details.',
+    sends: 'Messages send from the Telegram account linked to your project in the portal.',
+  },
+  /*
+   * Netvork has no portal and no QR to scan. It is our own app, and we reach
+   * people on it by being a user of it — so what is stored is the address of
+   * the Netvork install and a login token for the account that will appear as
+   * the sender. Same two fields, different things to put in them.
+   */
+  netvork: {
+    icon: '🔵',
+    account: 'Netvork account',
+    link: 'sign in as the sending account',
+    notConnected: 'Sign in to Netvork as the account that should send these alerts and issue a token for it.',
+    urlLabel: 'Netvork URL',
+    urlHint: 'Just the address — no path. For the hosted install that is https://netvork.app.',
+    keyLabel: 'Account token',
+    keyHint:
+      'A Netvork API token for the account these alerts should come from. Everyone you alert has to be connected to that account on Netvork — Netvork only lets people message their connections by default.',
+    sends: 'Messages send as direct messages from the Netvork account this token belongs to.',
   },
 };
 
 /**
- * One messaging channel's portal credentials.
+ * One messaging channel's sending credentials.
  *
- * The two networks are configured independently — separate portal projects,
- * separate numbers, separate keys — so a workspace can run either, both, or
- * neither. Everything except the wording is the same, which is why this is one
- * component rather than two pages that drift apart.
+ * Every network is configured independently — its own account, its own key —
+ * so a workspace can run any of them, all of them, or none. What is behind the
+ * two fields differs (a portal project for the phone networks, a Netvork
+ * account for Netvork) but their shape does not, which is why this is one
+ * component rather than three pages that drift apart.
  */
 export default function ChannelSettingsCard({ channel }: { channel: MessagingChannel }) {
   const [w, setW] = useState<ChannelSettings | null>(null);
@@ -131,13 +174,13 @@ export default function ChannelSettingsCard({ channel }: { channel: MessagingCha
         Enable {w.label} notifications
       </label>
       <p className="mt-1 text-xs text-slate-500">
-        Messages send from the {copy.account} linked to your project in the portal. Each person still has to verify their
+        {copy.sends} Each person still has to verify their
         own number for {w.label} under My Account before we message them there.
       </p>
 
       <div className="mt-4 grid gap-4">
         <div>
-          <label className="label">Portal URL</label>
+          <label className="label">{copy.urlLabel}</label>
           <input
             className="input"
             value={w.portalUrl}
@@ -145,22 +188,26 @@ export default function ChannelSettingsCard({ channel }: { channel: MessagingCha
             placeholder="https://wa.yourdomain.com"
           />
           <p className="mt-1 text-xs text-slate-400">
-            Just the address — no path. The same portal serves both networks; only the API key differs.
+            {copy.urlHint}
           </p>
         </div>
 
         <div>
-          <label className="label">API key</label>
+          <label className="label">{copy.keyLabel}</label>
           <input
             className="input"
             type="password"
             autoComplete="new-password"
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
-            placeholder={w.apiKeyHint ? `Saved (${w.apiKeyHint}) — leave blank to keep it` : `Paste the ${w.label} project’s API key`}
+            placeholder={
+              w.apiKeyHint
+                ? `Saved (${w.apiKeyHint}) — leave blank to keep it`
+                : `Paste the ${w.label} ${copy.keyLabel.toLowerCase()}`
+            }
           />
           <p className="mt-1 text-xs text-slate-400">
-            From the portal: the {w.label} project’s card → <strong>Integration details</strong>. Stored encrypted and
+            {copy.keyHint} Stored encrypted and
             never shown again.
             {w.apiKeyHint && (
               <>
@@ -219,14 +266,14 @@ export default function ChannelSettingsCard({ channel }: { channel: MessagingCha
               <>
                 Sending is active, using {sourceLabel}.
                 {w.source === 'env' && !w.workspaceConfigured && (
-                  <> Save a portal URL and API key above to use this workspace’s own account instead.</>
+                  <> Save a {copy.urlLabel.toLowerCase()} and {copy.keyLabel.toLowerCase()} above to use this workspace’s own account instead.</>
                 )}
               </>
             ) : w.workspaceConfigured && !w.enabled ? (
               <>Turned off. Tick “Enable {w.label} notifications” above to start sending.</>
             ) : (
               <>
-                Not set up. Add the portal URL and API key above
+                Not set up. Add the {copy.urlLabel.toLowerCase()} and {copy.keyLabel.toLowerCase()} above
                 {w.envConfigured ? ', or leave them blank to use the server’s fallback credentials.' : '.'}
               </>
             )}

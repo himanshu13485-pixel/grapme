@@ -366,6 +366,13 @@ model User {
   // number on WhatsApp says nothing about whether it reaches them on Telegram.
   whatsappVerifiedAt    DateTime?
   telegramVerifiedAt    DateTime?
+  // Netvork is our own network, so a user is an account on it rather than a
+  // number on someone else's. Addressed by App ID (or username/email, which
+  // Netvork resolves to the same person), which is why it needs its own field
+  // instead of reusing contactMobile like the two phone channels do.
+  netvorkAppId          String?
+  notifyNetvork         Boolean    @default(false)
+  netvorkVerifiedAt     DateTime?
   emailVerified         Boolean    @default(true) // client self-registration must confirm email before login
   verifyTokenHash       String? // sha256 of the email-confirmation token
   verifyExpires         DateTime? // confirmation-link expiry
@@ -432,10 +439,12 @@ model User {
 model ChannelVerification {
   id        String   @id @default(uuid())
   userId    String
-  /// whatsapp | telegram
+  /// whatsapp | telegram | netvork
   channel   String   @default("whatsapp")
-  /// The number the code went to, so changing the number invalidates it.
-  phone     String
+  /// The address the code went to — a phone number on the two phone channels,
+  /// an App ID on Netvork — so changing it invalidates the pending code. The
+  /// column is still called `phone`: it predates there being anything else.
+  address   String   @map("phone")
   codeHash  String
   expiresAt DateTime
   attempts  Int      @default(0)

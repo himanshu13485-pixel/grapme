@@ -21,6 +21,8 @@ const PUBLIC_FIELDS = {
   notifyEmail: true,
   notifyWhatsapp: true,
   notifyTelegram: true,
+  notifyNetvork: true,
+  netvorkAppId: true,
   whatsappVerifiedAt: true,
   telegramVerifiedAt: true,
   lastLoginAt: true,
@@ -82,24 +84,40 @@ export class UsersService {
   }
 
   async updateProfile(userId: string, dto: UpdateProfileDto) {
-    // Changing the number invalidates every proof attached to the old one.
-    // Without this, verifying number A and then switching to number B leaves
-    // both channels "verified" and starts alerting an unconfirmed number —
-    // the exact thing the OTP exists to prevent.
+    // Changing an address invalidates every proof attached to the old one.
+    // Without this, verifying address A and then switching to address B leaves
+    // the channel "verified" and starts alerting somewhere unconfirmed — the
+    // exact thing the OTP exists to prevent.
+    //
+    // The two phone channels fall together because they share one number; the
+    // Netvork App ID is its own address and resets only itself.
     const data: Record<string, unknown> = { ...dto };
 
-    if (dto.contactMobile !== undefined) {
+    if (dto.contactMobile !== undefined || dto.netvorkAppId !== undefined) {
       const current = await this.prisma.user.findUnique({
         where: { id: userId },
-        select: { contactMobile: true },
+        select: { contactMobile: true, netvorkAppId: true },
       });
-      const next = (dto.contactMobile ?? '').trim() || null;
 
-      if ((current?.contactMobile ?? null) !== next) {
-        data.whatsappVerifiedAt = null;
-        data.telegramVerifiedAt = null;
-        data.notifyWhatsapp = false;
-        data.notifyTelegram = false;
+      if (dto.contactMobile !== undefined) {
+        const next = (dto.contactMobile ?? '').trim() || null;
+
+        if ((current?.contactMobile ?? null) !== next) {
+          data.whatsappVerifiedAt = null;
+          data.telegramVerifiedAt = null;
+          data.notifyWhatsapp = false;
+          data.notifyTelegram = false;
+        }
+      }
+
+      if (dto.netvorkAppId !== undefined) {
+        const next = (dto.netvorkAppId ?? '').trim() || null;
+        data.netvorkAppId = next;
+
+        if ((current?.netvorkAppId ?? null) !== next) {
+          data.netvorkVerifiedAt = null;
+          data.notifyNetvork = false;
+        }
       }
     }
 

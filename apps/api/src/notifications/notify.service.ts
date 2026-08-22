@@ -24,16 +24,17 @@ export interface NotifyPayload {
  * Per-call channel gates (default: all enabled). Email and the messaging
  * channels still additionally respect each recipient's own preference.
  *
- * `telegram` defaults to whatever `whatsapp` is set to, not to `true`. Callers
- * written before Telegram existed say `whatsapp: false` to mean "no messaging,
- * just a bell" — defaulting the new channel on would have started messaging
- * people from code that had explicitly asked not to.
+ * `telegram` and `netvork` default to whatever `whatsapp` is set to, not to
+ * `true`. Callers written before those channels existed say `whatsapp: false`
+ * to mean "no messaging, just a bell" — defaulting a new channel on would have
+ * started messaging people from code that had explicitly asked not to.
  */
 export interface NotifyChannels {
   inApp?: boolean;
   email?: boolean;
   whatsapp?: boolean;
   telegram?: boolean;
+  netvork?: boolean;
 }
 
 /**
@@ -75,8 +76,9 @@ export class NotifyService {
       inApp: given.inApp ?? true,
       email: given.email ?? true,
       whatsapp: given.whatsapp ?? true,
-      // See NotifyChannels: follows whatsapp unless asked for explicitly.
+      // See NotifyChannels: both follow whatsapp unless asked for explicitly.
       telegram: given.telegram ?? given.whatsapp ?? true,
+      netvork: given.netvork ?? given.whatsapp ?? true,
     };
 
     const ids = [...new Set((userIds ?? []).filter(Boolean))];
@@ -90,9 +92,12 @@ export class NotifyService {
       notifyEmail: boolean;
       notifyWhatsapp: boolean;
       notifyTelegram: boolean;
+      notifyNetvork: boolean;
       contactMobile: string | null;
+      netvorkAppId: string | null;
       whatsappVerifiedAt: Date | null;
       telegramVerifiedAt: Date | null;
+      netvorkVerifiedAt: Date | null;
     }[] = [];
     try {
       users = await this.prisma.user.findMany({
@@ -105,9 +110,12 @@ export class NotifyService {
           notifyEmail: true,
           notifyWhatsapp: true,
           notifyTelegram: true,
+          notifyNetvork: true,
           contactMobile: true,
+          netvorkAppId: true,
           whatsappVerifiedAt: true,
           telegramVerifiedAt: true,
+          netvorkVerifiedAt: true,
         },
       });
     } catch (err) {
@@ -170,13 +178,14 @@ export class NotifyService {
       }
     }
 
-    // 3) WhatsApp and Telegram — through our self-hosted portal. Queued (async)
-    // so a burst of alerts can never stall the request that triggered it.
+    // 3) The messaging channels. The two phone ones go through our portal,
+    // queued (async) so a burst of alerts can never stall the request that
+    // triggered it; Netvork is delivered by Netvork's own queue.
     //
     // Deliberately strict, per channel: only message people who both asked for
-    // alerts there AND proved the number reaches them there. Someone verified on
-    // WhatsApp but not Telegram gets one message, not two. Keeps us far away
-    // from spam-report territory on either network.
+    // alerts there AND proved the address reaches them there. Someone verified
+    // on WhatsApp but not Telegram gets one message, not two. Keeps us far away
+    // from spam-report territory on networks that are not ours.
     const text = this.messageText(payload);
 
     for (const channel of MESSAGING_CHANNELS) {
@@ -185,15 +194,18 @@ export class NotifyService {
       const meta = channelMeta(channel);
 
       for (const u of users) {
-        if (!u[meta.notifyField] || !u.contactMobile || !u[meta.verifiedField]) continue;
+        // Where this network reaches them: a phone number on the phone
+        // channels, an App ID on Netvork.
+        const address = u[meta.addressField];
+        if (!u[meta.notifyField] || !address || !u[meta.verifiedField]) continue;
 
         try {
-          const res = await this.portal.send(u.tenantId, channel, u.contactMobile, text, { async: true });
+          const res = await this.portal.send(u.tenantId, channel, address, text, { async: true });
           if (!res.ok) {
-            this.logger.warn(`notifyMany: ${channel} to ${u.contactMobile} failed: ${res.error}`);
+            this.logger.warn(`notifyMany: ${channel} to ${address} failed: ${res.error}`);
           }
         } catch (err) {
-          this.logger.warn(`notifyMany: ${channel} to ${u.contactMobile} errored: ${err}`);
+          this.logger.warn(`notifyMany: ${channel} to ${address} errored: ${err}`);
         }
       }
     }

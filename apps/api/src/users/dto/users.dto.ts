@@ -44,6 +44,15 @@ export class UpdateProfileDto {
   @IsString()
   contactMobile?: string;
 
+  /**
+   * The user's Netvork account — App ID, username or email; Netvork resolves
+   * all three to the same person. Its own field because Netvork is our app
+   * rather than someone else's phone network, so there is no number involved.
+   */
+  @IsOptional()
+  @IsString()
+  netvorkAppId?: string;
+
   /** Per-user alert channel preferences (in-app is always on). */
   @IsOptional()
   @IsBoolean()
@@ -56,4 +65,8 @@ export class UpdateProfileDto {
   @IsOptional()
   @IsBoolean()
   notifyTelegram?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  notifyNetvork?: boolean;
 }

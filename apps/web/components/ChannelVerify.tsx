@@ -3,12 +3,15 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 
-export type MessagingChannel = 'whatsapp' | 'telegram';
+export type MessagingChannel = 'whatsapp' | 'telegram' | 'netvork';
 
 interface VerifyStatus {
   channel: MessagingChannel;
   label: string;
-  phone: string | null;
+  /** A mobile number on the phone channels, an App ID on Netvork. */
+  address: string | null;
+  /** What to call that address in front of the user. */
+  addressLabel: string;
   verified: boolean;
   verifiedAt: string | null;
   notify: boolean;
@@ -16,25 +19,35 @@ interface VerifyStatus {
   configured: boolean;
 }
 
-/** Only what genuinely reads differently between the two networks. */
-const COPY: Record<MessagingChannel, { where: string; hint: string }> = {
+/** Only what genuinely reads differently between the networks. */
+const COPY: Record<MessagingChannel, { where: string; hint: string; missing: string }> = {
   whatsapp: {
     where: 'on WhatsApp',
     hint: 'The code arrives as a WhatsApp message.',
+    missing: 'Add a mobile number above to receive alerts on WhatsApp.',
   },
   telegram: {
     where: 'on Telegram',
     hint: 'The code arrives in the Telegram app on that number. If you are not on Telegram, or have "find me by phone number" switched off, it cannot reach you.',
+    missing: 'Add a mobile number above to receive alerts on Telegram.',
+  },
+  netvork: {
+    where: 'on Netvork',
+    hint: 'The code arrives as a Netvork message. Netvork only lets people message their connections by default, so if nothing comes through, accept the connection request from our account and try again.',
+    missing: 'Add your Netvork App ID above to receive alerts on Netvork.',
   },
 };
 
 /**
- * Verify-your-number card for one messaging channel.
+ * Verify-your-address card for one messaging channel.
  *
  * Optional by design: skipping it just means we never send alerts there. Each
  * network is proved separately — the same number reaching you on WhatsApp is no
  * evidence it reaches you on Telegram, and on Telegram it may not be reachable
- * at all depending on that person's privacy settings.
+ * at all depending on that person's privacy settings. Netvork does not use a
+ * number: the address is an App ID, and a code arriving there also proves our
+ * sending account is allowed to message you, which Netvork treats as a
+ * separate permission.
  */
 export default function ChannelVerify({
   channel,
@@ -83,7 +96,7 @@ export default function ChannelVerify({
       const res = await api.post<{ ok: boolean; error?: string; retryAfter?: number }>(`${base}/send`, {});
       if (res.ok) {
         setSent(true);
-        setMsg(`We sent a 6-digit code to ${status?.phone} ${copy.where}.`);
+        setMsg(`We sent a 6-digit code to ${status?.address} ${copy.where}.`);
         setCooldown(60);
       } else {
         setErr(res.error ?? 'Could not send the code.');
@@ -106,7 +119,7 @@ export default function ChannelVerify({
       if (res.ok) {
         setCode('');
         setSent(false);
-        setMsg(`Your number is verified for ${status?.label ?? channel}.`);
+        setMsg(`Verified for ${status?.label ?? channel}.`);
         await load();
         onVerified?.();
       } else {
@@ -122,9 +135,9 @@ export default function ChannelVerify({
   // Nothing to show until we know the state, or if this channel isn't set up.
   if (!status || !status.configured) return null;
 
-  // No number on file — verification isn't possible yet.
-  if (!status.phone) {
-    return <p className="text-xs text-slate-500">Add a mobile number above to receive alerts {copy.where}.</p>;
+  // No address on file — verification isn't possible yet.
+  if (!status.address) {
+    return <p className="text-xs text-slate-500">{copy.missing}</p>;
   }
 
   if (status.verified) {
@@ -132,7 +145,7 @@ export default function ChannelVerify({
       <div className="flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
         <span aria-hidden>✓</span>
         <span>
-          <strong>{status.phone}</strong> is verified for {status.label}
+          <strong>{status.address}</strong> is verified for {status.label}
           {status.verifiedAt ? ` — ${new Date(status.verifiedAt).toLocaleDateString()}` : ''}.
         </span>
       </div>
@@ -141,10 +154,12 @@ export default function ChannelVerify({
 
   return (
     <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
-      <p className="text-sm font-medium text-amber-900">Verify your number for {status.label}</p>
+      <p className="text-sm font-medium text-amber-900">
+        Verify your {status.addressLabel} for {status.label}
+      </p>
       <p className="mt-0.5 text-xs text-amber-800">
-        We only send alerts to a number you&apos;ve confirmed is yours. Sending to <strong>{status.phone}</strong>.{' '}
-        {copy.hint}
+        We only send alerts to an address you&apos;ve confirmed is yours. Sending to{' '}
+        <strong>{status.address}</strong>. {copy.hint}
       </p>
 
       {msg && <p className="mt-2 rounded bg-emerald-50 px-2 py-1 text-xs text-emerald-700">{msg}</p>}

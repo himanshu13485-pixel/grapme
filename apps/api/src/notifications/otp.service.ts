@@ -3,7 +3,7 @@ import * as argon2 from 'argon2';
 import { randomInt } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { PortalService } from './portal.service';
-import { MessagingChannel, channelMeta } from './channels';
+import { MESSAGING_CHANNELS, MessagingChannel, channelMeta } from './channels';
 
 export interface OtpResult {
   ok: boolean;
@@ -12,16 +12,19 @@ export interface OtpResult {
 }
 
 /**
- * Issues and checks the one-time codes that verify a user's number on a
+ * Issues and checks the one-time codes that verify a user's address on a
  * messaging channel.
  *
  * Only a hash of the code is stored; the plain code exists only in the message
  * we send. Codes expire, are single-use, and allow a limited number of guesses.
  *
- * Verification is per channel even though the number is the same. Reaching
+ * Verification is per channel even where the address is the same. Reaching
  * someone on WhatsApp is no evidence they are on Telegram — and on Telegram a
  * number is only reachable at all if that person allows being found by it — so
- * each network has to prove itself before we send alerts there.
+ * each network has to prove itself before we send alerts there. Netvork shares
+ * an address with neither: it is an App ID, and the code arriving proves both
+ * that the ID is theirs and that our sending account is allowed to message
+ * them, which on Netvork is a permission of its own.
  */
 @Injectable()
 export class OtpService {
@@ -41,18 +44,21 @@ export class OtpService {
     private readonly portal: PortalService,
   ) {}
 
-  /** The user's number and whether it's already verified on this channel. */
+  /** The user's address on this channel and whether it's already verified. */
   async status(userId: string, channel: MessagingChannel) {
     const meta = channelMeta(channel);
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
         contactMobile: true,
+        netvorkAppId: true,
         tenantId: true,
         whatsappVerifiedAt: true,
         telegramVerifiedAt: true,
+        netvorkVerifiedAt: true,
         notifyWhatsapp: true,
         notifyTelegram: true,
+        notifyNetvork: true,
       },
     });
 
@@ -61,7 +67,8 @@ export class OtpService {
     return {
       channel,
       label: meta.label,
-      phone: user?.contactMobile ?? null,
+      address: user?.[meta.addressField] ?? null,
+      addressLabel: meta.addressLabel,
       verified: !!verifiedAt,
       verifiedAt,
       notify: !!user?.[meta.notifyField],
@@ -70,12 +77,14 @@ export class OtpService {
     };
   }
 
-  /** Every channel's state at once, for a settings screen that shows both. */
+  /** Every channel's state at once, for a settings screen that shows them all. */
   async statusAll(userId: string) {
-    return {
-      whatsapp: await this.status(userId, 'whatsapp'),
-      telegram: await this.status(userId, 'telegram'),
-    };
+    const all = await Promise.all(MESSAGING_CHANNELS.map((c) => this.status(userId, c)));
+
+    return Object.fromEntries(all.map((one) => [one.channel, one])) as Record<
+      MessagingChannel,
+      Awaited<ReturnType<OtpService['status']>>
+    >;
   }
 
   /** Generate a code and send it to the user on this channel. */
@@ -83,12 +92,12 @@ export class OtpService {
     const meta = channelMeta(channel);
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { contactMobile: true, tenantId: true },
+      select: { contactMobile: true, netvorkAppId: true, tenantId: true },
     });
-    const phone = user?.contactMobile?.trim();
+    const address = user?.[meta.addressField]?.trim();
 
-    if (!phone) {
-      return { ok: false, error: 'No mobile number on this account. Add one to your profile first.' };
+    if (!address) {
+      return { ok: false, error: `No ${meta.addressLabel} on this account. Add one to your profile first.` };
     }
 
     // Resolved up front so the message carries the workspace's own brand name.
@@ -112,13 +121,18 @@ export class OtpService {
       data: {
         userId,
         channel,
-        phone,
+        address,
         codeHash: await argon2.hash(code, { type: argon2.argon2id }),
         expiresAt: new Date(Date.now() + OtpService.TTL_MINUTES * 60_000),
       },
     });
 
-    const res = await this.portal.send(user?.tenantId, channel, phone, this.messageFor(code, cfg.brand, meta.label));
+    const res = await this.portal.send(
+      user?.tenantId,
+      channel,
+      address,
+      this.messageFor(code, cfg.brand, meta.label, meta.addressLabel),
+    );
 
     if (!res.ok) {
       // Don't leave a code the user can never receive.
@@ -151,13 +165,13 @@ export class OtpService {
 
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { contactMobile: true },
+      select: { contactMobile: true, netvorkAppId: true },
     });
 
-    // The number changed since the code was sent — the code no longer applies.
-    if ((user?.contactMobile ?? null) !== verification.phone) {
+    // The address changed since the code was sent — the code no longer applies.
+    if ((user?.[meta.addressField] ?? null) !== verification.address) {
       await drop();
-      return { ok: false, error: 'Your mobile number changed. Request a new code.' };
+      return { ok: false, error: `Your ${meta.addressLabel} changed. Request a new code.` };
     }
 
     if (verification.attempts >= OtpService.MAX_ATTEMPTS) {
@@ -207,12 +221,12 @@ export class OtpService {
     return Math.max(0, OtpService.RESEND_COOLDOWN_SECONDS - elapsed);
   }
 
-  private messageFor(code: string, brand: string, network: string): string {
+  private messageFor(code: string, brand: string, network: string, addressLabel: string): string {
     const ttl = OtpService.TTL_MINUTES;
 
     return (
       `${code} is your ${brand} verification code.\n\n` +
-      `It confirms this ${network} number for alerts, and expires in ${ttl} minutes. ` +
+      `It confirms this ${network} ${addressLabel} for alerts, and expires in ${ttl} minutes. ` +
       `If you didn't request this, you can ignore this message.`
     );
   }
