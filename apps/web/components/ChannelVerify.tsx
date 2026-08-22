@@ -33,7 +33,7 @@ const COPY: Record<MessagingChannel, { where: string; hint: string; missing: str
   },
   netvork: {
     where: 'on Netvork',
-    hint: 'The code arrives as a Netvork message. Netvork only lets people message their connections by default, so if nothing comes through, accept the connection request from our account and try again.',
+    hint: 'The code arrives as a Netvork message. Netvork only delivers to accounts you are connected to, so the first attempt sends you a connection request instead — accept it in Netvork, then ask for the code again.',
     missing: 'Add your Netvork App ID above to receive alerts on Netvork.',
   },
 };

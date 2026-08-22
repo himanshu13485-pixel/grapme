@@ -285,6 +285,21 @@ export class PortalService {
          */
         const error = body?.message ?? `Netvork responded ${res.status}.`;
         this.logger.warn(`netvork conversation failed: ${error}`);
+
+        // Not connected yet. Ask, so the person has a request waiting rather
+        // than a instruction to go and find us. Netvork answers 409 if one is
+        // already pending, which is why this can run on every attempt without
+        // pestering anybody.
+        if (res.status === 403) {
+          await this.netvorkConnect(cfg, appId);
+
+          return {
+            ok: false,
+            error:
+              'Netvork needs you to be connected first. A connection request has been sent — accept it in Netvork and try again.',
+          };
+        }
+
         return { ok: false, error };
       }
 
@@ -297,6 +312,32 @@ export class PortalService {
     } catch (err) {
       this.logger.warn(`netvork conversation error: ${err}`);
       return { ok: false, error: 'Could not reach Netvork.' };
+    }
+  }
+
+  /**
+   * Ask to connect, so the person has something to accept.
+   *
+   * Netvork only delivers to the sending account's connections, and this is
+   * the half of that handshake we can do ourselves. The other half is theirs
+   * and stays theirs: a person decides whether an application may message
+   * them, and can disconnect later. Best-effort — a failure here only means
+   * they connect the long way round, so it must never break the send path
+   * that called it.
+   */
+  private async netvorkConnect(cfg: PortalConfig, appId: string): Promise<void> {
+    try {
+      await fetch(`${cfg.baseUrl}/api/v1/connections`, {
+        method: 'POST',
+        headers: this.netvorkHeaders(cfg),
+        body: JSON.stringify({
+          app_id: appId,
+          message: `${cfg.brand} would like to send you notifications here.`,
+        }),
+        signal: AbortSignal.timeout(10000),
+      });
+    } catch (err) {
+      this.logger.warn(`netvork connect request failed: ${err}`);
     }
   }
 
