@@ -39,7 +39,7 @@ export class UpdateProfileDto {
   @IsString()
   avatarUrl?: string;
 
-  /** WhatsApp / contact number used for alert notifications. */
+  /** Contact number used for alert notifications on WhatsApp / Telegram. */
   @IsOptional()
   @IsString()
   contactMobile?: string;
@@ -52,4 +52,8 @@ export class UpdateProfileDto {
   @IsOptional()
   @IsBoolean()
   notifyWhatsapp?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  notifyTelegram?: boolean;
 }

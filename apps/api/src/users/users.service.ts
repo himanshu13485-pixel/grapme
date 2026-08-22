@@ -20,6 +20,9 @@ const PUBLIC_FIELDS = {
   contactMobile: true,
   notifyEmail: true,
   notifyWhatsapp: true,
+  notifyTelegram: true,
+  whatsappVerifiedAt: true,
+  telegramVerifiedAt: true,
   lastLoginAt: true,
   createdAt: true,
 } as const;
@@ -78,10 +81,31 @@ export class UsersService {
     return user;
   }
 
-  updateProfile(userId: string, dto: UpdateProfileDto) {
+  async updateProfile(userId: string, dto: UpdateProfileDto) {
+    // Changing the number invalidates every proof attached to the old one.
+    // Without this, verifying number A and then switching to number B leaves
+    // both channels "verified" and starts alerting an unconfirmed number —
+    // the exact thing the OTP exists to prevent.
+    const data: Record<string, unknown> = { ...dto };
+
+    if (dto.contactMobile !== undefined) {
+      const current = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { contactMobile: true },
+      });
+      const next = (dto.contactMobile ?? '').trim() || null;
+
+      if ((current?.contactMobile ?? null) !== next) {
+        data.whatsappVerifiedAt = null;
+        data.telegramVerifiedAt = null;
+        data.notifyWhatsapp = false;
+        data.notifyTelegram = false;
+      }
+    }
+
     return this.prisma.user.update({
       where: { id: userId },
-      data: dto,
+      data,
       select: PUBLIC_FIELDS,
     });
   }

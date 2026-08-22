@@ -89,6 +89,7 @@ export class BroadcastsService {
         showInApp: true,
         sendEmail: true,
         sendWhatsapp: true,
+        sendTelegram: true,
         recipientCount: true,
         createdByName: true,
         sentAt: true,
@@ -174,6 +175,7 @@ export class BroadcastsService {
       showInApp: dto.showInApp ?? true,
       sendEmail: dto.sendEmail ?? true,
       sendWhatsapp: dto.sendWhatsapp ?? false,
+      sendTelegram: dto.sendTelegram ?? false,
       createdByUserId: actor.userId,
       createdByName,
     };
@@ -201,7 +203,7 @@ export class BroadcastsService {
     await this.notify.notifyMany(
       recipientUserIds,
       { type: 'broadcast', title: b.title, body: htmlToText(b.bodyHtml), link: '/notifications', emailHtml },
-      { inApp: b.showInApp, email: b.sendEmail, whatsapp: b.sendWhatsapp },
+      { inApp: b.showInApp, email: b.sendEmail, whatsapp: b.sendWhatsapp, telegram: b.sendTelegram },
     );
     return recipientUserIds.length;
   }
