@@ -203,7 +203,17 @@ export class BroadcastsService {
     await this.notify.notifyMany(
       recipientUserIds,
       { type: 'broadcast', title: b.title, body: htmlToText(b.bodyHtml), link: '/notifications', emailHtml },
-      { inApp: b.showInApp, email: b.sendEmail, whatsapp: b.sendWhatsapp, telegram: b.sendTelegram },
+      // netvork is named explicitly, and off. Left unsaid it would follow
+      // `whatsapp` — see NotifyChannels — and a broadcast marked for WhatsApp
+      // would quietly go out on Netvork too. A broadcast picks its networks
+      // deliberately; there is no sendNetvork column to pick this one yet.
+      {
+        inApp: b.showInApp,
+        email: b.sendEmail,
+        whatsapp: b.sendWhatsapp,
+        telegram: b.sendTelegram,
+        netvork: false,
+      },
     );
     return recipientUserIds.length;
   }
