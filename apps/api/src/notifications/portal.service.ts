@@ -363,9 +363,26 @@ export class PortalService {
       }
 
       const me = body?.data ?? body;
-      const who = me?.app_id ?? me?.username ?? me?.name;
+      // The name, because that is what people will see the messages come
+      // from; the App ID beside it, because that is what they connect to.
+      const name = me?.name ?? me?.username ?? 'this account';
+      const appId = me?.app_id ? ` (${me.app_id})` : '';
 
-      return { ok: true, project: who ? String(who) : undefined, channel: 'netvork' };
+      /*
+       * `connected: true` is the literal truth and worth stating plainly.
+       *
+       * The two phone channels report a bridge holding a session that can drop
+       * — the card asks after it, and rightly. Netvork has no session: a valid
+       * token is the whole of being connected. Left unsaid, the card read the
+       * missing bridge as a dead one and told an admin their working setup was
+       * broken.
+       */
+      return {
+        ok: true,
+        project: `${name}${appId}`,
+        channel: 'netvork',
+        bridge: { connected: true, status: 'ready', me: `${name}${appId}` },
+      };
     } catch {
       return { ok: false, error: 'Could not reach Netvork at that URL.' };
     }

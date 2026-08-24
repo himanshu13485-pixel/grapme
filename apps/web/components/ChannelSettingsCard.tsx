@@ -284,7 +284,7 @@ export default function ChannelSettingsCard({ channel }: { channel: MessagingCha
           <div className={`mt-3 rounded-lg p-3 text-sm ${test.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-rose-50 text-rose-800'}`}>
             {test.ok ? (
               <>
-                <div className="font-medium">Connected to project “{test.project ?? 'unknown'}”.</div>
+                <div className="font-medium">Connected to “{test.project ?? 'unknown'}”.</div>
                 <div className="mt-1 text-xs">
                   {test.bridge?.connected ? (
                     <>
