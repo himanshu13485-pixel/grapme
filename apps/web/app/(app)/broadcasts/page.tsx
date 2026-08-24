@@ -18,6 +18,7 @@ interface Broadcast {
   sendEmail: boolean;
   sendWhatsapp: boolean;
   sendTelegram: boolean;
+  sendNetvork: boolean;
   recipientCount: number;
   createdByName: string | null;
   sentAt: string | null;
@@ -48,6 +49,7 @@ export default function BroadcastsPage() {
   const [sendEmail, setSendEmail] = useState(true);
   const [sendWhatsapp, setSendWhatsapp] = useState(false);
   const [sendTelegram, setSendTelegram] = useState(false);
+  const [sendNetvork, setSendNetvork] = useState(false);
   const [bodyHtml, setBodyHtml] = useState('');
   const [signatureHtml, setSignatureHtml] = useState(DEFAULT_SIGNATURE);
   const [busy, setBusy] = useState(false);
@@ -81,7 +83,7 @@ export default function BroadcastsPage() {
   }
 
   function buildPayload() {
-    return { title, bodyHtml, signatureHtml, ...payloadAudience(), showInApp, sendEmail, sendWhatsapp, sendTelegram };
+    return { title, bodyHtml, signatureHtml, ...payloadAudience(), showInApp, sendEmail, sendWhatsapp, sendTelegram, sendNetvork };
   }
 
   function resetForm() {
@@ -106,6 +108,7 @@ export default function BroadcastsPage() {
       );
       setClientId(b.clientId ?? '');
       setShowInApp(b.showInApp); setSendEmail(b.sendEmail); setSendWhatsapp(b.sendWhatsapp); setSendTelegram(b.sendTelegram);
+      setSendNetvork(b.sendNetvork);
       setBodyHtml(b.bodyHtml); setSignatureHtml(b.signatureHtml ?? '');
       setEditorKey((k) => k + 1);
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -217,6 +220,7 @@ export default function BroadcastsPage() {
             <Toggle label="Send email" checked={sendEmail} onChange={setSendEmail} />
             <Toggle label="Send WhatsApp" checked={sendWhatsapp} onChange={setSendWhatsapp} />
             <Toggle label="Send Telegram" checked={sendTelegram} onChange={setSendTelegram} />
+            <Toggle label="Send Netvork" checked={sendNetvork} onChange={setSendNetvork} />
           </div>
           <p className="-mt-2 text-xs text-slate-400">
             Email &amp; WhatsApp also respect each client&apos;s own notification preferences. The in-app
@@ -316,6 +320,7 @@ export default function BroadcastsPage() {
               {viewing.sendEmail && <span className="rounded bg-teal-50 px-1.5 py-0.5 text-teal-700">Email</span>}
               {viewing.sendWhatsapp && <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-700">WhatsApp</span>}
               {viewing.sendTelegram && <span className="rounded bg-sky-50 px-1.5 py-0.5 text-sky-700">Telegram</span>}
+              {viewing.sendNetvork && <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-indigo-700">Netvork</span>}
             </div>
             <div className="prose prose-sm max-w-none text-slate-700" dangerouslySetInnerHTML={{ __html: viewing.bodyHtml }} />
             {viewing.signatureHtml && (

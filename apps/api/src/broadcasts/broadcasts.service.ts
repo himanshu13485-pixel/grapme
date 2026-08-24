@@ -90,6 +90,7 @@ export class BroadcastsService {
         sendEmail: true,
         sendWhatsapp: true,
         sendTelegram: true,
+        sendNetvork: true,
         recipientCount: true,
         createdByName: true,
         sentAt: true,
@@ -176,6 +177,7 @@ export class BroadcastsService {
       sendEmail: dto.sendEmail ?? true,
       sendWhatsapp: dto.sendWhatsapp ?? false,
       sendTelegram: dto.sendTelegram ?? false,
+      sendNetvork: dto.sendNetvork ?? false,
       createdByUserId: actor.userId,
       createdByName,
     };
@@ -203,16 +205,15 @@ export class BroadcastsService {
     await this.notify.notifyMany(
       recipientUserIds,
       { type: 'broadcast', title: b.title, body: htmlToText(b.bodyHtml), link: '/notifications', emailHtml },
-      // netvork is named explicitly, and off. Left unsaid it would follow
-      // `whatsapp` — see NotifyChannels — and a broadcast marked for WhatsApp
-      // would quietly go out on Netvork too. A broadcast picks its networks
-      // deliberately; there is no sendNetvork column to pick this one yet.
+      // Every channel named, none inherited. Left unsaid, netvork would
+      // follow `whatsapp` — see NotifyChannels — and a broadcast marked for
+      // WhatsApp would quietly go out on Netvork too.
       {
         inApp: b.showInApp,
         email: b.sendEmail,
         whatsapp: b.sendWhatsapp,
         telegram: b.sendTelegram,
-        netvork: false,
+        netvork: b.sendNetvork,
       },
     );
     return recipientUserIds.length;

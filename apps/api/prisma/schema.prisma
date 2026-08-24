@@ -1674,6 +1674,7 @@ model Broadcast {
   sendEmail       Boolean           @default(true)
   sendWhatsapp    Boolean           @default(false)
   sendTelegram    Boolean           @default(false)
+  sendNetvork     Boolean           @default(false)
   createdByUserId String
   createdByName   String?
   recipientCount  Int               @default(0)
