@@ -381,7 +381,8 @@ export class PortalService {
         ok: true,
         project: `${name}${appId}`,
         channel: 'netvork',
-        bridge: { connected: true, status: 'ready', me: `${name}${appId}` },
+        // No `me`: the card prints it beside the name it already showed.
+        bridge: { connected: true, status: 'ready' },
       };
     } catch {
       return { ok: false, error: 'Could not reach Netvork at that URL.' };
