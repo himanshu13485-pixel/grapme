@@ -100,6 +100,8 @@ export default function ChannelSettingsCard({ channel }: { channel: MessagingCha
   const [busy, setBusy] = useState(false);
   const [testing, setTesting] = useState(false);
   const [test, setTest] = useState<TestResult | null>(null);
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState<{ ok: boolean; sentTo?: string; error?: string } | null>(null);
   const [msg, setMsg] = useState('');
 
   const copy = COPY[channel];
@@ -132,6 +134,28 @@ export default function ChannelSettingsCard({ channel }: { channel: MessagingCha
       setTimeout(() => setMsg(''), 1500);
     } finally {
       setBusy(false);
+    }
+  }
+
+  /**
+   * The check that proves what the other one only implies.
+   *
+   * Test connection proves we can reach the service. It says nothing about
+   * whether a message reaches a person, and everything between those two —
+   * the address being right, the network accepting it, the phone lighting up —
+   * is where this has actually gone wrong before. Sends to the admin who asked
+   * and nobody else: a button that sends to somebody else is a button that
+   * eventually sends to everybody.
+   */
+  async function sendTestMessage() {
+    setSending(true);
+    setSent(null);
+    try {
+      setSent(await api.post<{ ok: boolean; sentTo?: string; error?: string }>(`${base}/test-message`, {}));
+    } catch {
+      setSent({ ok: false, error: 'Could not send the test message.' });
+    } finally {
+      setSending(false);
     }
   }
 
@@ -255,6 +279,14 @@ export default function ChannelSettingsCard({ channel }: { channel: MessagingCha
         <button className="btn-ghost disabled:opacity-50" disabled={testing || !w.active} onClick={runTest}>
           {testing ? 'Testing…' : 'Test connection'}
         </button>
+        <button
+          className="btn-ghost disabled:opacity-50"
+          disabled={sending || !w.active}
+          title="Sends a real message to you on this channel"
+          onClick={sendTestMessage}
+        >
+          {sending ? 'Sending…' : 'Send me a test message'}
+        </button>
         {msg && <span className="text-sm text-emerald-600">{msg}</span>}
       </div>
 
@@ -279,6 +311,14 @@ export default function ChannelSettingsCard({ channel }: { channel: MessagingCha
             )}
           </span>
         </div>
+
+        {sent && (
+          <div className={`mt-3 rounded-lg p-3 text-sm ${sent.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-rose-50 text-rose-800'}`}>
+            {sent.ok
+              ? `Sent to ${sent.sentTo}. If it does not arrive, the problem is between the network and the device — not the setup.`
+              : sent.error}
+          </div>
+        )}
 
         {test && (
           <div className={`mt-3 rounded-lg p-3 text-sm ${test.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-rose-50 text-rose-800'}`}>

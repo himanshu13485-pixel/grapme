@@ -36,6 +36,12 @@ export class NotificationsController {
     return this.notifications.test(user, this.channel(channel));
   }
 
+  /** Actually send one, to the admin who asked. The end-to-end check. */
+  @Post('channels/:channel/test-message')
+  sendTest(@CurrentUser() user: AuthUser, @Param('channel') channel: string) {
+    return this.notifications.sendTest(user, this.channel(channel));
+  }
+
   // -- the WhatsApp-only routes these replaced -----------------------------
   // Kept so a browser still running the previous build keeps working across a
   // deploy. @deprecated — use /notifications/channels/:channel.

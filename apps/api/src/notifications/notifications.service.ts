@@ -123,6 +123,58 @@ export class NotificationsService {
     return this.portal.status(user.tenantId, channel);
   }
 
+  /**
+   * Send a real message, to the admin asking for it and nobody else.
+   *
+   * Checking the credentials proves we can reach the service; it does not
+   * prove a message reaches a person, which is the only thing anyone actually
+   * wants to know. Everything between the two — the address being right, the
+   * network accepting it, the phone lighting up — is exactly where this has
+   * gone wrong before.
+   *
+   * To themselves deliberately. A button that sends to somebody else is a
+   * button that eventually sends to everybody.
+   */
+  async sendTest(user: AuthUser, channel: MessagingChannel) {
+    this.assertAdmin(user);
+
+    const meta = channelMeta(channel);
+    const me = await this.prisma.user.findUnique({
+      where: { id: user.userId },
+      select: {
+        name: true,
+        tenantId: true,
+        contactMobile: true,
+        netvorkAppId: true,
+        whatsappVerifiedAt: true,
+        telegramVerifiedAt: true,
+        netvorkVerifiedAt: true,
+      },
+    });
+
+    const address = me?.[meta.addressField]?.trim();
+    if (!address) {
+      return { ok: false, error: `Add your ${meta.addressLabel} under My Account first.` };
+    }
+
+    // The same rule the alerts themselves follow. A test that ignored it would
+    // pass on an address the real thing refuses to send to.
+    if (!me?.[meta.verifiedField]) {
+      return { ok: false, error: `Verify your ${meta.addressLabel} for ${meta.label} first — the test follows the same rule as the alerts.` };
+    }
+
+    const res = await this.portal.send(
+      me.tenantId,
+      channel,
+      address,
+      `Test message from ${(await this.portal.configFor(me.tenantId, channel))?.brand ?? 'GrapMe'}. If you are reading this, ${meta.label} alerts are working.`,
+    );
+
+    return res.ok
+      ? { ok: true, sentTo: address }
+      : { ok: false, error: res.error ?? 'Could not send the test message.' };
+  }
+
   // -- internals ----------------------------------------------------------
 
   private async stored(tenantId: string, channel: MessagingChannel): Promise<StoredChannel> {
