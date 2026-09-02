@@ -567,12 +567,20 @@ export class LiCampaignsService {
 
   async setStatus(id: string, status: LiCampaignStatus) {
     await this.assertExists(id);
-    const data: { status: LiCampaignStatus; warmupStartedAt?: Date; deletedAt?: Date | null } = { status };
+    const data: {
+      status: LiCampaignStatus; warmupStartedAt?: Date; deletedAt?: Date | null;
+      acceptanceGateFrom?: Date; pausedReason?: string | null;
+    } = { status };
     if (status === LiCampaignStatus.DELETED) data.deletedAt = new Date();
     if (status === LiCampaignStatus.RUNNING) {
       // Anchor the warm-up ramp the first time the campaign starts sending.
       const c = await this.prisma.liCampaign.findUnique({ where: { id }, select: { warmupStartedAt: true } });
       if (!c?.warmupStartedAt) data.warmupStartedAt = new Date();
+      // Restart the acceptance sample on every start/resume, and clear any auto-pause
+      // note. Without this a campaign paused for low acceptance would be re-paused by
+      // the same historic invites the moment it resumed, with no way back.
+      data.acceptanceGateFrom = new Date();
+      data.pausedReason = null;
     }
     const campaign = await this.prisma.liCampaign.update({ where: { id }, data });
     const STOP: LiCampaignStatus[] = [

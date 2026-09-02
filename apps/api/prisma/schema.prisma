@@ -1420,6 +1420,17 @@ model LiCampaign {
   // How long to wait for a connection to be accepted before giving up: the invite
   // is withdrawn and the lead marked NOT_ACCEPTED. 1–30 days.
   connectionWindowDays Int                 @default(5)
+  // Health guard. A low acceptance rate is the signal LinkedIn punishes hardest —
+  // ignored invites and "I don't know this person" are what turn a well-paced campaign
+  // into a restricted account — and it is driven by targeting and copy, which no amount
+  // of rate limiting fixes. Percent; 0 = off.
+  minAcceptanceRate    Int                 @default(25)
+  // Only invites sent after this point count toward the guard. Stamped whenever the
+  // campaign starts or resumes, so a resumed campaign builds a fresh sample instead of
+  // being re-paused instantly by the same history that paused it.
+  acceptanceGateFrom   DateTime?
+  // Why the engine paused this campaign (null = a person paused it).
+  pausedReason         String?
   // Lead-quality gate: skip (EXCLUDE) leads whose LinkedIn connection count is below
   // this before sending an invite — the engine already fetches the profile at contact
   // time, so it costs nothing. 0 = off. Leads with a hidden/unknown count still pass.

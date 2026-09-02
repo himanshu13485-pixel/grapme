@@ -9,7 +9,9 @@ import { QUEUE_LINKEDIN } from '../../queue/queue.constants';
 import { LINKEDIN_PROVIDER, LinkedInProvider } from '../provider/linkedin-provider.interface';
 import { LiInboxService } from '../inbox/li-inbox.service';
 import { ProfileBudgetExceededError } from '../provider/li-rate-guard.service';
-import { LiJob, LiJobData, DRIP_SCAN_MS, SYNC_SWEEP_MS, reconcileName, needsNameResolve } from './li-queue.constants';
+import {
+  LiJob, LiJobData, DRIP_SCAN_MS, SYNC_SWEEP_MS, MIN_ACCEPTANCE_SAMPLE, reconcileName, needsNameResolve,
+} from './li-queue.constants';
 
 /** Relations pages to scan per sweep (100/page, newest-first) when detecting acceptance. */
 const RELATION_SCAN_PAGES = 2;
@@ -76,6 +78,81 @@ export class LiSchedulerService implements OnModuleInit {
         this.logger.warn(`Sync sweep failed for campaign ${c.id}: ${(e as Error).message}`);
       }
     }
+    // Acceptance health runs after the sync, so it judges freshly-resolved statuses.
+    await this.enforceAcceptanceHealth().catch((e) =>
+      this.logger.warn(`Acceptance health check failed: ${(e as Error).message}`),
+    );
+  }
+
+  /**
+   * Pause campaigns whose invites are being ignored.
+   *
+   * Pacing fixes the volume LinkedIn sees; it does nothing about *relevance*. A campaign
+   * aimed at the wrong people collects ignored invites and "I don't know this person"
+   * reports, and that is what escalates a warning into a restricted account — so the
+   * engine stops the campaign rather than politely rate-limiting its way into a ban.
+   */
+  async enforceAcceptanceHealth(): Promise<number> {
+    const running = await this.prisma.liCampaign.findMany({
+      where: { status: LiCampaignStatus.RUNNING, minAcceptanceRate: { gt: 0 } },
+      select: { id: true, name: true, minAcceptanceRate: true, acceptanceGateFrom: true, createdAt: true, outreachType: true },
+    });
+    let paused = 0;
+    for (const c of running) {
+      // Direct-message campaigns send no invites, so there is no acceptance to measure.
+      if (c.outreachType === 'DIRECT_MESSAGES') continue;
+      try {
+        const health = await this.acceptanceHealth(c.id, c.acceptanceGateFrom ?? c.createdAt);
+        if (health.decided < MIN_ACCEPTANCE_SAMPLE) continue;
+        if (health.rate >= c.minAcceptanceRate) continue;
+
+        const reason =
+          `Auto-paused: ${health.rate}% acceptance over the last ${health.decided} invites ` +
+          `(minimum ${c.minAcceptanceRate}%). Review targeting and the invite note before resuming.`;
+        await this.prisma.liCampaign.update({
+          where: { id: c.id },
+          data: { status: LiCampaignStatus.PAUSED, pausedReason: reason },
+        });
+        await this.pauseCampaign(c.id);
+        this.logger.warn(`Campaign ${c.id} (${c.name}) ${reason}`);
+        paused++;
+      } catch (e) {
+        this.logger.warn(`Acceptance health check failed for campaign ${c.id}: ${(e as Error).message}`);
+      }
+    }
+    return paused;
+  }
+
+  /**
+   * Acceptance rate over invites actually SENT since `from` that have since been decided.
+   *
+   * Pending invites are excluded on purpose: an invite nobody has answered yet is not a
+   * rejection, and counting it as one would pause every campaign on its first day.
+   */
+  async acceptanceHealth(campaignId: string, from: Date): Promise<{ accepted: number; decided: number; rate: number }> {
+    const invites = await this.prisma.liScheduledAction.findMany({
+      where: {
+        type: LiScheduledActionType.SEND_CONNECTION,
+        status: LiScheduledActionStatus.DONE,
+        updatedAt: { gte: from },
+        lead: { campaignId },
+      },
+      select: { lead: { select: { status: true } } },
+    });
+    // Mirrors the stats definition: anything past CONNECTED counts as accepted.
+    const ACCEPTED: LiLeadStatus[] = [
+      LiLeadStatus.CONNECTED, LiLeadStatus.MESSAGED, LiLeadStatus.REPLIED, LiLeadStatus.CAMPAIGN_COMPLETED,
+    ];
+    let accepted = 0;
+    let decided = 0;
+    for (const i of invites) {
+      const s = i.lead?.status;
+      if (!s) continue;
+      if (ACCEPTED.includes(s)) { accepted++; decided++; }
+      else if (s === LiLeadStatus.NOT_ACCEPTED) decided++;
+      // CONNECTION_PENDING / EXCLUDED / BOUNCED are undecided — they count for neither.
+    }
+    return { accepted, decided, rate: decided ? Math.round((accepted / decided) * 100) : 0 };
   }
 
   /** Guard + run the full sync for one campaign, awaited (used by the sweep). */

@@ -124,6 +124,8 @@ export interface LiCampaign {
   _count?: { leads: number };
   pendingApproval?: boolean;
   deletedAt?: string | null;
+  /** Set when the engine paused this campaign itself (null = a person paused it). */
+  pausedReason?: string | null;
 }
 
 export interface LiKnowledgeStats {

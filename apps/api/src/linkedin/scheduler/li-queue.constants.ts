@@ -33,6 +33,14 @@ export function recheckDelayMs(): number {
   return Math.round(RECHECK_INTERVAL_MS - spread + Math.random() * spread * 2);
 }
 
+/**
+ * Decided invites needed before the acceptance guard may pause a campaign.
+ *
+ * Small samples lie: 4 ignored invites out of 5 is a 20% rate and means nothing. This
+ * is the point where a rate below the threshold is a real signal about targeting.
+ */
+export const MIN_ACCEPTANCE_SAMPLE = 30;
+
 export const MIN_JITTER_MS = 20_000;
 export const MAX_JITTER_MS = 90_000;
 

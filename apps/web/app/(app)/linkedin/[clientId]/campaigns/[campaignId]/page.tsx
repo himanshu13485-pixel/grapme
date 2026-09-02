@@ -44,6 +44,15 @@ export default function LiCampaignDetailPage() {
         }
       />
 
+      {/* The engine can pause a campaign on its own (low acceptance rate, or the seat
+          tripping a LinkedIn checkpoint). Say why, or the stop looks like a bug. */}
+      {c.status === 'PAUSED' && c.pausedReason && (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          <span className="font-medium">Paused automatically. </span>
+          {c.pausedReason}
+        </div>
+      )}
+
       <LiCampaignDetailView campaignId={campaignId} base="/linkedin" />
     </div>
   );
