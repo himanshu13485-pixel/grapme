@@ -213,7 +213,12 @@ instead. Any workspace that hasn't saved its own credentials uses them:
 # Portal's public base URL, no trailing slash. Must be reachable from the API
 # container — a public https URL, or the portal's address on the docker network.
 WA_PORTAL_URL=https://wa.yourdomain.com
-WA_PORTAL_API_KEY=<the project's API key>
+WA_PORTAL_API_KEY=<the WhatsApp project's API key>
+
+# Telegram, if used. Same portal, a different project — so the URL is usually
+# identical and only the key differs.
+TG_PORTAL_URL=https://wa.yourdomain.com
+TG_PORTAL_API_KEY=<the Telegram project's API key>
 
 # Brand name in the OTP message ("123456 is your Grapme verification code").
 APP_NAME=Grapme
@@ -238,7 +243,8 @@ the code, enter it, and the card flips to *Verified* — which also switches
 WhatsApp alerts on for that user. They can opt out again in notification
 settings.
 
-Leave both `WA_PORTAL_*` blank and save nothing in the app to keep WhatsApp off.
+Leave a channel's `*_PORTAL_*` pair blank and save nothing in the app to keep it
+off. The two are independent: WhatsApp only, Telegram only, both, or neither.
 
 ### "Could not reach the portal at that URL"
 

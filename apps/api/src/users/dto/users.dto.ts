@@ -39,10 +39,19 @@ export class UpdateProfileDto {
   @IsString()
   avatarUrl?: string;
 
-  /** WhatsApp / contact number used for alert notifications. */
+  /** Contact number used for alert notifications on WhatsApp / Telegram. */
   @IsOptional()
   @IsString()
   contactMobile?: string;
+
+  /**
+   * The user's Netvork account — App ID, username or email; Netvork resolves
+   * all three to the same person. Its own field because Netvork is our app
+   * rather than someone else's phone network, so there is no number involved.
+   */
+  @IsOptional()
+  @IsString()
+  netvorkAppId?: string;
 
   /** Per-user alert channel preferences (in-app is always on). */
   @IsOptional()
@@ -52,4 +61,12 @@ export class UpdateProfileDto {
   @IsOptional()
   @IsBoolean()
   notifyWhatsapp?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  notifyTelegram?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  notifyNetvork?: boolean;
 }

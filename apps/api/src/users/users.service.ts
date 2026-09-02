@@ -20,6 +20,11 @@ const PUBLIC_FIELDS = {
   contactMobile: true,
   notifyEmail: true,
   notifyWhatsapp: true,
+  notifyTelegram: true,
+  notifyNetvork: true,
+  netvorkAppId: true,
+  whatsappVerifiedAt: true,
+  telegramVerifiedAt: true,
   lastLoginAt: true,
   createdAt: true,
 } as const;
@@ -78,10 +83,47 @@ export class UsersService {
     return user;
   }
 
-  updateProfile(userId: string, dto: UpdateProfileDto) {
+  async updateProfile(userId: string, dto: UpdateProfileDto) {
+    // Changing an address invalidates every proof attached to the old one.
+    // Without this, verifying address A and then switching to address B leaves
+    // the channel "verified" and starts alerting somewhere unconfirmed — the
+    // exact thing the OTP exists to prevent.
+    //
+    // The two phone channels fall together because they share one number; the
+    // Netvork App ID is its own address and resets only itself.
+    const data: Record<string, unknown> = { ...dto };
+
+    if (dto.contactMobile !== undefined || dto.netvorkAppId !== undefined) {
+      const current = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { contactMobile: true, netvorkAppId: true },
+      });
+
+      if (dto.contactMobile !== undefined) {
+        const next = (dto.contactMobile ?? '').trim() || null;
+
+        if ((current?.contactMobile ?? null) !== next) {
+          data.whatsappVerifiedAt = null;
+          data.telegramVerifiedAt = null;
+          data.notifyWhatsapp = false;
+          data.notifyTelegram = false;
+        }
+      }
+
+      if (dto.netvorkAppId !== undefined) {
+        const next = (dto.netvorkAppId ?? '').trim() || null;
+        data.netvorkAppId = next;
+
+        if ((current?.netvorkAppId ?? null) !== next) {
+          data.netvorkVerifiedAt = null;
+          data.notifyNetvork = false;
+        }
+      }
+    }
+
     return this.prisma.user.update({
       where: { id: userId },
-      data: dto,
+      data,
       select: PUBLIC_FIELDS,
     });
   }

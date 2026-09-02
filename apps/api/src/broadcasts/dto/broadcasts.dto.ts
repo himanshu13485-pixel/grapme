@@ -22,4 +22,6 @@ export class CreateBroadcastDto {
   @IsOptional() @IsBoolean() showInApp?: boolean;
   @IsOptional() @IsBoolean() sendEmail?: boolean;
   @IsOptional() @IsBoolean() sendWhatsapp?: boolean;
+  @IsOptional() @IsBoolean() sendTelegram?: boolean;
+  @IsOptional() @IsBoolean() sendNetvork?: boolean;
 }

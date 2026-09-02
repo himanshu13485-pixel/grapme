@@ -67,10 +67,13 @@ services:
       UNIPILE_HOSTED_AUTH_DOMAIN: ${UNIPILE_HOSTED_AUTH_DOMAIN:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       AI_MODEL: ${AI_MODEL:-}
-      # ── WhatsApp (self-hosted portal) ── powers number verification (OTP) and
-      # WhatsApp alerts. Blank = WhatsApp is off; in-app + email alerts still work.
+      # ── Messaging (self-hosted portal) ── powers number verification (OTP)
+      # and alerts. One project per network, each with its own key. Blank = that
+      # channel is off; in-app + email alerts still work.
       WA_PORTAL_URL: ${WA_PORTAL_URL:-}
       WA_PORTAL_API_KEY: ${WA_PORTAL_API_KEY:-}
+      TG_PORTAL_URL: ${TG_PORTAL_URL:-}
+      TG_PORTAL_API_KEY: ${TG_PORTAL_API_KEY:-}
       # Brand name shown in the OTP message. Deep links reuse WEB_PUBLIC_URL.
       APP_NAME: ${APP_NAME:-Grapme}
       # On plan/blog changes, ping the marketing container to refresh its live

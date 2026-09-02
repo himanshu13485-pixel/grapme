@@ -49,7 +49,7 @@ const NAV: NavItem[] = [
   { href: '/linkedin-inbox', label: 'LinkedIn Inbox', icon: '📨', admin: true, module: 'linkedin-inbox', group: 'linkedin' },
   { href: '/linkedin-leads', label: 'LinkedIn Leads', icon: '🧲', admin: true, module: 'linkedin-leads', group: 'linkedin' },
   { href: '/linkedin-log', label: 'LinkedIn Log', icon: '🧾', admin: true, module: 'linkedin-log', group: 'linkedin' },
-  // ── Main Menu (collapsed folder: Approvals → WhatsApp) ──
+  // ── Main Menu (collapsed folder: Approvals → Messaging) ──
   { href: '/validity', label: 'Subscription Management', icon: '🔁', admin: true, module: 'validity', group: 'main' },
   { href: '/approvals', label: 'Approvals', icon: '✓', admin: true, module: 'approvals', group: 'main' },
   { href: '/compliance', label: 'Compliance', icon: '⚖', admin: true, module: 'compliance', group: 'main' },
@@ -61,7 +61,7 @@ const NAV: NavItem[] = [
   { href: '/plans', label: 'Set Membership', icon: '🏷', admin: true, module: 'plans', group: 'main' },
   { href: '/plan-requests', label: 'Plan Upgrade Request', icon: '🧾', admin: true, module: 'plan-requests', group: 'main' },
   { href: '/billing', label: 'Payment / Billing', icon: '💳', admin: true, module: 'billing', group: 'main' },
-  { href: '/whatsapp', label: 'WhatsApp', icon: '💬', admin: true, module: 'whatsapp', group: 'main' },
+  { href: '/whatsapp', label: 'Messaging', icon: '💬', admin: true, module: 'whatsapp', group: 'main' },
   // ── everything else ──
   { href: '/my-profile', label: 'My Account', icon: '👤', module: 'my-profile' },
 ];
@@ -312,7 +312,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     if (user.role === 'SUPER_ADMIN') return true;
     if (user.role === 'SUB_ADMIN') {
       if (n.superOnly) return false; // e.g. managing other sub-admins
-      if (n.href === '/my-profile') return true; // own account: WhatsApp/notify prefs
+      if (n.href === '/my-profile') return true; // own account: messaging/notify prefs
       if (n.href === '/dashboard') return true; // always available
       if (user.fullAccess) return true;
       return (user.accessModules ?? []).includes(n.module);

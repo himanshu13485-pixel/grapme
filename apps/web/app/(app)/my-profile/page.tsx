@@ -4,14 +4,21 @@ import { useEffect, useState, FormEvent } from 'react';
 import { useAuth } from '@/lib/auth';
 import { api } from '@/lib/api';
 import { PageHeader } from '@/components/ui';
-import WhatsappVerify from '@/components/WhatsappVerify';
+import ChannelVerify from '@/components/ChannelVerify';
 
 export default function MyProfilePage() {
   const { user, refreshUser } = useAuth();
   const isClient = user?.role === 'CLIENT';
 
   // Notification preferences (email + WhatsApp alerts; the in-app bell is always on).
-  const [prefs, setPrefs] = useState({ notifyEmail: true, notifyWhatsapp: false, contactMobile: '' });
+  const [prefs, setPrefs] = useState({
+    notifyEmail: true,
+    notifyWhatsapp: false,
+    notifyTelegram: false,
+    notifyNetvork: false,
+    contactMobile: '',
+    netvorkAppId: '',
+  });
   const [prefsBusy, setPrefsBusy] = useState(false);
   const [prefsMsg, setPrefsMsg] = useState('');
   // Bumped after saving so the verify card re-reads status (the number may have changed).
@@ -19,12 +26,22 @@ export default function MyProfilePage() {
 
   useEffect(() => {
     api
-      .get<{ notifyEmail?: boolean; notifyWhatsapp?: boolean; contactMobile?: string | null }>('/users/me/profile')
+      .get<{
+        notifyEmail?: boolean;
+        notifyWhatsapp?: boolean;
+        notifyTelegram?: boolean;
+        notifyNetvork?: boolean;
+        contactMobile?: string | null;
+        netvorkAppId?: string | null;
+      }>('/users/me/profile')
       .then((p) =>
         setPrefs({
           notifyEmail: p.notifyEmail ?? true,
           notifyWhatsapp: p.notifyWhatsapp ?? false,
+          notifyTelegram: p.notifyTelegram ?? false,
+          notifyNetvork: !!p.notifyNetvork,
           contactMobile: p.contactMobile ?? '',
+          netvorkAppId: p.netvorkAppId ?? '',
         }),
       )
       .catch(() => {});
@@ -37,7 +54,9 @@ export default function MyProfilePage() {
       await api.patch('/users/me/profile', {
         notifyEmail: prefs.notifyEmail,
         notifyWhatsapp: prefs.notifyWhatsapp,
+        notifyTelegram: prefs.notifyTelegram,
         ...(isClient ? {} : { contactMobile: prefs.contactMobile }),
+        netvorkAppId: prefs.netvorkAppId,
       });
       setPrefsMsg('Notification preferences saved.');
       setVerifyKey((k) => k + 1);
@@ -190,7 +209,7 @@ export default function MyProfilePage() {
           <label className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3">
             <span>
               <span className="block text-sm font-medium text-slate-700">WhatsApp alerts</span>
-              <span className="block text-xs text-slate-400">The same alerts on WhatsApp (requires a number below).</span>
+              <span className="block text-xs text-slate-400">The same alerts on WhatsApp (requires a verified number below).</span>
             </span>
             <input
               type="checkbox"
@@ -199,9 +218,35 @@ export default function MyProfilePage() {
               onChange={(e) => setPrefs({ ...prefs, notifyWhatsapp: e.target.checked })}
             />
           </label>
+          <label className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3">
+            <span>
+              <span className="block text-sm font-medium text-slate-700">Telegram alerts</span>
+              <span className="block text-xs text-slate-400">The same alerts on Telegram, verified separately — the two are independent.</span>
+            </span>
+            <input
+              type="checkbox"
+              className="h-5 w-5"
+              checked={prefs.notifyTelegram}
+              onChange={(e) => setPrefs({ ...prefs, notifyTelegram: e.target.checked })}
+            />
+          </label>
+          <label className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3">
+            <span>
+              <span className="block text-sm font-medium text-slate-700">Netvork alerts</span>
+              <span className="block text-xs text-slate-400">
+                The same alerts as a Netvork message — they reach your bell and your phone.
+              </span>
+            </span>
+            <input
+              type="checkbox"
+              className="h-5 w-5"
+              checked={prefs.notifyNetvork}
+              onChange={(e) => setPrefs({ ...prefs, notifyNetvork: e.target.checked })}
+            />
+          </label>
           {isClient ? (
             // Clients already gave their number at registration — show it, don't re-ask.
-            prefs.notifyWhatsapp && (
+            (prefs.notifyWhatsapp || prefs.notifyTelegram) && (
               <p className="text-xs text-slate-500">
                 {prefs.contactMobile
                   ? <>Alerts will be sent to your registered number <strong className="text-slate-700">{prefs.contactMobile}</strong>. To change it, contact your account manager.</>
@@ -210,7 +255,7 @@ export default function MyProfilePage() {
             )
           ) : (
             <div>
-              <label className="label">WhatsApp number</label>
+              <label className="label">Mobile number</label>
               <input
                 className="input"
                 value={prefs.contactMobile}
@@ -220,8 +265,35 @@ export default function MyProfilePage() {
             </div>
           )}
 
-          {/* Proof that the number is theirs — alerts only go to verified numbers. */}
-          <WhatsappVerify key={verifyKey} onVerified={() => setPrefs((p) => ({ ...p, notifyWhatsapp: true }))} />
+          {/* Netvork is an account on our own network rather than a number on
+              someone else's, so it is asked for separately — and it is theirs
+              to set even on a client login, where the mobile number is not. */}
+          <div>
+            <label className="label">Netvork App ID</label>
+            <input
+              className="input"
+              value={prefs.netvorkAppId}
+              placeholder="NV-1234 — or your Netvork username or email"
+              onChange={(e) => setPrefs({ ...prefs, netvorkAppId: e.target.value })}
+            />
+          </div>
+
+          {/* Proof that the address is theirs — alerts only go to verified ones. */}
+          <ChannelVerify
+            key={`wa-${verifyKey}`}
+            channel="whatsapp"
+            onVerified={() => setPrefs((p) => ({ ...p, notifyWhatsapp: true }))}
+          />
+          <ChannelVerify
+            key={`tg-${verifyKey}`}
+            channel="telegram"
+            onVerified={() => setPrefs((p) => ({ ...p, notifyTelegram: true }))}
+          />
+          <ChannelVerify
+            key={`nv-${verifyKey}`}
+            channel="netvork"
+            onVerified={() => setPrefs((p) => ({ ...p, notifyNetvork: true }))}
+          />
           {prefsMsg && (
             <p className={`rounded-lg px-3 py-2 text-sm ${prefsMsg.startsWith('Could not') ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-700'}`}>
               {prefsMsg}

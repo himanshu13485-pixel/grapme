@@ -1,7 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailerService } from '../sending/mailer.service';
-import { WhatsappPortalService } from './whatsapp-portal.service';
+import { PortalService } from './portal.service';
+import { MESSAGING_CHANNELS, MessagingChannel, channelMeta } from './channels';
 
 export interface NotifyPayload {
   /** Notification "type" key stored on the bell row, e.g. 'support'. */
@@ -13,27 +14,36 @@ export interface NotifyPayload {
   link?: string;
   /** Optional rich HTML for the email body; falls back to an escaped `body`. */
   emailHtml?: string;
-  /** Optional WhatsApp text; falls back to `title`. */
+  /** Optional text for the messaging channels (WhatsApp/Telegram); falls back to `title`. */
   whatsappText?: string;
   /** Optional files attached to the alert email (e.g. a support message attachment). */
   emailAttachments?: { filename: string; content: Buffer; contentType?: string }[];
 }
 
-/** Per-call channel gates (default: all enabled). Email/WhatsApp still additionally
- *  respect each recipient's own preference. */
+/**
+ * Per-call channel gates (default: all enabled). Email and the messaging
+ * channels still additionally respect each recipient's own preference.
+ *
+ * `telegram` and `netvork` default to whatever `whatsapp` is set to, not to
+ * `true`. Callers written before those channels existed say `whatsapp: false`
+ * to mean "no messaging, just a bell" — defaulting a new channel on would have
+ * started messaging people from code that had explicitly asked not to.
+ */
 export interface NotifyChannels {
   inApp?: boolean;
   email?: boolean;
   whatsapp?: boolean;
+  telegram?: boolean;
+  netvork?: boolean;
 }
 
 /**
  * Central notification helper. For a given user it ALWAYS creates an in-app bell
  * alert, and — respecting that user's per-user preferences — also sends a branded
- * email (if notifyEmail) and a WhatsApp message (if notifyWhatsapp + a *verified*
- * phone on file). WhatsApp goes through our self-hosted portal. Every external
+ * email (if notifyEmail) and a message on each messaging channel they have opted
+ * into and *verified*. Those go through our self-hosted portal. Every external
  * send is best-effort: wrapped in try/catch and logged, so a failing
- * email/WhatsApp/bell insert can NEVER 500 the user's action.
+ * email/message/bell insert can NEVER 500 the user's action.
  *
  * NOTE: this is for *alerts*. Transactional mail (verification, password reset,
  * welcome) must bypass this and always send — see AuthService / SalesService.
@@ -45,7 +55,7 @@ export class NotifyService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly mailer: MailerService,
-    private readonly whatsapp: WhatsappPortalService,
+    private readonly portal: PortalService,
   ) {}
 
   /** Notify a single user (best-effort; never throws). */
@@ -57,11 +67,20 @@ export class NotifyService {
   /**
    * Notify several users at once (deduped; best-effort; never throws).
    * `channels` gates each delivery channel for THIS call (default: all on). The
-   * in-app bell obeys only `channels.inApp`; email/WhatsApp additionally respect
-   * each recipient's own notifyEmail/notifyWhatsapp preference.
+   * in-app bell obeys only `channels.inApp`; email and the messaging channels
+   * additionally respect each recipient's own preference.
    */
   async notifyMany(userIds: string[], payload: NotifyPayload, channels?: NotifyChannels): Promise<void> {
-    const ch = { inApp: true, email: true, whatsapp: true, ...(channels ?? {}) };
+    const given = channels ?? {};
+    const ch = {
+      inApp: given.inApp ?? true,
+      email: given.email ?? true,
+      whatsapp: given.whatsapp ?? true,
+      // See NotifyChannels: both follow whatsapp unless asked for explicitly.
+      telegram: given.telegram ?? given.whatsapp ?? true,
+      netvork: given.netvork ?? given.whatsapp ?? true,
+    };
+
     const ids = [...new Set((userIds ?? []).filter(Boolean))];
     if (ids.length === 0) return;
 
@@ -72,8 +91,13 @@ export class NotifyService {
       name: string;
       notifyEmail: boolean;
       notifyWhatsapp: boolean;
+      notifyTelegram: boolean;
+      notifyNetvork: boolean;
       contactMobile: string | null;
+      netvorkAppId: string | null;
       whatsappVerifiedAt: Date | null;
+      telegramVerifiedAt: Date | null;
+      netvorkVerifiedAt: Date | null;
     }[] = [];
     try {
       users = await this.prisma.user.findMany({
@@ -85,8 +109,13 @@ export class NotifyService {
           name: true,
           notifyEmail: true,
           notifyWhatsapp: true,
+          notifyTelegram: true,
+          notifyNetvork: true,
           contactMobile: true,
+          netvorkAppId: true,
           whatsappVerifiedAt: true,
+          telegramVerifiedAt: true,
+          netvorkVerifiedAt: true,
         },
       });
     } catch (err) {
@@ -110,13 +139,9 @@ export class NotifyService {
       this.logger.warn(`notifyMany: bell insert failed: ${err}`);
     }
 
-    // 2) Email (per preference) + 3) WhatsApp (per preference). Emails are grouped
-    // so we resolve each tenant's sending mailbox once.
+    // 2) Email (per preference) + 3) messaging (per preference, per channel).
+    // Emails are grouped so we resolve each tenant's sending mailbox once.
     const wantsEmail = (u: (typeof users)[number]) => ch.email && u.notifyEmail && !!u.email;
-    // Deliberately strict: only message people who both asked for alerts AND
-    // proved the number is theirs. Keeps us far away from spam-report territory.
-    const wantsWhatsapp = (u: (typeof users)[number]) =>
-      ch.whatsapp && u.notifyWhatsapp && !!u.contactMobile && !!u.whatsappVerifiedAt;
 
     const emailByTenant = new Map<string, typeof users>();
     for (const u of users) {
@@ -153,24 +178,41 @@ export class NotifyService {
       }
     }
 
-    // 3) WhatsApp — sent through our self-hosted portal. Queued (async) at the
-    // portal so a burst of alerts can never stall the request that triggered it.
-    for (const u of users) {
-      if (!wantsWhatsapp(u)) continue;
-      try {
-        const text = this.whatsappText(payload);
-        const res = await this.whatsapp.send(u.tenantId, u.contactMobile as string, text, { async: true });
-        if (!res.ok) {
-          this.logger.warn(`notifyMany: whatsapp to ${u.contactMobile} failed: ${res.error}`);
+    // 3) The messaging channels. The two phone ones go through our portal,
+    // queued (async) so a burst of alerts can never stall the request that
+    // triggered it; Netvork is delivered by Netvork's own queue.
+    //
+    // Deliberately strict, per channel: only message people who both asked for
+    // alerts there AND proved the address reaches them there. Someone verified
+    // on WhatsApp but not Telegram gets one message, not two. Keeps us far away
+    // from spam-report territory on networks that are not ours.
+    const text = this.messageText(payload);
+
+    for (const channel of MESSAGING_CHANNELS) {
+      if (!ch[channel]) continue;
+
+      const meta = channelMeta(channel);
+
+      for (const u of users) {
+        // Where this network reaches them: a phone number on the phone
+        // channels, an App ID on Netvork.
+        const address = u[meta.addressField];
+        if (!u[meta.notifyField] || !address || !u[meta.verifiedField]) continue;
+
+        try {
+          const res = await this.portal.send(u.tenantId, channel, address, text, { async: true });
+          if (!res.ok) {
+            this.logger.warn(`notifyMany: ${channel} to ${address} failed: ${res.error}`);
+          }
+        } catch (err) {
+          this.logger.warn(`notifyMany: ${channel} to ${address} errored: ${err}`);
         }
-      } catch (err) {
-        this.logger.warn(`notifyMany: whatsapp to ${u.contactMobile} errored: ${err}`);
       }
     }
   }
 
-  /** The message body we put on WhatsApp: title, short body, then the deep link. */
-  private whatsappText(payload: NotifyPayload): string {
+  /** The message body: title, short body, then the deep link. */
+  private messageText(payload: NotifyPayload): string {
     if (payload.whatsappText) return payload.whatsappText;
 
     const parts = [payload.title];
@@ -182,7 +224,7 @@ export class NotifyService {
     return parts.join('\n\n');
   }
 
-  /** Public base URL of the web app, for deep links in emails and WhatsApp. */
+  /** Public base URL of the web app, for deep links in emails and messages. */
   private webBaseUrl(): string {
     return (
       process.env.WEB_PUBLIC_URL ||

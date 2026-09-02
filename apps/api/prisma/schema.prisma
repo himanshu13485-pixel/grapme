@@ -360,9 +360,19 @@ model User {
   // Transactional mail (verification, reset, welcome) ignores these and always sends.
   notifyEmail           Boolean    @default(true)
   notifyWhatsapp        Boolean    @default(false)
-  // Set once the user proves they control their WhatsApp number (OTP). Alerts
-  // are only ever sent to a verified number.
+  notifyTelegram        Boolean    @default(false)
+  // Set once the user proves they control the number on that network (OTP).
+  // Alerts are only ever sent to a verified number, per channel — proving a
+  // number on WhatsApp says nothing about whether it reaches them on Telegram.
   whatsappVerifiedAt    DateTime?
+  telegramVerifiedAt    DateTime?
+  // Netvork is our own network, so a user is an account on it rather than a
+  // number on someone else's. Addressed by App ID (or username/email, which
+  // Netvork resolves to the same person), which is why it needs its own field
+  // instead of reusing contactMobile like the two phone channels do.
+  netvorkAppId          String?
+  notifyNetvork         Boolean    @default(false)
+  netvorkVerifiedAt     DateTime?
   emailVerified         Boolean    @default(true) // client self-registration must confirm email before login
   verifyTokenHash       String? // sha256 of the email-confirmation token
   verifyExpires         DateTime? // confirmation-link expiry
@@ -415,20 +425,26 @@ model User {
   broadcastReceipts    BroadcastRecipient[]
   // Internal Work notes shared with this admin / sub-admin.
   internalNoteReceipts InternalNoteRecipient[]
-  // Pending WhatsApp number-verification codes.
-  whatsappVerifications WhatsappVerification[]
+  // Pending number-verification codes, for either messaging channel.
+  channelVerifications  ChannelVerification[]
 
   @@index([tenantId])
   @@index([role])
 }
 
-/// A one-time code sent to a user's WhatsApp to prove the number is theirs.
-/// Only the hash is stored — the plain code exists solely in the message we send.
-model WhatsappVerification {
+/// A one-time code sent to a user on WhatsApp or Telegram to prove the number
+/// is theirs. Only the hash is stored — the plain code exists solely in the
+/// message we send. Codes are per channel: proving a number on one network
+/// says nothing about whether it reaches the same person on the other.
+model ChannelVerification {
   id        String   @id @default(uuid())
   userId    String
-  /// The number the code went to, so changing the number invalidates it.
-  phone     String
+  /// whatsapp | telegram | netvork
+  channel   String   @default("whatsapp")
+  /// The address the code went to — a phone number on the two phone channels,
+  /// an App ID on Netvork — so changing it invalidates the pending code. The
+  /// column is still called `phone`: it predates there being anything else.
+  address   String   @map("phone")
   codeHash  String
   expiresAt DateTime
   attempts  Int      @default(0)
@@ -437,6 +453,7 @@ model WhatsappVerification {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([userId, channel])
   @@index([userId, expiresAt])
 }
 
@@ -1683,6 +1700,8 @@ model Broadcast {
   showInApp       Boolean           @default(true)
   sendEmail       Boolean           @default(true)
   sendWhatsapp    Boolean           @default(false)
+  sendTelegram    Boolean           @default(false)
+  sendNetvork     Boolean           @default(false)
   createdByUserId String
   createdByName   String?
   recipientCount  Int               @default(0)

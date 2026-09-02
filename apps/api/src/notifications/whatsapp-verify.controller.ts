@@ -2,7 +2,7 @@ import { Body, Controller, Get, Post } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
 import { CurrentUser, AuthUser } from '../common/decorators/current-user.decorator';
-import { WhatsappOtpService } from './whatsapp-otp.service';
+import { OtpService } from './otp.service';
 
 class VerifyCodeDto {
   @IsString()
@@ -12,32 +12,35 @@ class VerifyCodeDto {
 }
 
 /**
- * Optional WhatsApp number verification for the signed-in user.
+ * The original WhatsApp-only verification routes, kept so a browser still
+ * running the previous build keeps working across a deploy.
  *
- * Nothing here blocks the account: skipping it simply means we never send that
- * user WhatsApp alerts. Any signed-in role can verify their own number.
+ * New work should use `/channel-verify/:channel`, which does the same thing for
+ * either network — these simply pin the channel to WhatsApp.
+ *
+ * @deprecated superseded by VerifyController
  */
 @Controller('whatsapp-verify')
 export class WhatsappVerifyController {
-  constructor(private readonly otp: WhatsappOtpService) {}
+  constructor(private readonly otp: OtpService) {}
 
-  /** Current state: the number, whether it's verified, resend cooldown. */
+  /** The old response shape, `notifyWhatsapp` and all — an older page reads it. */
   @Get()
-  status(@CurrentUser() user: AuthUser) {
-    return this.otp.status(user.userId);
+  async status(@CurrentUser() user: AuthUser) {
+    const { notify, ...rest } = await this.otp.status(user.userId, 'whatsapp');
+
+    return { ...rest, notify, notifyWhatsapp: notify };
   }
 
-  /** Send (or resend) a code to the user's WhatsApp number. */
   @Post('send')
   @Throttle({ default: { limit: 6, ttl: 60_000 } })
   send(@CurrentUser() user: AuthUser) {
-    return this.otp.issue(user.userId);
+    return this.otp.issue(user.userId, 'whatsapp');
   }
 
-  /** Check a submitted code. */
   @Post()
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   verify(@CurrentUser() user: AuthUser, @Body() dto: VerifyCodeDto) {
-    return this.otp.verify(user.userId, dto.code);
+    return this.otp.verify(user.userId, 'whatsapp', dto.code);
   }
 }
