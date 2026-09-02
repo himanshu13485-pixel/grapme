@@ -1292,6 +1292,14 @@ model LinkedInAccount {
   connectionsCount  Int?
   dailyInviteLimit  Int                   @default(20)
   dailyMessageLimit Int                   @default(40)
+  /// Hard ceiling on profile-data reads per day for this seat. LinkedIn restricts
+  /// accounts that read "a high volume of profile data", so this is enforced in the
+  /// provider itself — no code path can exceed it. ~100/day is LinkedIn's own line.
+  dailyProfileLimit Int                   @default(80)
+  /// Set when the engine auto-pauses this seat (provider checkpoint, non-OK status,
+  /// or budget exhaustion). Cleared on a successful reconnect.
+  pausedReason      String?
+  pausedAt          DateTime?
   lastSyncedAt      DateTime?
   createdAt         DateTime              @default(now())
   updatedAt         DateTime              @updatedAt
@@ -1301,6 +1309,25 @@ model LinkedInAccount {
   @@index([tenantId])
   @@index([clientId])
   @@index([status])
+}
+
+/// Per-seat, per-day meter for provider calls that spend LinkedIn's profile-view
+/// budget. Written by the provider on every profile-consuming call so the cap is
+/// enforced at the seam, not at each call site.
+model LiApiUsage {
+  id           String   @id @default(uuid())
+  /// Unipile account id (the seat), not the local LinkedInAccount row id.
+  accountId    String
+  /// UTC calendar day, "YYYY-MM-DD" — avoids timezone drift on a date column.
+  day          String
+  profileCalls Int      @default(0)
+  inviteCalls  Int      @default(0)
+  messageCalls Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([accountId, day])
+  @@index([accountId])
 }
 
 model LiKnowledgeProfile {

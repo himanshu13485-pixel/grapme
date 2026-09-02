@@ -1,8 +1,10 @@
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { LinkedInAccountStatus } from '@prisma/client';
+import { LiCampaignStatus, LinkedInAccountStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LINKEDIN_PROVIDER, LinkedInProvider } from '../provider/linkedin-provider.interface';
 import { LinkedInSubscriptionService } from '../subscription/linkedin-subscription.service';
+import { mapProviderStatus } from '../provider/unipile.provider';
+import { LiSchedulerService } from '../scheduler/li-scheduler.service';
 
 @Injectable()
 export class LinkedInAccountsService {
@@ -12,6 +14,7 @@ export class LinkedInAccountsService {
     private readonly prisma: PrismaService,
     private readonly subs: LinkedInSubscriptionService,
     @Inject(LINKEDIN_PROVIDER) private readonly provider: LinkedInProvider,
+    private readonly scheduler: LiSchedulerService,
   ) {}
 
   /** Begin connecting a new LinkedIn account (seat) for a client. Returns a hosted-auth URL. */
@@ -71,18 +74,27 @@ export class LinkedInAccountsService {
         });
       }
     }
-    return this.prisma.linkedInAccount.update({
+    const status = info.status as LinkedInAccountStatus;
+    const healthy = status === LinkedInAccountStatus.CONNECTED;
+    const updated = await this.prisma.linkedInAccount.update({
       where: { id },
       data: {
-        status: info.status as LinkedInAccountStatus,
+        status,
         fullName: info.fullName ?? a.fullName,
         headline: info.headline ?? a.headline,
         profileUrl: info.profileUrl ?? a.profileUrl,
         avatarUrl: info.avatarUrl ?? a.avatarUrl,
         connectionsCount: info.connectionsCount ?? a.connectionsCount,
         lastSyncedAt: new Date(),
+        ...(healthy ? { pausedReason: null, pausedAt: null } : {}),
       },
     });
+    // A sync that discovers the seat is no longer healthy stops its campaigns too —
+    // the webhook is best-effort, so this is the second line of defence.
+    if (!healthy && a.status === LinkedInAccountStatus.CONNECTED) {
+      await this.pauseSeatCampaigns(id, `LinkedIn account status: ${status}`);
+    }
+    return updated;
   }
 
   /** Unipile account webhook — `name` echoes our pending account id. */
@@ -98,12 +110,65 @@ export class LinkedInAccountsService {
       this.logger.warn(`Account webhook for unknown row ${rowId}`);
       return { ok: false };
     }
+
+    // Honour the status Unipile actually reported. This used to hardcode CONNECTED,
+    // so a checkpoint or credentials failure left the seat looking healthy and the
+    // engine kept sending into an account LinkedIn had already flagged.
+    const status = mapProviderStatus(payload.status) as LinkedInAccountStatus;
+    const healthy = status === LinkedInAccountStatus.CONNECTED;
     await this.prisma.linkedInAccount.update({
       where: { id: rowId },
-      data: { unipileAccountId, status: LinkedInAccountStatus.CONNECTED },
+      data: {
+        unipileAccountId,
+        status,
+        ...(healthy
+          ? { pausedReason: null, pausedAt: null }
+          : { pausedReason: `Provider status: ${payload.status ?? 'unknown'}`, pausedAt: new Date() }),
+      },
     });
+
+    if (!healthy) {
+      this.logger.warn(`Seat ${rowId} reported ${payload.status} — pausing its campaigns`);
+      await this.pauseSeatCampaigns(rowId, `LinkedIn account status: ${payload.status ?? 'unknown'}`);
+      return { ok: true, status };
+    }
+
     try { await this.sync(rowId); } catch (e) { this.logger.warn(`Post-connect sync failed: ${(e as Error).message}`); }
-    return { ok: true };
+    return { ok: true, status };
+  }
+
+  /**
+   * Circuit breaker: stop every campaign running on a seat.
+   *
+   * Called when the provider reports a non-OK status or pushes back (checkpoint / 429).
+   * Continuing to send into a flagged account is what turns a LinkedIn warning into a
+   * restriction, so the engine stops on its own rather than waiting for an operator.
+   */
+  async pauseSeatCampaigns(accountRowId: string, reason: string): Promise<number> {
+    const running = await this.prisma.liCampaign.findMany({
+      where: { linkedInAccountId: accountRowId, status: LiCampaignStatus.RUNNING },
+      select: { id: true },
+    });
+    for (const c of running) {
+      await this.prisma.liCampaign.update({ where: { id: c.id }, data: { status: LiCampaignStatus.PAUSED } });
+      await this.scheduler.pauseCampaign(c.id).catch((e) => this.logger.warn(`Pause ${c.id} failed: ${(e as Error).message}`));
+    }
+    await this.prisma.linkedInAccount.update({
+      where: { id: accountRowId },
+      data: { pausedReason: reason, pausedAt: new Date() },
+    }).catch(() => undefined);
+    if (running.length) this.logger.warn(`Paused ${running.length} campaign(s) on seat ${accountRowId}: ${reason}`);
+    return running.length;
+  }
+
+  /** Same breaker, addressed by the provider-side account id (what the engine holds). */
+  async pauseSeatByProviderId(unipileAccountId: string, reason: string): Promise<number> {
+    const row = await this.prisma.linkedInAccount.findUnique({
+      where: { unipileAccountId },
+      select: { id: true },
+    });
+    if (!row) return 0;
+    return this.pauseSeatCampaigns(row.id, reason);
   }
 
   async remove(id: string) {

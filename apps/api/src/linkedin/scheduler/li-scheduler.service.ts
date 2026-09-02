@@ -8,7 +8,11 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { QUEUE_LINKEDIN } from '../../queue/queue.constants';
 import { LINKEDIN_PROVIDER, LinkedInProvider } from '../provider/linkedin-provider.interface';
 import { LiInboxService } from '../inbox/li-inbox.service';
+import { ProfileBudgetExceededError } from '../provider/li-rate-guard.service';
 import { LiJob, LiJobData, DRIP_SCAN_MS, SYNC_SWEEP_MS, reconcileName, needsNameResolve } from './li-queue.constants';
+
+/** Relations pages to scan per sweep (100/page, newest-first) when detecting acceptance. */
+const RELATION_SCAN_PAGES = 2;
 
 const TYPE_TO_JOB: Record<LiScheduledActionType, LiJob> = {
   SEND_CONNECTION: LiJob.SendConnection,
@@ -32,9 +36,30 @@ export class LiSchedulerService implements OnModuleInit {
   /** Register the repeatable drip-sourcer tick (no-op without Redis). */
   async onModuleInit() {
     if (!this.queue) return;
+    // BullMQ keys a repeatable by its interval, so changing one of the constants below
+    // ADDS a schedule rather than replacing it — the old cadence keeps firing from Redis
+    // forever. Drop any stale schedule for these jobs before registering the current one,
+    // or a tightened sweep interval silently never takes effect in production.
+    await this.dropStaleRepeatables({ [LiJob.DripSource]: DRIP_SCAN_MS, [LiJob.SyncSweep]: SYNC_SWEEP_MS });
     await this.queue.add(LiJob.DripSource, {}, { repeat: { every: DRIP_SCAN_MS }, removeOnComplete: true, removeOnFail: true });
     await this.queue.add(LiJob.SyncSweep, {}, { repeat: { every: SYNC_SWEEP_MS }, removeOnComplete: true, removeOnFail: true });
     this.logger.log(`LinkedIn drip-sourcer (every ${DRIP_SCAN_MS}ms) + sync sweep (every ${SYNC_SWEEP_MS}ms) registered`);
+  }
+
+  /** Remove repeatable schedules for `wanted` jobs whose interval no longer matches. */
+  private async dropStaleRepeatables(wanted: Record<string, number>) {
+    if (!this.queue) return;
+    try {
+      for (const r of await this.queue.getRepeatableJobs()) {
+        const expected = wanted[r.name];
+        if (expected === undefined || r.every === undefined) continue;
+        if (Number(r.every) === expected) continue;
+        await this.queue.removeRepeatableByKey(r.key);
+        this.logger.warn(`Removed stale repeatable ${r.name} (every ${r.every}ms → ${expected}ms)`);
+      }
+    } catch (e) {
+      this.logger.warn(`Could not prune stale repeatables: ${(e as Error).message}`);
+    }
   }
 
   /**
@@ -682,7 +707,15 @@ export class LiSchedulerService implements OnModuleInit {
       this.logger.warn(`listChats failed for ${accountId}: ${(e as Error).message}`);
     }
 
+    // One pass over the seat's most recent 1st-degree connections. Acceptance is then a
+    // local set lookup instead of a profile read per pending lead — the difference
+    // between ~1 provider call per sweep and one per in-flight invite, which is what
+    // got a seat flagged for reading "a high volume of profile data". Relations come
+    // back newest-first, so recent acceptances are on the first pages.
+    const relations = await this.recentRelationIds(accountId);
+
     let checked = 0; let accepted = 0; let refreshed = 0; let messagesSynced = 0;
+    let budgetOut = false;
     let cursor: string | undefined;
     for (;;) {
       const batch = await this.prisma.liLead.findMany({
@@ -719,7 +752,10 @@ export class LiSchedulerService implements OnModuleInit {
           }
           if (lead.status === LiLeadStatus.CONNECTION_PENDING && memberId) {
             checked++;
-            const isAcc = await this.provider.isConnectionAccepted({ accountId, memberId });
+            // Set lookup, not a provider call. When the relations pass failed outright
+            // (empty set) we skip rather than fall back to per-lead profile reads — the
+            // per-lead CHECK_ACCEPTANCE ladder is the backstop, and it is budget-metered.
+            const isAcc = relations.size > 0 && relations.has(memberId);
             if (isAcc) {
               await this.prisma.liLead.update({ where: { id: lead.id }, data: { status: LiLeadStatus.CONNECTED, connectedAt: new Date(), currentStep: 1 } });
               await this.cancelPendingChecks(lead.id);
@@ -736,14 +772,47 @@ export class LiSchedulerService implements OnModuleInit {
           const chatId = lead.conversation?.unipileChatId ?? (memberId ? chatByMember.get(memberId) : undefined);
           if (chatId) messagesSynced += await this.inbox.backfillLeadMessages(lead.id, accountId, chatId);
         } catch (e) {
+          if (e instanceof ProfileBudgetExceededError) {
+            // The seat is out of profile-read budget for today. Stop the whole sweep
+            // rather than grinding through the remaining leads throwing per lead —
+            // the next sweep picks up where this one left off.
+            this.logger.warn(`Sync for campaign ${campaignId} halted: ${e.message}`);
+            budgetOut = true;
+            break;
+          }
           this.logger.warn(`Sync failed for lead ${lead.id}: ${(e as Error).message}`);
         }
       }
+      if (budgetOut) break;
       cursor = batch[batch.length - 1].id;
       if (batch.length < 100) break;
     }
     this.logger.log(`Sync campaign ${campaignId}: checked ${checked}, accepted ${accepted}, refreshed ${refreshed}, messages ${messagesSynced}`);
     return { checked, accepted, refreshed, messagesSynced };
+  }
+
+  /**
+   * Member ids of the seat's most recently added 1st-degree connections.
+   *
+   * Deliberately capped: LinkedIn's relations list is newest-first, so a couple of
+   * pages covers every invite accepted since the last sweep. Paging the whole network
+   * would trade one flood of provider calls for another.
+   */
+  private async recentRelationIds(accountId: string, maxPages = RELATION_SCAN_PAGES): Promise<Set<string>> {
+    const ids = new Set<string>();
+    let cursor: string | undefined;
+    for (let page = 0; page < maxPages; page++) {
+      try {
+        const res = await this.provider.listRelations({ accountId, cursor });
+        for (const p of res.people) if (p.memberId) ids.add(p.memberId);
+        if (!res.cursor || res.people.length === 0) break;
+        cursor = res.cursor;
+      } catch (e) {
+        this.logger.warn(`listRelations page ${page} failed for ${accountId}: ${(e as Error).message}`);
+        break;
+      }
+    }
+    return ids;
   }
 
   private async cancelPendingChecks(leadId: string) {
@@ -782,6 +851,32 @@ export class LiSchedulerService implements OnModuleInit {
 
   // ── daily-cap helpers (per campaign) ─────────────────────────────────
   private startOfToday(): Date { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }
+
+  /**
+   * Invites sent today across EVERY campaign on a seat.
+   *
+   * The per-campaign cap alone is not a safety limit: LinkedIn rate-limits the human
+   * behind the account, not our campaign rows, so three campaigns on one seat used to
+   * send three times the intended daily volume.
+   */
+  invitesSentTodayForAccount(accountRowId: string): Promise<number> {
+    return this.prisma.liScheduledAction.count({
+      where: {
+        type: LiScheduledActionType.SEND_CONNECTION, status: LiScheduledActionStatus.DONE,
+        updatedAt: { gte: this.startOfToday() }, lead: { campaign: { linkedInAccountId: accountRowId } },
+      },
+    });
+  }
+
+  /** Messages sent today across every campaign on a seat (see invitesSentTodayForAccount). */
+  messagesSentTodayForAccount(accountRowId: string): Promise<number> {
+    return this.prisma.liScheduledAction.count({
+      where: {
+        type: LiScheduledActionType.SEND_MESSAGE, status: LiScheduledActionStatus.DONE,
+        updatedAt: { gte: this.startOfToday() }, lead: { campaign: { linkedInAccountId: accountRowId } },
+      },
+    });
+  }
 
   invitesSentTodayForCampaign(campaignId: string): Promise<number> {
     return this.prisma.liScheduledAction.count({

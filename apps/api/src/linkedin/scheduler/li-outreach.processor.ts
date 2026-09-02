@@ -9,10 +9,12 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { QUEUE_LINKEDIN } from '../../queue/queue.constants';
 import { LINKEDIN_PROVIDER, LinkedInProvider } from '../provider/linkedin-provider.interface';
 import { LiSchedulerService } from './li-scheduler.service';
+import { ProfileBudgetExceededError } from '../provider/li-rate-guard.service';
 import { LiGenerationService } from '../campaigns/li-generation.service';
+import { LinkedInAccountsService } from '../accounts/linkedin-accounts.service';
 import {
-  LiJob, LiJobData, FIRST_ACCEPTANCE_CHECK_MS, RECHECK_INTERVAL_MS,
-  MAX_ACCEPTANCE_CHECKS, renderTemplate, pickVariant, reconcileName,
+  LiJob, LiJobData, FIRST_ACCEPTANCE_CHECK_MS,
+  MAX_ACCEPTANCE_CHECKS, recheckDelayMs, renderTemplate, pickVariant, reconcileName,
 } from './li-queue.constants';
 
 type LeadWithContext = NonNullable<Awaited<ReturnType<LiOutreachProcessor['loadContext']>>>;
@@ -25,6 +27,7 @@ export class LiOutreachProcessor extends WorkerHost {
     private readonly prisma: PrismaService,
     private readonly scheduler: LiSchedulerService,
     private readonly generation: LiGenerationService,
+    private readonly accounts: LinkedInAccountsService,
     @Inject(LINKEDIN_PROVIDER) private readonly provider: LinkedInProvider,
   ) {
     super();
@@ -71,6 +74,15 @@ export class LiOutreachProcessor extends WorkerHost {
       }
     } catch (err) {
       const msg = ((err as Error)?.message || String(err) || '').trim() || 'Send failed (no detail returned by LinkedIn)';
+      // Seat spent its daily profile-read budget. That's a pacing limit, not a fault:
+      // defer to the next working slot so the lead keeps its place in the sequence.
+      if (err instanceof ProfileBudgetExceededError) {
+        await this.prisma.liScheduledAction.update({
+          where: { id: scheduledActionId },
+          data: { lastError: 'Deferred — daily profile-read budget reached' },
+        });
+        return this.scheduler.rearm(scheduledActionId, this.scheduler.nextDeferralSlot(ctx.campaign));
+      }
       // Account-level failure (checkpoint / re-auth needed / disconnected / rate-limited):
       // it's the SEAT, not the lead. Flag the account for re-auth and DEFER this action to
       // the next working day instead of burning the lead as Failed — so a whole campaign
@@ -99,14 +111,23 @@ export class LiOutreachProcessor extends WorkerHost {
     }
   }
 
-  /** Flip a LinkedIn seat to "needs re-auth" (once) when it trips a checkpoint/disconnect. */
+  /**
+   * Flip a LinkedIn seat to "needs re-auth" (once) when it trips a checkpoint/disconnect,
+   * and stop every campaign running on it.
+   *
+   * Flagging alone wasn't enough: the seat's other campaigns kept firing into an account
+   * LinkedIn had already checkpointed, which is how a warning becomes a restriction.
+   */
   private async flagAccountNeedsAuth(account: { id: string; status: string }, reason: string) {
     if (account.status === 'CREDENTIALS' || account.status === 'DISCONNECTED') return; // already flagged
     await this.prisma.linkedInAccount.update({
       where: { id: account.id },
-      data: { status: 'CREDENTIALS' },
+      data: { status: 'CREDENTIALS', pausedReason: reason.slice(0, 240), pausedAt: new Date() },
     }).catch(() => undefined);
     this.logger.warn(`LinkedIn account ${account.id} flagged for re-auth: ${reason}`);
+    await this.accounts.pauseSeatCampaigns(account.id, reason).catch((e) =>
+      this.logger.error(`Circuit breaker failed for seat ${account.id}: ${(e as Error).message}`),
+    );
   }
 
   private async doSendConnection(actionId: string, ctx: LeadWithContext) {
@@ -124,6 +145,14 @@ export class LiOutreachProcessor extends WorkerHost {
     const sentToday = await this.scheduler.invitesSentTodayForCampaign(ctx.campaign.id);
     const cap = this.scheduler.effectiveConnectionCap(ctx.campaign);
     if (sentToday >= cap) return this.scheduler.rearm(actionId, this.scheduler.nextDeferralSlot(ctx.campaign));
+
+    // Seat-level ceiling on top of the campaign cap. LinkedIn limits the person, not the
+    // campaign, so several campaigns sharing a seat must share one daily budget.
+    const seatSentToday = await this.scheduler.invitesSentTodayForAccount(ctx.account.id);
+    if (seatSentToday >= ctx.account.dailyInviteLimit) {
+      this.logger.warn(`Seat ${ctx.account.id} hit its daily invite ceiling (${ctx.account.dailyInviteLimit}) — deferring`);
+      return this.scheduler.rearm(actionId, this.scheduler.nextDeferralSlot(ctx.campaign));
+    }
 
     // Send-time spacing guard: if the last invite went out too recently, defer this one so
     // invites never fire as a burst — even when the queue got piled onto one instant by
@@ -197,7 +226,7 @@ export class LiOutreachProcessor extends WorkerHost {
     await this.scheduler.schedule(ctx.lead.id, LiScheduledActionType.CHECK_ACCEPTANCE, undefined, new Date(Date.now() + FIRST_ACCEPTANCE_CHECK_MS));
     // Follow-ups only begin once the invite is ACCEPTED — LinkedIn won't deliver DMs
     // to non-connections — so nothing is scheduled here. The acceptance poll (above)
-    // and the 30-min sync sweep both kick off the first message on acceptance.
+    // and the 3-hourly sync sweep both kick off the first message on acceptance.
   }
 
   private async doCheckAcceptance(actionId: string, attempts: number, ctx: LeadWithContext) {
@@ -219,12 +248,12 @@ export class LiOutreachProcessor extends WorkerHost {
         await this.prisma.liLead.update({ where: { id: ctx.lead.id }, data: { status: LiLeadStatus.NOT_ACCEPTED } });
         return this.complete(actionId);
       }
-      return this.scheduler.rearm(actionId, new Date(Date.now() + RECHECK_INTERVAL_MS));
+      return this.scheduler.rearm(actionId, new Date(Date.now() + recheckDelayMs()));
     }
     await this.prisma.liLead.update({ where: { id: ctx.lead.id }, data: { status: LiLeadStatus.CONNECTED, connectedAt: new Date(), currentStep: 1 } });
     await this.complete(actionId);
     // Acceptance is the starting gun for the follow-up timeline (FU-1 = N hours after
-    // acceptance). Guard against the 30-min sync sweep having already kicked it off.
+    // acceptance). Guard against the 3-hourly sync sweep having already kicked it off.
     const alreadyQueued = await this.prisma.liScheduledAction.count({
       where: { leadId: ctx.lead.id, type: LiScheduledActionType.SEND_MESSAGE, status: { not: LiScheduledActionStatus.CANCELLED } },
     });
@@ -234,6 +263,13 @@ export class LiOutreachProcessor extends WorkerHost {
   private async doSendMessage(actionId: string, stepOrder: number, ctx: LeadWithContext) {
     const sentToday = await this.scheduler.messagesSentTodayForCampaign(ctx.campaign.id);
     if (sentToday >= ctx.campaign.dailyMessageLimit) return this.scheduler.rearm(actionId, this.scheduler.nextDeferralSlot(ctx.campaign));
+
+    // Seat-level ceiling (see doSendConnection): campaigns sharing a seat share a budget.
+    const seatSentToday = await this.scheduler.messagesSentTodayForAccount(ctx.account.id);
+    if (seatSentToday >= ctx.account.dailyMessageLimit) {
+      this.logger.warn(`Seat ${ctx.account.id} hit its daily message ceiling (${ctx.account.dailyMessageLimit}) — deferring`);
+      return this.scheduler.rearm(actionId, this.scheduler.nextDeferralSlot(ctx.campaign));
+    }
 
     const step = ctx.steps.find((s) => s.order === stepOrder);
     if (!step) return this.complete(actionId);

@@ -8,7 +8,11 @@ export enum LiJob {
 }
 
 export const DRIP_SCAN_MS = 60 * 60 * 1000; // sweep drip campaigns hourly
-export const SYNC_SWEEP_MS = 30 * 60 * 1000; // re-sync running campaigns every 30 min
+// Re-sync every 3h, not every 30 min. The sweep touches every in-flight lead on a
+// seat; at 30 min it was the single largest source of LinkedIn profile reads and is
+// what triggered the "high volume of profile data" warning. Unipile's own guidance is
+// to poll relations "a few times a day with randomly spaced intervals of several hours".
+export const SYNC_SWEEP_MS = 3 * 60 * 60 * 1000;
 
 export interface LiJobData {
   scheduledActionId: string;
@@ -16,9 +20,18 @@ export interface LiJobData {
   stepOrder?: number;
 }
 
-export const FIRST_ACCEPTANCE_CHECK_MS = 30 * 60 * 1000; // +30 min after invite
-export const RECHECK_INTERVAL_MS = 3 * 60 * 60 * 1000; // every 3h
-export const MAX_ACCEPTANCE_CHECKS = 40; // ~5 days then give up
+// Acceptance polling is a *fallback*: the 3-hourly sync sweep detects acceptance in
+// bulk from one relations call, so the per-lead ladder only needs to catch stragglers.
+// Nobody accepts an invite within 30 minutes often enough to justify checking for it.
+export const FIRST_ACCEPTANCE_CHECK_MS = 3 * 60 * 60 * 1000; // +3h after invite
+export const RECHECK_INTERVAL_MS = 12 * 60 * 60 * 1000; // ~12h base, jittered below
+export const MAX_ACCEPTANCE_CHECKS = 10; // ~5 days then give up
+
+/** Recheck delay with ±33% jitter — a fixed interval is itself an automation signal. */
+export function recheckDelayMs(): number {
+  const spread = RECHECK_INTERVAL_MS / 3;
+  return Math.round(RECHECK_INTERVAL_MS - spread + Math.random() * spread * 2);
+}
 
 export const MIN_JITTER_MS = 20_000;
 export const MAX_JITTER_MS = 90_000;

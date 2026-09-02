@@ -8,17 +8,50 @@ import {
   ProviderMessage,
   ProviderSearchResult,
 } from './linkedin-provider.interface';
+import { LiRateGuard } from './li-rate-guard.service';
+
+/**
+ * Unipile account status → our seat status. Exported because the account webhook must
+ * map the same values; before it did, the webhook hardcoded CONNECTED and the engine
+ * kept driving a seat LinkedIn had already checkpointed.
+ *
+ * Unipile's lifecycle values: OK, CREATION_SUCCESS, RECONNECTED, SYNC_SUCCESS,
+ * CONNECTING, CREDENTIALS, PERMISSIONS, ERROR, STOPPED, DELETED.
+ */
+export function mapProviderStatus(s?: string): ProviderAccount['status'] {
+  switch ((s ?? '').toUpperCase()) {
+    case 'OK':
+    case 'CONNECTED':
+    case 'CREATION_SUCCESS':
+    case 'RECONNECTED':
+    case 'SYNC_SUCCESS': return 'CONNECTED';
+    case 'CREDENTIALS':
+    case 'PERMISSIONS': return 'CREDENTIALS';
+    case 'STOPPED':
+    case 'DELETED': return 'DISCONNECTED';
+    case 'ERROR': return 'ERROR';
+    case 'CONNECTING': return 'PENDING';
+    default: return 'PENDING';
+  }
+}
 
 /**
  * Unipile implementation of LinkedInProvider. Uses the Unipile REST API (DSN + key).
  * The SDK is loaded lazily so the app boots before Unipile is configured.
+ *
+ * Every call that reads a LinkedIn profile goes through LiRateGuard first. LinkedIn
+ * restricts accounts that read a high volume of profile data, so the budget is spent
+ * here rather than at the call sites — a new caller cannot bypass it by accident.
  */
 @Injectable()
 export class UnipileProvider implements LinkedInProvider {
   private readonly logger = new Logger(UnipileProvider.name);
   private client: any;
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly guard: LiRateGuard,
+  ) {}
 
   /** Full base URL, tolerant of a DSN that already includes the scheme. */
   private baseUrl(): string {
@@ -108,6 +141,7 @@ export class UnipileProvider implements LinkedInProvider {
   }
 
   async resolveMember(accountId: string, profileUrl: string): Promise<ProviderMember> {
+    await this.guard.spendProfileCall(accountId);
     const client = this.getClient();
     const identifier = this.publicIdentifier(profileUrl);
     let p: any;
@@ -178,6 +212,9 @@ export class UnipileProvider implements LinkedInProvider {
   }
 
   async isConnectionAccepted(params: { accountId: string; memberId: string }): Promise<boolean> {
+    // Prefer listRelations() for bulk acceptance detection — this per-member profile
+    // read is the expensive path and is metered accordingly.
+    await this.guard.spendProfileCall(params.accountId);
     const client = this.getClient();
     const p = await client.users.getProfile({ account_id: params.accountId, identifier: params.memberId });
     // Unipile spells the 1st-degree signal a few different ways across API versions —
@@ -307,16 +344,7 @@ export class UnipileProvider implements LinkedInProvider {
   }
 
   private mapStatus(s?: string): ProviderAccount['status'] {
-    switch ((s ?? '').toUpperCase()) {
-      case 'OK':
-      case 'CONNECTED': return 'CONNECTED';
-      case 'CREDENTIALS':
-      case 'PERMISSIONS': return 'CREDENTIALS';
-      case 'STOPPED': return 'DISCONNECTED';
-      case 'ERROR': return 'ERROR';
-      case 'CONNECTING': return 'PENDING';
-      default: return 'PENDING';
-    }
+    return mapProviderStatus(s);
   }
 
   private publicIdentifier(profileUrl: string): string {

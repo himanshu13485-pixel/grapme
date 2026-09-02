@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { UnipileProvider } from './provider/unipile.provider';
+import { LiRateGuard } from './provider/li-rate-guard.service';
 import { LINKEDIN_PROVIDER } from './provider/linkedin-provider.interface';
 import { LiAiService } from './ai/ai.service';
 import { LinkedInSubscriptionService } from './subscription/linkedin-subscription.service';
@@ -36,6 +37,7 @@ const queueEnabled = process.env.QUEUE_ENABLED !== 'false';
 @Module({
   imports: [AiModule], // unified AI: LinkedIn generation uses the tenant OpenAI key
   providers: [
+    LiRateGuard,
     UnipileProvider,
     { provide: LINKEDIN_PROVIDER, useExisting: UnipileProvider },
     LiAiService,
@@ -61,7 +63,7 @@ const queueEnabled = process.env.QUEUE_ENABLED !== 'false';
     LiInboxWebhooksController,
   ],
   exports: [
-    LINKEDIN_PROVIDER, LiAiService, LinkedInSubscriptionService,
+    LINKEDIN_PROVIDER, LiRateGuard, LiAiService, LinkedInSubscriptionService,
     LinkedInAccountsService, LiSchedulerService, LiCampaignsService,
     LiGenerationService, LiKnowledgeService, LiInboxService,
   ],
