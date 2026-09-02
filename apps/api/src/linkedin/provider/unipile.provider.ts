@@ -7,6 +7,7 @@ import {
   ProviderMember,
   ProviderMessage,
   ProviderSearchResult,
+  ProviderSentInvitation,
 } from './linkedin-provider.interface';
 import { LiRateGuard } from './li-rate-guard.service';
 
@@ -199,6 +200,32 @@ export class UnipileProvider implements LinkedInProvider {
     });
     if (!res.ok) throw new Error(`Unipile withdraw failed (${res.status}): ${(await res.text()).slice(0, 160)}`);
     this.logger.log(`Withdrew invitation ${params.invitationId}`);
+  }
+
+  /**
+   * Pending invitations sent from this account.
+   *
+   * Authoritative for "is this invite still outstanding on LinkedIn": an invite that has
+   * left this list was accepted or already withdrawn, so there is nothing to withdraw.
+   * It also carries the invitation id for invites sent before we recorded one.
+   */
+  async listSentInvitations(params: { accountId: string; cursor?: string }): Promise<{ items: ProviderSentInvitation[]; cursor?: string }> {
+    const key = (this.config.get<string>('UNIPILE_API_KEY') ?? '').trim();
+    const qs = new URLSearchParams({ account_id: params.accountId, limit: '100' });
+    if (params.cursor) qs.set('cursor', params.cursor);
+    const res = await fetch(`${this.baseUrl()}/api/v1/users/invite/sent?${qs}`, {
+      method: 'GET',
+      headers: { 'X-API-KEY': key, accept: 'application/json' },
+    });
+    if (!res.ok) throw new Error(`Unipile sent-invitations failed (${res.status}): ${(await res.text()).slice(0, 200)}`);
+    const data: any = await res.json();
+    const items: ProviderSentInvitation[] = (data?.items ?? []).map((i: any) => ({
+      invitationId: String(i.id ?? ''),
+      memberId: i.invited_user_id ?? undefined,
+      publicId: i.invited_user_public_id ?? undefined,
+      sentAt: i.parsed_datetime ?? i.date ?? undefined,
+    })).filter((i: ProviderSentInvitation) => i.invitationId);
+    return { items, cursor: data?.cursor ?? undefined };
   }
 
   async sendMessage(params: { accountId: string; memberId: string; text: string }): Promise<{ chatId: string; messageId: string }> {

@@ -10,11 +10,34 @@ import { LINKEDIN_PROVIDER, LinkedInProvider } from '../provider/linkedin-provid
 import { LiInboxService } from '../inbox/li-inbox.service';
 import { ProfileBudgetExceededError } from '../provider/li-rate-guard.service';
 import {
-  LiJob, LiJobData, DRIP_SCAN_MS, SYNC_SWEEP_MS, MIN_ACCEPTANCE_SAMPLE, reconcileName, needsNameResolve,
+  LiJob, LiJobData, DRIP_SCAN_MS, SYNC_SWEEP_MS, MIN_ACCEPTANCE_SAMPLE,
+  MAX_WITHDRAWALS_PER_SWEEP, WITHDRAW_GRACE_DAYS, WITHDRAW_MIN_GAP_MS, WITHDRAW_MAX_GAP_MS,
+  reconcileName, needsNameResolve,
 } from './li-queue.constants';
 
 /** Relations pages to scan per sweep (100/page, newest-first) when detecting acceptance. */
 const RELATION_SCAN_PAGES = 2;
+/** Sent-invitation pages to scan per seat (100/page) when cleaning up stale invites. */
+const INVITE_SCAN_PAGES = 3;
+
+/** Wall-clock ceiling for one stale-invite cleanup pass, well under the sweep interval. */
+const CLEANUP_TIME_BUDGET_MS = 20 * 60 * 1000;
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Fisher-Yates, in place. */
+function shuffle<T>(xs: T[]): void {
+  for (let i = xs.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [xs[i], xs[j]] = [xs[j], xs[i]];
+  }
+}
+
+/** The `/in/<slug>` part of a LinkedIn profile URL, which is the public identifier. */
+function publicIdOf(profileUrl: string): string {
+  const m = profileUrl.match(/\/in\/([^/?#]+)/i);
+  return m ? decodeURIComponent(m[1]) : '';
+}
 
 const TYPE_TO_JOB: Record<LiScheduledActionType, LiJob> = {
   SEND_CONNECTION: LiJob.SendConnection,
@@ -82,6 +105,150 @@ export class LiSchedulerService implements OnModuleInit {
     await this.enforceAcceptanceHealth().catch((e) =>
       this.logger.warn(`Acceptance health check failed: ${(e as Error).message}`),
     );
+    await this.withdrawStaleInvites().catch((e) =>
+      this.logger.warn(`Stale-invite cleanup failed: ${(e as Error).message}`),
+    );
+  }
+
+  /**
+   * Withdraw invites that were never accepted and mark their leads NOT_ACCEPTED.
+   *
+   * The per-lead acceptance ladder already withdraws when a campaign's connection window
+   * lapses, but only while that lead still has a live CHECK_ACCEPTANCE job. Anything that
+   * lost its job — a paused campaign, a Redis flush, invites sent before the ladder
+   * existed — sat pending forever. A large pile of ignored invites is one of the signals
+   * LinkedIn weighs against an account, so it is swept independently of the ladder.
+   *
+   * Runs per seat rather than per campaign: the invite pile belongs to the human whose
+   * account sent them, and it needs clearing whether or not the campaign is still running.
+   */
+  async withdrawStaleInvites(): Promise<number> {
+    const seats = await this.prisma.linkedInAccount.findMany({
+      where: { status: 'CONNECTED', unipileAccountId: { not: null } },
+      select: { id: true, unipileAccountId: true },
+    });
+    // Deliberately paced withdrawals mean this job's runtime scales with seat count and
+    // would eventually outlast its own interval. Bound it by wall clock and take seats in
+    // random order, so every seat gets served across sweeps instead of the first N always
+    // winning and the rest never being cleaned.
+    const deadline = Date.now() + CLEANUP_TIME_BUDGET_MS;
+    shuffle(seats);
+
+    let withdrawn = 0;
+    for (const seat of seats) {
+      if (Date.now() >= deadline) {
+        this.logger.log('Stale-invite cleanup hit its time budget; remaining seats resume next sweep');
+        break;
+      }
+      const accountId = seat.unipileAccountId!;
+      let retired = 0;
+      try {
+        // Oldest first: the longest-pending invites are the ones hurting standing most.
+        const stale = await this.prisma.liLead.findMany({
+          where: {
+            status: LiLeadStatus.CONNECTION_PENDING,
+            lastActionAt: { not: null },
+            campaign: { linkedInAccountId: seat.id },
+          },
+          select: {
+            id: true, unipileMemberId: true, unipileInvitationId: true, lastActionAt: true, profileUrl: true,
+            campaign: { select: { connectionWindowDays: true } },
+          },
+          orderBy: { lastActionAt: 'asc' },
+          take: MAX_WITHDRAWALS_PER_SWEEP * 4, // over-fetch: many will not be stale yet
+        });
+
+        const due = stale.filter((l) => {
+          const windowMs = (Math.max(1, l.campaign.connectionWindowDays ?? 5) + WITHDRAW_GRACE_DAYS) * 864e5;
+          return Date.now() - (l.lastActionAt as Date).getTime() >= windowMs;
+        }).slice(0, MAX_WITHDRAWALS_PER_SWEEP);
+        if (due.length === 0) continue;
+
+        // What LinkedIn still shows as outstanding. An invite missing from this list was
+        // accepted or already withdrawn — retire the lead locally without an API call
+        // rather than firing a DELETE that can only fail.
+        const pending = await this.pendingInvitations(accountId);
+        // "Missing from pending" also describes someone who just ACCEPTED. Retiring them
+        // as NOT_ACCEPTED would drop a won lead out of the sequence, so check the seat's
+        // connections first — a late acceptance is promoted, not binned. runSyncAll covers
+        // this for running campaigns; leads on paused ones would otherwise be lost.
+        const relations = await this.recentRelationIds(accountId);
+
+        for (const lead of due) {
+          if (lead.unipileMemberId && relations.has(lead.unipileMemberId)) {
+            await this.prisma.liLead.update({
+              where: { id: lead.id },
+              data: { status: LiLeadStatus.CONNECTED, connectedAt: new Date(), currentStep: 1 },
+            }).catch(() => undefined);
+            this.logger.log(`Lead ${lead.id} accepted late — promoted instead of withdrawn`);
+            continue;
+          }
+          const match =
+            (lead.unipileMemberId ? pending.byMember.get(lead.unipileMemberId) : undefined) ??
+            (lead.profileUrl ? pending.byPublicId.get(publicIdOf(lead.profileUrl)) : undefined);
+
+          // Three states, not two. We only KNOW an invite is gone when the list loaded
+          // and the lead had something to match on; otherwise treat it as unknown and
+          // fall back to the id recorded at send time.
+          const identifiable = !!(lead.unipileMemberId || lead.profileUrl);
+          const stillPending = pending.known && identifiable ? !!match : undefined;
+          // Prefer the id LinkedIn just gave us over the one stored at send time.
+          const invitationId = match ?? lead.unipileInvitationId ?? undefined;
+
+          if (invitationId && stillPending !== false) {
+            try {
+              await this.provider.withdrawConnection({ accountId, invitationId });
+              withdrawn++;
+              await sleep(WITHDRAW_MIN_GAP_MS + Math.random() * (WITHDRAW_MAX_GAP_MS - WITHDRAW_MIN_GAP_MS));
+            } catch (e) {
+              // A withdraw that fails (already gone, expired id) must not strand the lead
+              // as pending forever — fall through and retire it locally.
+              this.logger.warn(`Withdraw failed for lead ${lead.id}: ${(e as Error).message}`);
+            }
+          }
+
+          await this.prisma.liLead.update({
+            where: { id: lead.id },
+            data: { status: LiLeadStatus.NOT_ACCEPTED },
+          }).catch(() => undefined);
+          await this.cancelPendingChecks(lead.id);
+          retired++;
+        }
+        this.logger.log(`Stale-invite cleanup on seat ${seat.id}: retired ${retired}, withdrawn ${withdrawn}`);
+      } catch (e) {
+        this.logger.warn(`Stale-invite cleanup failed for seat ${seat.id}: ${(e as Error).message}`);
+      }
+    }
+    return withdrawn;
+  }
+
+  /**
+   * Invitations LinkedIn still lists as pending for a seat, indexed for lookup.
+   *
+   * `known: false` means the list couldn't be fetched — callers then fall back to the
+   * invitation id we recorded at send time instead of assuming nothing is outstanding.
+   */
+  private async pendingInvitations(accountId: string): Promise<{
+    byMember: Map<string, string>; byPublicId: Map<string, string>; known: boolean;
+  }> {
+    const byMember = new Map<string, string>();
+    const byPublicId = new Map<string, string>();
+    let cursor: string | undefined;
+    try {
+      for (let page = 0; page < INVITE_SCAN_PAGES; page++) {
+        const res = await this.provider.listSentInvitations({ accountId, cursor });
+        for (const i of res.items) {
+          if (i.memberId) byMember.set(i.memberId, i.invitationId);
+          if (i.publicId) byPublicId.set(i.publicId, i.invitationId);
+        }
+        if (!res.cursor || res.items.length === 0) break;
+        cursor = res.cursor;
+      }
+      return { byMember, byPublicId, known: true };
+    } catch (e) {
+      this.logger.warn(`listSentInvitations failed for ${accountId}: ${(e as Error).message}`);
+      return { byMember, byPublicId, known: false };
+    }
   }
 
   /**

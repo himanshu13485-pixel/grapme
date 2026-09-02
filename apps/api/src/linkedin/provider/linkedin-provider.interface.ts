@@ -64,6 +64,16 @@ export interface ProviderChat {
   memberIds: string[];
 }
 
+/** An invitation the account has sent that is still pending on LinkedIn. */
+export interface ProviderSentInvitation {
+  invitationId: string;
+  /** Provider member id of the invited person (may be absent on older invites). */
+  memberId?: string;
+  /** Public identifier (the /in/<slug> part), when the member id is missing. */
+  publicId?: string;
+  sentAt?: string;
+}
+
 export const LINKEDIN_PROVIDER = Symbol('LINKEDIN_PROVIDER');
 
 export interface LinkedInProvider {
@@ -73,6 +83,8 @@ export interface LinkedInProvider {
   sendConnection(params: { accountId: string; memberId: string; note?: string }): Promise<{ invitationId: string }>;
   /** Withdraw a previously-sent connection invite (best-effort). */
   withdrawConnection(params: { accountId: string; invitationId: string }): Promise<void>;
+  /** Invitations sent from this account that are still pending (paginated). */
+  listSentInvitations(params: { accountId: string; cursor?: string }): Promise<{ items: ProviderSentInvitation[]; cursor?: string }>;
   sendMessage(params: { accountId: string; memberId: string; text: string }): Promise<{ chatId: string; messageId: string }>;
   isConnectionAccepted(params: { accountId: string; memberId: string }): Promise<boolean>;
   listMessages(params: { accountId: string; chatId: string }): Promise<ProviderMessage[]>;

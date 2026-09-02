@@ -41,6 +41,21 @@ export function recheckDelayMs(): number {
  */
 export const MIN_ACCEPTANCE_SAMPLE = 30;
 
+/**
+ * Stale-invite cleanup, per seat per sweep.
+ *
+ * A pile of ignored invites drags on account standing, but withdrawing hundreds in one
+ * burst is itself the machine-like behaviour we're trying to avoid — so the backlog is
+ * drained a slice at a time.
+ */
+export const MAX_WITHDRAWALS_PER_SWEEP = 15;
+/** Extra days past connectionWindowDays before the sweep withdraws, so it never races
+ *  the per-lead acceptance ladder to the same invite. */
+export const WITHDRAW_GRACE_DAYS = 1;
+/** Spacing between withdrawals so a cleanup run isn't a burst of identical calls. */
+export const WITHDRAW_MIN_GAP_MS = 4_000;
+export const WITHDRAW_MAX_GAP_MS = 15_000;
+
 export const MIN_JITTER_MS = 20_000;
 export const MAX_JITTER_MS = 90_000;
 
