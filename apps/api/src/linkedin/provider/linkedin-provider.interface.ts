@@ -74,11 +74,29 @@ export interface ProviderSentInvitation {
   sentAt?: string;
 }
 
+/**
+ * Where a seat's traffic should egress from. Either a country (provider picks an IP
+ * there) or an explicit proxy — never both; the proxy wins if given.
+ */
+export interface ProviderProxyConfig {
+  /** ISO 3166-1 alpha-2, e.g. "IN". */
+  country?: string;
+  proxy?: {
+    host: string;
+    port: number;
+    protocol?: 'http' | 'https' | 'socks5';
+    username?: string;
+    password?: string;
+  };
+}
+
 export const LINKEDIN_PROVIDER = Symbol('LINKEDIN_PROVIDER');
 
 export interface LinkedInProvider {
   createHostedAuthLink(params: { name: string; successRedirect?: string }): Promise<HostedAuthLink>;
   getAccount(accountId: string): Promise<ProviderAccount>;
+  /** Point a connected account at a country-based or custom proxy. */
+  setAccountProxy(accountId: string, config: ProviderProxyConfig): Promise<void>;
   resolveMember(accountId: string, profileUrl: string): Promise<ProviderMember>;
   sendConnection(params: { accountId: string; memberId: string; note?: string }): Promise<{ invitationId: string }>;
   /** Withdraw a previously-sent connection invite (best-effort). */

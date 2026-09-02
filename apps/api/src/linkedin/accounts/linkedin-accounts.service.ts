@@ -5,6 +5,7 @@ import { LINKEDIN_PROVIDER, LinkedInProvider } from '../provider/linkedin-provid
 import { LinkedInSubscriptionService } from '../subscription/linkedin-subscription.service';
 import { mapProviderStatus } from '../provider/unipile.provider';
 import { LiSchedulerService } from '../scheduler/li-scheduler.service';
+import { encryptCredential, decryptCredential } from '../../common/crypto/credential-crypto';
 
 @Injectable()
 export class LinkedInAccountsService {
@@ -47,13 +48,18 @@ export class LinkedInAccountsService {
     // A seat is "deactivated" whenever its client is suspended (plan expired / deactivated) —
     // outreach is paused platform-wide, so surface it on every seat.
     const deactivated = !!client && client.status !== 'active';
-    return accounts.map((a) => ({ ...a, deactivated }));
+    return accounts.map((a) => ({ ...this.redactProxy(a), deactivated }));
   }
 
   async get(id: string) {
     const a = await this.prisma.linkedInAccount.findUnique({ where: { id } });
     if (!a) throw new NotFoundException('Account not found');
     return a;
+  }
+
+  /** Redacted read for API callers. get() stays raw — applyProxy needs the real secret. */
+  async getPublic(id: string) {
+    return this.redactProxy(await this.get(id));
   }
 
   async sync(id: string) {
@@ -133,6 +139,10 @@ export class LinkedInAccountsService {
       return { ok: true, status };
     }
 
+    // Apply the seat's egress before anything starts sending through it. Unipile assigns
+    // an IP near whoever completed the login, so a seat connected by us from our office
+    // would otherwise run from our location rather than the client's.
+    await this.applyProxy(rowId).catch(() => undefined);
     try { await this.sync(rowId); } catch (e) { this.logger.warn(`Post-connect sync failed: ${(e as Error).message}`); }
     return { ok: true, status };
   }
@@ -159,6 +169,92 @@ export class LinkedInAccountsService {
     }).catch(() => undefined);
     if (running.length) this.logger.warn(`Paused ${running.length} campaign(s) on seat ${accountRowId}: ${reason}`);
     return running.length;
+  }
+
+  /**
+   * Set where this seat's traffic egresses from.
+   *
+   * Left alone, Unipile picks an IP near whoever completed the hosted-auth login — which
+   * is whoever clicked the link, not necessarily the client. A seat that appears from a
+   * different country than its owner normally uses trips checkpoints on its own, which is
+   * why this is per seat rather than a global setting.
+   *
+   * Stores the config even when the seat isn't connected yet, and applies it on connect.
+   */
+  async setProxy(id: string, dto: {
+    country?: string | null;
+    host?: string | null; port?: number | null; protocol?: string | null;
+    username?: string | null; password?: string | null;
+  }) {
+    const a = await this.get(id);
+    const clearing = !dto.country && !dto.host;
+
+    // A blank password on an otherwise-unchanged host means "keep what's stored" — the
+    // API never returns the secret, so the UI cannot echo it back to us.
+    const keepPassword = !!dto.host && dto.host === a.proxyHost && !dto.password;
+    const password = clearing
+      ? null
+      : keepPassword
+        ? a.proxyPassword
+        : dto.password
+          ? encryptCredential(dto.password)
+          : null;
+
+    const updated = await this.prisma.linkedInAccount.update({
+      where: { id },
+      data: {
+        proxyCountry: clearing ? null : dto.country?.trim().toUpperCase() || null,
+        proxyHost: clearing ? null : dto.host?.trim() || null,
+        proxyPort: clearing ? null : dto.port ?? null,
+        proxyProtocol: clearing ? null : dto.protocol || null,
+        proxyUsername: clearing ? null : dto.username?.trim() || null,
+        proxyPassword: password,
+        proxyAppliedAt: null,
+      },
+    });
+
+    if (a.unipileAccountId && !clearing) await this.applyProxy(id);
+    return this.redactProxy(await this.get(id)) ?? updated;
+  }
+
+  /**
+   * Push the stored proxy config to the provider. Best-effort by design: a proxy that
+   * won't apply must not block connecting or syncing the seat, it just leaves the seat
+   * on the provider's default egress with proxyAppliedAt unset.
+   */
+  async applyProxy(id: string): Promise<boolean> {
+    const a = await this.get(id);
+    if (!a.unipileAccountId) return false;
+    const config = a.proxyHost && a.proxyPort
+      ? {
+        proxy: {
+          host: a.proxyHost,
+          port: a.proxyPort,
+          protocol: (a.proxyProtocol as 'http' | 'https' | 'socks5' | null) ?? undefined,
+          username: a.proxyUsername ?? undefined,
+          password: a.proxyPassword ? decryptCredential(a.proxyPassword) : undefined,
+        },
+      }
+      : a.proxyCountry
+        ? { country: a.proxyCountry }
+        : null;
+    if (!config) return false;
+    try {
+      await this.provider.setAccountProxy(a.unipileAccountId, config);
+      await this.prisma.linkedInAccount.update({ where: { id }, data: { proxyAppliedAt: new Date() } });
+      return true;
+    } catch (e) {
+      this.logger.warn(`Could not apply proxy for seat ${id}: ${(e as Error).message}`);
+      return false;
+    }
+  }
+
+  /** Never let the stored proxy password leave the API, encrypted or not. */
+  private redactProxy<T extends { proxyPassword?: string | null } | null>(row: T): T {
+    if (row && 'proxyPassword' in row) {
+      return { ...row, proxyPassword: row.proxyPassword ? '••••••••' : null } as T;
+    }
+    return row;
   }
 
   /** Same breaker, addressed by the provider-side account id (what the engine holds). */

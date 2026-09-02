@@ -58,6 +58,13 @@ export interface LinkedInAccount {
   lastSyncedAt?: string | null;
   createdAt: string;
   deactivated?: boolean;
+  /** Why the engine paused this seat (checkpoint, non-OK provider status). */
+  pausedReason?: string | null;
+  /** ISO-2 country the seat's traffic egresses from; null = provider default. */
+  proxyCountry?: string | null;
+  proxyHost?: string | null;
+  /** Set once the region/proxy has been pushed to the provider. */
+  proxyAppliedAt?: string | null;
 }
 
 /** Visual health for a connected LinkedIn account. `healthy` = able to send. */

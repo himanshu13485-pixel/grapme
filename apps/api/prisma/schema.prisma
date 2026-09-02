@@ -1317,6 +1317,20 @@ model LinkedInAccount {
   /// or budget exhaustion). Cleared on a successful reconnect.
   pausedReason      String?
   pausedAt          DateTime?
+  /// Where this seat's traffic should appear to come from. LinkedIn weighs the login
+  /// location, so a seat reached from a different country than the person normally uses
+  /// draws checkpoints on its own — independent of how carefully the sending is paced.
+  /// ISO 3166-1 alpha-2; null = let Unipile pick from the connecting user's IP.
+  proxyCountry      String?
+  /// Optional bring-your-own proxy, overriding proxyCountry. Password is encrypted
+  /// at rest with CREDENTIAL_ENCRYPTION_KEY and never returned by the API.
+  proxyHost         String?
+  proxyPort         Int?
+  proxyProtocol     String?
+  proxyUsername     String?
+  proxyPassword     String?
+  /// Last time the proxy config above was successfully pushed to the provider.
+  proxyAppliedAt    DateTime?
   lastSyncedAt      DateTime?
   createdAt         DateTime              @default(now())
   updatedAt         DateTime              @updatedAt

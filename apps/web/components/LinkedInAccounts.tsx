@@ -20,6 +20,8 @@ import { LinkedInAccount, accountHealth, timeAgo } from '@/lib/linkedin';
 export type ConnectMode = 'popup' | 'modal';
 
 export interface UseLinkedInAccounts {
+  /** Route prefix the hook was built with, so rows can call seat-scoped endpoints. */
+  base: string;
   accounts: LinkedInAccount[];
   loaded: boolean;
   connecting: boolean;
@@ -136,7 +138,7 @@ export function useLinkedInAccounts({
     reload();
   }, [reload]);
 
-  return { accounts, loaded, connecting, justOpened, connectUrl, dismissConnectUrl, reload, connect, remove, sync };
+  return { base, accounts, loaded, connecting, justOpened, connectUrl, dismissConnectUrl, reload, connect, remove, sync };
 }
 
 interface LinkedInAccountsProps {
@@ -163,7 +165,7 @@ export function LinkedInAccounts({
   allowRemoveConnected = false,
   showHealthSummary = false,
 }: LinkedInAccountsProps) {
-  const { accounts, loaded, connecting, justOpened, connectUrl, dismissConnectUrl, connect, remove, sync } = li;
+  const { base, accounts, loaded, connecting, justOpened, connectUrl, dismissConnectUrl, reload, connect, remove, sync } = li;
   const atLimit = seats != null && accounts.length >= seats;
   const seatPct = seats ? Math.min(100, Math.round((accounts.length / seats) * 100)) : 0;
   const connected = accounts.filter((a) => a.status === 'CONNECTED').length;
@@ -286,6 +288,7 @@ export function LinkedInAccounts({
                     <span className={`h-2 w-2 rounded-full ${h.dot}`} />
                     {h.label}
                   </span>
+                  {showSync && <SeatRegion base={base} account={a} onSaved={reload} />}
                   {showSync && (
                     <button className="text-sm text-slate-500 hover:text-slate-800" onClick={() => sync(a.id)}>
                       Sync
@@ -310,6 +313,80 @@ export function LinkedInAccounts({
 
       {mode === 'modal' && connectUrl && <ConnectLinkModal url={connectUrl} onClose={dismissConnectUrl} />}
     </div>
+  );
+}
+
+/**
+ * Which country a seat's traffic appears to come from.
+ *
+ * Left unset, the provider assigns an IP near whoever completed the LinkedIn login —
+ * usually us, not the client. LinkedIn weighs login location, so a seat that suddenly
+ * appears from another country collects checkpoints no matter how gently it sends.
+ * Admin-only: the client portal must not expose infrastructure settings.
+ */
+function SeatRegion({
+  base,
+  account,
+  onSaved,
+}: {
+  base: string;
+  account: LinkedInAccount;
+  onSaved: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(account.proxyCountry ?? '');
+  const [busy, setBusy] = useState(false);
+
+  async function save() {
+    const country = value.trim().toUpperCase();
+    if (country && country.length !== 2) return; // ISO 3166-1 alpha-2 only
+    setBusy(true);
+    try {
+      await api.post(`${base}/linkedin-accounts/${account.id}/proxy`, country ? { country } : {});
+      setEditing(false);
+      onSaved();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!editing) {
+    return (
+      <button
+        className="text-sm text-slate-500 hover:text-slate-800"
+        title={
+          account.proxyCountry
+            ? `Traffic routed via ${account.proxyCountry}${account.proxyAppliedAt ? '' : ' (not yet applied)'}`
+            : 'Region not set — the provider picks an IP near whoever logged in'
+        }
+        onClick={() => setEditing(true)}
+      >
+        {account.proxyCountry ?? 'Region'}
+        {account.proxyCountry && !account.proxyAppliedAt && (
+          <span className="ml-1 text-amber-500" title="Saved but not yet applied">•</span>
+        )}
+      </button>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1">
+      <input
+        autoFocus
+        value={value}
+        maxLength={2}
+        placeholder="IN"
+        className="w-12 rounded border border-slate-200 px-1.5 py-0.5 text-sm uppercase"
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') void save(); if (e.key === 'Escape') setEditing(false); }}
+      />
+      <button className="text-sm text-brand-600 hover:text-brand-800" disabled={busy} onClick={() => void save()}>
+        Save
+      </button>
+      <button className="text-sm text-slate-400 hover:text-slate-600" onClick={() => setEditing(false)}>
+        ✕
+      </button>
+    </span>
   );
 }
 

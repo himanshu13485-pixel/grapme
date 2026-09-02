@@ -8,6 +8,7 @@ import {
   ProviderMessage,
   ProviderSearchResult,
   ProviderSentInvitation,
+  ProviderProxyConfig,
 } from './linkedin-provider.interface';
 import { LiRateGuard } from './li-rate-guard.service';
 
@@ -139,6 +140,31 @@ export class UnipileProvider implements LinkedInProvider {
       status: this.mapStatus(a?.sources?.[0]?.status),
       fullName: a?.name,
     };
+  }
+
+  /**
+   * Route a connected seat through a specific country or a custom proxy.
+   *
+   * Unipile otherwise picks an IP near whoever completed the hosted-auth login — which is
+   * us, not the client. A seat that suddenly appears from another country is a checkpoint
+   * trigger on its own, no matter how carefully the sending is paced.
+   */
+  async setAccountProxy(accountId: string, config: ProviderProxyConfig): Promise<void> {
+    const key = (this.config.get<string>('UNIPILE_API_KEY') ?? '').trim();
+    // The API takes either a country or a proxy object; an explicit proxy wins.
+    const body = config.proxy
+      ? { proxy: config.proxy }
+      : config.country
+        ? { country: config.country.toUpperCase() }
+        : null;
+    if (!body) return;
+    const res = await fetch(`${this.baseUrl()}/api/v1/accounts/${encodeURIComponent(accountId)}`, {
+      method: 'PATCH',
+      headers: { 'X-API-KEY': key, accept: 'application/json', 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`Unipile set-proxy failed (${res.status}): ${(await res.text()).slice(0, 200)}`);
+    this.logger.log(`Proxy updated for account ${accountId} (${config.proxy ? `${config.proxy.host}:${config.proxy.port}` : config.country})`);
   }
 
   async resolveMember(accountId: string, profileUrl: string): Promise<ProviderMember> {
