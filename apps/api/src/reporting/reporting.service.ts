@@ -568,61 +568,68 @@ export class ReportingService {
     const steps = await this.prisma.clientSetupStep.findMany({
       where: { status: { not: 'FINISHED' }, assigneeUserId: { not: null }, tenantId: { in: [...enabledTenants] } },
       select: {
-        id: true, label: true, group: true, monthIndex: true, status: true, lastReminderAt: true, assigneeUserId: true,
+        id: true, label: true, group: true, order: true, monthIndex: true, status: true, lastReminderAt: true,
+        assigneeUserId: true, clientId: true,
         client: { select: { name: true, status: true, termStartedAt: true } },
       },
+      orderBy: [{ group: 'asc' }, { order: 'asc' }],
     });
 
-    // Build the list of due reminders (one per owner+step).
-    const due: { stepId: string; job: Omit<SetupNotifyJob, 'channel'> }[] = [];
+    // One message per owner per client, not per step. Two people carry most of the
+    // checklist, so a 16-step client used to mean a dozen separate mails a day into the
+    // same two inboxes — enough noise that the reminders stopped being read.
+    //
+    // Due-ness is decided for the GROUP, not the step: once any of a person's steps on a
+    // client is due, the mail lists everything they currently owe on it. Judging each step
+    // separately would only merge steps that happened to fall due in the same hourly
+    // sweep, so a step assigned a few hours after the others would drift permanently out
+    // of step and split back into a second daily mail.
+    const groups = new Map<string, { items: DueStep[]; fire: boolean }>();
     for (const s of steps) {
       if (!s.assigneeUserId) continue;
       if ((s.client.status ?? 'active').toLowerCase() !== 'active') continue;
-      const statusWord = s.status === 'STARTED' ? 'is in progress but not finished' : 'has not been started';
 
+      // Has this step arrived at all, and how long between nudges once it has?
+      let intervalMs: number;
       if (s.group === 'MONTHLY') {
         if (!s.monthIndex) continue;
         const dueStart = addMonths(s.client.termStartedAt ?? now, s.monthIndex - 1);
-        if (now.getTime() < dueStart.getTime()) continue;
-        const intervalMs = (s.status === 'STARTED' ? 3 : 2) * 86_400_000;
-        if (s.lastReminderAt && now.getTime() - s.lastReminderAt.getTime() < intervalMs) continue;
-        due.push({ stepId: s.id, job: {
-          userId: s.assigneeUserId,
-          title: `Email arrangement pending — ${s.client.name}`,
-          body: `The 80–100 email arrangement for ${s.client.name} (Month ${s.monthIndex}) ${statusWord}. Please action it.`,
-          emailHtml: `<p>The <strong>80–100 email arrangement</strong> for <strong>${escapeHtml(s.client.name)}</strong> (Month ${s.monthIndex}) ${statusWord}.</p><p>Please add next month's buyers/suppliers and set up the arrangement.</p>`,
-          whatsappText: `GrapMe: 80–100 email arrangement pending for ${s.client.name} (Month ${s.monthIndex}). ${s.status === 'STARTED' ? 'Started — please finish.' : 'Please start.'}`,
-          link: '/reporting',
-        } });
+        if (now.getTime() < dueStart.getTime()) continue; // month not reached — not pending yet
+        intervalMs = (s.status === 'STARTED' ? 3 : 2) * 86_400_000;
       } else {
-        // General / Email / LinkedIn: once per day (≥20h since last) until finished.
-        if (s.lastReminderAt && now.getTime() - s.lastReminderAt.getTime() < 20 * 3_600_000) continue;
-        due.push({ stepId: s.id, job: {
-          userId: s.assigneeUserId,
-          title: `Setup task pending — ${s.client.name}`,
-          body: `"${s.label}" for ${s.client.name} ${statusWord}. Please update it in Reporting.`,
-          emailHtml: `<p>Your setup task <strong>"${escapeHtml(s.label)}"</strong> for <strong>${escapeHtml(s.client.name)}</strong> ${statusWord}.</p><p>Please move it forward (Not started → Started → Finished) in Reporting.</p>`,
-          whatsappText: `GrapMe: setup task "${s.label}" for ${s.client.name} ${statusWord}. Please update.`,
-          link: '/reporting',
-        } });
+        intervalMs = 20 * 3_600_000; // once per day
       }
-    }
-    if (due.length === 0) return { sent: 0 };
+      const ripe = !s.lastReminderAt || now.getTime() - s.lastReminderAt.getTime() >= intervalMs;
 
-    // Mark all as reminded now (so the next hourly sweep doesn't re-enqueue today).
-    await this.prisma.clientSetupStep.updateMany({ where: { id: { in: due.map((d) => d.stepId) } }, data: { lastReminderAt: now } });
+      const key = `${s.assigneeUserId}::${s.clientId}`;
+      const entry = groups.get(key) ?? { items: [], fire: false };
+      entry.items.push({
+        stepId: s.id, userId: s.assigneeUserId, clientId: s.clientId, clientName: s.client.name,
+        label: s.label, monthly: s.group === 'MONTHLY', started: s.status === 'STARTED',
+      });
+      entry.fire ||= ripe;
+      groups.set(key, entry);
+    }
+
+    for (const [key, g] of groups) if (!g.fire) groups.delete(key);
+    if (groups.size === 0) return { sent: 0 };
+
+    // Stamp every step in a firing group, so they stay in lockstep for the next sweep.
+    const stamped = [...groups.values()].flatMap((g) => g.items.map((i) => i.stepId));
+    await this.prisma.clientSetupStep.updateMany({ where: { id: { in: stamped } }, data: { lastReminderAt: now } });
 
     // Dispatch: bell immediately; email + WhatsApp staggered ≥60s apart and between recipients.
     let slot = 0;
-    for (const { job } of due) {
+    for (const g of groups.values()) {
+      const job = buildDigest(g.items);
       const base = slot * 2 * REMINDER_GAP_MS; // 2 slots per recipient (email + whatsapp)
       await this.enqueueReminder({ ...job, channel: 'inApp' }, 0);
       await this.enqueueReminder({ ...job, channel: 'email' }, base);
       await this.enqueueReminder({ ...job, channel: 'whatsapp' }, base + REMINDER_GAP_MS);
       slot += 1;
     }
-    this.logger.log(`Setup reminders: dispatched ${due.length} reminder(s) (staggered)`);
-    return { sent: due.length };
+    this.logger.log(`Setup reminders: ${stamped.length} pending step(s) → ${groups.size} message(s) (staggered)`);
+    return { sent: groups.size };
   }
 
   /** Queue a single staggered channel send; if the queue is off (no Redis), send inline. */
@@ -644,6 +651,77 @@ export class ReportingService {
     });
     return users.map((u) => ({ id: u.id, name: u.name || u.email, email: u.email, role: u.role }));
   }
+}
+
+/** One pending step, flattened for grouping into a per-client digest. */
+interface DueStep {
+  stepId: string;
+  userId: string;
+  clientId: string;
+  clientName: string;
+  label: string;
+  monthly: boolean;
+  started: boolean;
+}
+
+/** "is in progress but not finished" / "has not been started". */
+function statusPhrase(started: boolean): string {
+  return started ? 'is in progress but not finished' : 'has not been started';
+}
+
+/**
+ * One reminder covering every step this person owes on this client today.
+ *
+ * A single pending step keeps the original wording — the digest shape only kicks in when
+ * there is actually more than one thing to say, so nothing reads oddly for the common case.
+ */
+function buildDigest(items: DueStep[]): Omit<SetupNotifyJob, 'channel'> {
+  const { clientName, userId } = items[0];
+  const link = '/reporting';
+  const monthlyNote = items.some((i) => i.monthly)
+    ? "<p>For the monthly email arrangement, please add next month's buyers/suppliers and set it up.</p>"
+    : '';
+
+  if (items.length === 1) {
+    const only = items[0];
+    const phrase = statusPhrase(only.started);
+    return {
+      userId,
+      title: `Setup task pending — ${clientName}`,
+      body: `"${only.label}" for ${clientName} ${phrase}. Please update it in Reporting.`,
+      emailHtml:
+        `<p>Your setup task <strong>"${escapeHtml(only.label)}"</strong> for <strong>${escapeHtml(clientName)}</strong> ${phrase}.</p>`
+        + (monthlyNote || '<p>Please move it forward (Not started → Started → Finished) in Reporting.</p>'),
+      whatsappText: `GrapMe: setup task "${only.label}" for ${clientName} ${phrase}. Please update.`,
+      link,
+    };
+  }
+
+  const notStarted = items.filter((i) => !i.started).length;
+  const inProgress = items.length - notStarted;
+  const summary = [
+    notStarted ? `${notStarted} not started` : '',
+    inProgress ? `${inProgress} in progress` : '',
+  ].filter(Boolean).join(', ');
+
+  const rows = items
+    .map((i) => `<li><strong>${escapeHtml(i.label)}</strong> — ${statusPhrase(i.started)}</li>`)
+    .join('');
+
+  return {
+    userId,
+    title: `${items.length} setup tasks pending — ${clientName}`,
+    body: `You have ${items.length} pending setup tasks for ${clientName} (${summary}). Please update them in Reporting.`,
+    emailHtml:
+      `<p>You have <strong>${items.length} pending setup tasks</strong> for <strong>${escapeHtml(clientName)}</strong> (${summary}):</p>`
+      + `<ul>${rows}</ul>`
+      + monthlyNote
+      + '<p>Please move each one forward (Not started → Started → Finished) in Reporting.</p>',
+    whatsappText:
+      `GrapMe: ${items.length} setup tasks pending for ${clientName} —\n`
+      + items.map((i) => `• ${i.label} (${i.started ? 'in progress' : 'not started'})`).join('\n'),
+    link,
+  };
 }
 
 function slugify(s: string): string {
