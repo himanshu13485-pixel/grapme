@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { Manrope, Space_Grotesk, Fraunces } from 'next/font/google';
+import localFont from 'next/font/local';
 import './globals.css';
 import { SiteHeader } from '@/components/site-header';
 import { SiteFooter } from '@/components/site-footer';
@@ -7,26 +7,29 @@ import { SiteBackground } from '@/components/site-background';
 import { ScrollProgress } from '@/components/scroll-progress';
 import { SITE, SITE_URL } from '@/lib/site';
 
-const manrope = Manrope({
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700', '800'],
+// Self-hosted rather than next/font/google: that fetches from fonts.gstatic.com
+// at BUILD time, so a server that cannot reach Google cannot build the site at
+// all. These are the same Google variable fonts, latin subset, committed under
+// ./fonts — the build now needs no network.
+const manrope = localFont({
+  src: [{ path: './fonts/manrope-latin.woff2', weight: '200 800', style: 'normal' }],
   variable: '--font-manrope',
   display: 'swap',
 });
 
 // Editorial display serif for large headlines (with italic for accents)
-const display = Fraunces({
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
-  style: ['normal', 'italic'],
+const display = localFont({
+  src: [
+    { path: './fonts/fraunces-latin.woff2', weight: '400 700', style: 'normal' },
+    { path: './fonts/fraunces-latin-italic.woff2', weight: '400 700', style: 'italic' },
+  ],
   variable: '--font-display',
   display: 'swap',
 });
 
 // Geometric grotesk for eyebrow labels and numerals
-const grotesk = Space_Grotesk({
-  subsets: ['latin'],
-  weight: ['500', '600', '700'],
+const grotesk = localFont({
+  src: [{ path: './fonts/space-grotesk-latin.woff2', weight: '300 700', style: 'normal' }],
   variable: '--font-grotesk',
   display: 'swap',
 });
