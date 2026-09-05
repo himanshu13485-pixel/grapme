@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useCanDelete, useAuth } from '@/lib/auth';
 import { downloadCsv } from '@/lib/csv';
-import { PageHeader, EmptyState, StatusBadge, Tabs, Modal } from '@/components/ui';
+import { PageHeader, EmptyState, StatusBadge, Tabs, Modal, CategoryBadge } from '@/components/ui';
 import { ClientLinkedIn } from '@/components/ClientLinkedIn';
 import { SubscriptionHistory } from '@/components/SubscriptionHistory';
 import { ContactsManager } from '@/components/ContactsManager';
@@ -263,6 +263,7 @@ export default function ClientCockpit() {
       </div>
       <PageHeader
         title={client.name}
+        badge={<CategoryBadge category={client.productCategory} />}
         subtitle={`${client.plan} · ${client.dailyBatchSize}/day · ${client.followUpCount} follow-ups · ${detailDays(client.workDays)}`}
         action={
           <div className="flex flex-wrap items-center gap-3">

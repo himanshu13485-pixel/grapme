@@ -27,21 +27,52 @@ export function StatusBadge({ status }: { status: string }) {
   );
 }
 
+/**
+ * The product / category a client exports or imports, as a bubble — the same
+ * shape as the salesperson bubble, so the two read as a pair. Renders nothing
+ * when the client has no category set.
+ */
+export function CategoryBadge({
+  category,
+  className = '',
+}: {
+  category?: string | null;
+  className?: string;
+}) {
+  const label = category?.trim();
+  if (!label) return null;
+  return (
+    <span
+      className={`inline-flex max-w-[16rem] items-center gap-1 rounded-full bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-700 ${className}`}
+      title={label}
+    >
+      <span aria-hidden>📦</span>
+      <span className="truncate">{label}</span>
+    </span>
+  );
+}
+
 export function PageHeader({
   title,
   subtitle,
+  badge,
   action,
 }: {
   title: string;
   subtitle?: string;
+  /** Optional bubble shown beside the title, e.g. a client's product category. */
+  badge?: ReactNode;
   action?: ReactNode;
 }) {
   return (
     <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-      <div>
-        <h1 className="bg-gradient-to-r from-slate-900 via-brand-800 to-accent-700 bg-clip-text text-xl font-bold tracking-tight text-transparent sm:text-2xl">
-          {title}
-        </h1>
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="bg-gradient-to-r from-slate-900 via-brand-800 to-accent-700 bg-clip-text text-xl font-bold tracking-tight text-transparent sm:text-2xl">
+            {title}
+          </h1>
+          {badge}
+        </div>
         {subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}
       </div>
       {action && <div className="shrink-0">{action}</div>}
