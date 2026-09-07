@@ -34,6 +34,7 @@ import { LiCampaignsService } from '../linkedin/campaigns/li-campaigns.service';
 import { LinkedInSubscriptionService } from '../linkedin/subscription/linkedin-subscription.service';
 import { BounceService } from '../bounce/bounce.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
+import { inStaffMailHour, istNow } from '../common/office-hours';
 import {
   AssignMailboxDto,
   CreateClientDto,
@@ -2110,7 +2111,10 @@ export class ProgramsService {
    */
   private async notifyCampaignDataDue(): Promise<void> {
     const now = new Date();
-    const dayOfMonth = now.getDate();
+    // Same 8–9am IST slot as the other staff mail. This runs on the 60-second
+    // tick, so without the gate it fired at whatever hour the target day began.
+    if (!inStaffMailHour(now)) return;
+    const dayOfMonth = istNow(now).dayOfMonth;
     if (dayOfMonth > 7) return; // only during the first week of the month
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const monthKey = `${now.getFullYear()}-${now.getMonth()}`;
@@ -2136,6 +2140,9 @@ export class ProgramsService {
       // on/after that day so reminders don't all go out on the 1st.
       const targetDay = 1 + (hashInt(c.id + monthKey) % 7);
       if (dayOfMonth < targetDay) continue;
+      // And its own minute inside the slot, so a day's clients don't all leave
+      // at 08:00 together. Deterministic, so a restart can't re-roll it.
+      if (istNow(now).minute < hashInt(c.id + monthKey + 'min') % 55) continue;
 
       const opsEmails = extractOpsEmails(c.operationContacts);
       const recipients = [...new Set([c.salesPerson?.email, ...opsEmails].filter(Boolean) as string[])];
