@@ -13,8 +13,7 @@ import { ProfileBudgetExceededError } from '../provider/li-rate-guard.service';
 import { LiGenerationService } from '../campaigns/li-generation.service';
 import { LinkedInAccountsService } from '../accounts/linkedin-accounts.service';
 import {
-  LiJob, LiJobData, FIRST_ACCEPTANCE_CHECK_MS,
-  MAX_ACCEPTANCE_CHECKS, recheckDelayMs, renderTemplate, pickVariant, reconcileName,
+  LiJob, LiJobData, renderTemplate, pickVariant, reconcileName,
 } from './li-queue.constants';
 
 type LeadWithContext = NonNullable<Awaited<ReturnType<LiOutreachProcessor['loadContext']>>>;
@@ -208,7 +207,6 @@ export class LiOutreachProcessor extends WorkerHost {
           data: { status: LiLeadStatus.CONNECTION_PENDING, currentStep: 1, lastActionAt: new Date() },
         });
         await this.complete(actionId);
-        await this.scheduler.schedule(ctx.lead.id, LiScheduledActionType.CHECK_ACCEPTANCE, undefined, new Date(Date.now() + FIRST_ACCEPTANCE_CHECK_MS));
         this.logger.log(`Lead ${ctx.lead.id}: invitation already pending (cannot_resend_yet) — advanced to CONNECTION_PENDING`);
         return;
       }
@@ -223,41 +221,30 @@ export class LiOutreachProcessor extends WorkerHost {
       },
     });
     await this.complete(actionId);
-    await this.scheduler.schedule(ctx.lead.id, LiScheduledActionType.CHECK_ACCEPTANCE, undefined, new Date(Date.now() + FIRST_ACCEPTANCE_CHECK_MS));
-    // Follow-ups only begin once the invite is ACCEPTED — LinkedIn won't deliver DMs
-    // to non-connections — so nothing is scheduled here. The acceptance poll (above)
-    // and the 3-hourly sync sweep both kick off the first message on acceptance.
+    // Follow-ups only begin once the invite is ACCEPTED — LinkedIn won't deliver DMs to
+    // non-connections — so nothing is scheduled here. The 3-hourly sync sweep detects
+    // acceptance for the whole seat from one relations call and kicks off the first
+    // message; no per-lead acceptance polling is scheduled (it cost a profile read each).
   }
 
-  private async doCheckAcceptance(actionId: string, attempts: number, ctx: LeadWithContext) {
-    if (ctx.lead.status !== LiLeadStatus.CONNECTION_PENDING) return this.complete(actionId);
-    const accepted = await this.provider.isConnectionAccepted({ accountId: ctx.account.unipileAccountId!, memberId: ctx.lead.unipileMemberId! });
-    if (!accepted) {
-      // Give up once the acceptance window has elapsed (or the hard safety cap): the
-      // invite was declined/ignored — withdraw it and mark the lead NOT_ACCEPTED.
-      const windowMs = Math.max(1, ctx.campaign.connectionWindowDays ?? 5) * 24 * 60 * 60 * 1000;
-      const sentAt = ctx.lead.lastActionAt?.getTime() ?? Date.now();
-      if (Date.now() - sentAt >= windowMs || attempts >= MAX_ACCEPTANCE_CHECKS) {
-        if (ctx.lead.unipileInvitationId) {
-          await this.provider
-            .withdrawConnection({ accountId: ctx.account.unipileAccountId!, invitationId: ctx.lead.unipileInvitationId })
-            .catch((e) => this.logger.warn(`Withdraw invite for lead ${ctx.lead.id} failed: ${(e as Error).message}`));
-        }
-        // Never accepted → no follow-ups were ever scheduled (the timeline only starts
-        // on acceptance), so there's nothing to cancel. Just mark the lead out.
-        await this.prisma.liLead.update({ where: { id: ctx.lead.id }, data: { status: LiLeadStatus.NOT_ACCEPTED } });
-        return this.complete(actionId);
-      }
-      return this.scheduler.rearm(actionId, new Date(Date.now() + recheckDelayMs()));
-    }
-    await this.prisma.liLead.update({ where: { id: ctx.lead.id }, data: { status: LiLeadStatus.CONNECTED, connectedAt: new Date(), currentStep: 1 } });
-    await this.complete(actionId);
-    // Acceptance is the starting gun for the follow-up timeline (FU-1 = N hours after
-    // acceptance). Guard against the 3-hourly sync sweep having already kicked it off.
-    const alreadyQueued = await this.prisma.liScheduledAction.count({
-      where: { leadId: ctx.lead.id, type: LiScheduledActionType.SEND_MESSAGE, status: { not: LiScheduledActionStatus.CANCELLED } },
-    });
-    if (alreadyQueued === 0) await this.scheduleNextMessage(ctx, 1);
+  /**
+   * Retired: acceptance is detected in bulk, not per lead.
+   *
+   * This used to call isConnectionAccepted() — a full profile read — for every pending
+   * invite on every rung of the ladder. That is ~2 profile reads per pending lead per
+   * day, so ~40 outstanding invites alone exhausted the seat's entire daily budget and
+   * the engine started deferring real sends with "daily profile-read budget reached".
+   *
+   * The 3-hourly sync sweep already resolves acceptance for the whole seat from ONE
+   * relations call, and withdrawStaleInvites() owns retiring invites that were never
+   * accepted (checking relations first, so a late acceptance is promoted rather than
+   * binned). Nothing here was left to do that those two don't do more cheaply.
+   *
+   * Kept as a no-op so any rungs already queued in Redis retire quietly instead of
+   * failing; no new ones are scheduled.
+   */
+  private async doCheckAcceptance(actionId: string, _attempts: number, _ctx: LeadWithContext) {
+    return this.complete(actionId);
   }
 
   private async doSendMessage(actionId: string, stepOrder: number, ctx: LeadWithContext) {

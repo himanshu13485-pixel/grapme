@@ -20,18 +20,10 @@ export interface LiJobData {
   stepOrder?: number;
 }
 
-// Acceptance polling is a *fallback*: the 3-hourly sync sweep detects acceptance in
-// bulk from one relations call, so the per-lead ladder only needs to catch stragglers.
-// Nobody accepts an invite within 30 minutes often enough to justify checking for it.
-export const FIRST_ACCEPTANCE_CHECK_MS = 3 * 60 * 60 * 1000; // +3h after invite
-export const RECHECK_INTERVAL_MS = 12 * 60 * 60 * 1000; // ~12h base, jittered below
-export const MAX_ACCEPTANCE_CHECKS = 10; // ~5 days then give up
-
-/** Recheck delay with ±33% jitter — a fixed interval is itself an automation signal. */
-export function recheckDelayMs(): number {
-  const spread = RECHECK_INTERVAL_MS / 3;
-  return Math.round(RECHECK_INTERVAL_MS - spread + Math.random() * spread * 2);
-}
+// Per-lead acceptance polling has been removed entirely, along with the constants that
+// paced it. Each rung cost a profile read, so it scaled with the number of outstanding
+// invites and drained the seat's daily profile budget. The 3-hourly sync sweep resolves
+// acceptance for the whole seat from a single relations call instead.
 
 /**
  * Decided invites needed before the acceptance guard may pause a campaign.
@@ -146,11 +138,6 @@ export function reconcileName(
     firstName: badFirst ? (member.firstName || s.firstName || stored.firstName || undefined) : (stored.firstName || member.firstName || undefined),
     lastName: badFirst ? (member.lastName || s.lastName || stored.lastName || undefined) : (stored.lastName || member.lastName || undefined),
   };
-}
-
-/** Does this lead still need a real-name resolve? (slug/empty full or first name.) */
-export function needsNameResolve(lead: { fullName?: string | null; firstName?: string | null; profileUrl?: string | null }): boolean {
-  return !lead.fullName || !lead.firstName || isSlugName(lead.fullName, lead.profileUrl) || isSlugName(lead.firstName, lead.profileUrl);
 }
 
 /**

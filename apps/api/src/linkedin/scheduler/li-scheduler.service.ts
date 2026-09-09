@@ -12,7 +12,7 @@ import { ProfileBudgetExceededError } from '../provider/li-rate-guard.service';
 import {
   LiJob, LiJobData, DRIP_SCAN_MS, SYNC_SWEEP_MS, MIN_ACCEPTANCE_SAMPLE,
   MAX_WITHDRAWALS_PER_SWEEP, WITHDRAW_GRACE_DAYS, WITHDRAW_MIN_GAP_MS, WITHDRAW_MAX_GAP_MS,
-  reconcileName, needsNameResolve,
+  reconcileName,
 } from './li-queue.constants';
 
 /** Relations pages to scan per sweep (100/page, newest-first) when detecting acceptance. */
@@ -973,9 +973,17 @@ export class LiSchedulerService implements OnModuleInit {
       for (const lead of batch) {
         try {
           let memberId = lead.unipileMemberId ?? undefined;
-          // Resolve the real profile only when we lack a member id or a name field is
-          // still a URL slug — avoids re-fetching clean profiles on every 30-min sweep.
-          if (lead.profileUrl && (!memberId || needsNameResolve(lead))) {
+          // Resolve only when we actually lack the member id — that is the one thing the
+          // engine cannot act without, and once we have it the lead is never re-fetched.
+          //
+          // This used to also re-resolve whenever a name still looked like a URL slug,
+          // which never terminated: if LinkedIn returns no usable first name (restricted
+          // or incomplete profile), the lead still looks unresolved afterwards, so every
+          // sweep fetched it again forever. A handful of such leads was enough to spend
+          // the seat's whole daily profile budget on cosmetics. Having a member id means
+          // we already fetched that profile at least once; asking again cannot produce a
+          // name it did not have.
+          if (lead.profileUrl && !memberId) {
             const m = await this.provider.resolveMember(accountId, lead.profileUrl);
             memberId = m.memberId ?? memberId;
             const name = reconcileName(lead, m);
