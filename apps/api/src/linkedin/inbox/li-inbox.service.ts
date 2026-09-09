@@ -8,6 +8,7 @@ import { LinkedInSubscriptionService } from '../subscription/linkedin-subscripti
 import { LiAiService } from '../ai/ai.service';
 import { LINKEDIN_PROVIDER, LinkedInProvider } from '../provider/linkedin-provider.interface';
 import { quickSentiment } from './li-sentiment';
+import { linkConversation } from '../link-conversation';
 
 export type InboxTab = 'all' | 'unread' | 'needs_reply' | 'replied';
 
@@ -80,13 +81,8 @@ export class LiInboxService {
       orderBy: { createdAt: 'desc' },
     });
     if (!lead) return null;
-    const conv = await this.prisma.liConversation.upsert({
-      where: { leadId: lead.id },
-      create: { leadId: lead.id, unipileChatId: chatId },
-      update: { unipileChatId: chatId },
-      include: { lead: true },
-    });
-    return conv;
+    const conv = await linkConversation(this.prisma, lead.id, chatId, (m) => this.logger.warn(m));
+    return { ...conv, lead };
   }
 
   /**
@@ -97,11 +93,7 @@ export class LiInboxService {
   async backfillLeadMessages(leadId: string, accountId: string, chatId: string): Promise<number> {
     const msgs = await this.provider.listMessages({ accountId, chatId }).catch(() => []);
     if (msgs.length === 0) return 0;
-    const conv = await this.prisma.liConversation.upsert({
-      where: { leadId },
-      create: { leadId, unipileChatId: chatId },
-      update: { unipileChatId: chatId },
-    });
+    const conv = await linkConversation(this.prisma, leadId, chatId, (m) => this.logger.warn(m));
     let added = 0;
     let lastInboundAt: Date | null = null;
     let lastInboundText = '';

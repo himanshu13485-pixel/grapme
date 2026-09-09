@@ -12,6 +12,7 @@ import { LiSchedulerService } from './li-scheduler.service';
 import { ProfileBudgetExceededError } from '../provider/li-rate-guard.service';
 import { LiGenerationService } from '../campaigns/li-generation.service';
 import { LinkedInAccountsService } from '../accounts/linkedin-accounts.service';
+import { linkConversation } from '../link-conversation';
 import {
   LiJob, LiJobData, renderTemplate, pickVariant, reconcileName,
 } from './li-queue.constants';
@@ -312,11 +313,11 @@ export class LiOutreachProcessor extends WorkerHost {
       return;
     }
 
-    const conversation = await this.prisma.liConversation.upsert({
-      where: { leadId: ctx.lead.id },
-      create: { leadId: ctx.lead.id, unipileChatId: res.chatId || null },
-      update: { unipileChatId: res.chatId || undefined },
-    });
+    // The message is already out. Nothing below may throw, or the job replays
+    // and sends it again — see linkConversation.
+    const conversation = await linkConversation(this.prisma, ctx.lead.id, res.chatId, (m) =>
+      this.logger.warn(m),
+    );
     await this.prisma.liMessage.create({
       data: { conversationId: conversation.id, direction: LiMessageDirection.OUTBOUND, source: LiMessageSource.AUTO, body: text, unipileMessageId: res.messageId || null },
     });
