@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { SalesActivityDashboard } from '@/components/SalesActivityDashboard';
+import { CategoryBadge } from '@/components/ui';
 
 /* ─────────────────────────── types ─────────────────────────── */
 interface ClientDetail {
@@ -73,8 +74,11 @@ export default function SalesClientDetailPage() {
 
       {/* header — mirrors the admin client workspace header, minus the actions */}
       <div className="card mb-4 flex flex-wrap items-center justify-between gap-3 p-4">
-        <div>
-          <h1 className="text-xl font-bold text-slate-800">{client?.name ?? '…'}</h1>
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-xl font-bold text-slate-800">{client?.name ?? '…'}</h1>
+            <CategoryBadge category={client?.productCategory} />
+          </div>
           <p className="text-xs text-slate-500">
             {client?.plan}
             {client?.contactPerson ? ` · ${client.contactPerson}` : ''}

@@ -269,9 +269,20 @@ export class ProgramsController {
     return this.programs.listCohorts(user, id);
   }
 
+  /**
+   * `from`/`to` (YYYY-MM-DD, both optional) narrow the engagement metrics to
+   * emails SENT in that window — used by the report export so a client can be
+   * given, say, just August. Omitted = all time, which is what the on-screen
+   * report shows.
+   */
   @Get('clients/:id/cohorts/stats')
-  cohortStats(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.programs.cohortStats(user, id);
+  cohortStats(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.programs.cohortStats(user, id, { from, to });
   }
 
   @Get('clients/:id/geo')

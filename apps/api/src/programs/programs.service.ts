@@ -34,6 +34,7 @@ import { LiCampaignsService } from '../linkedin/campaigns/li-campaigns.service';
 import { LinkedInSubscriptionService } from '../linkedin/subscription/linkedin-subscription.service';
 import { BounceService } from '../bounce/bounce.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
+import { inStaffMailHour, istNow } from '../common/office-hours';
 import {
   AssignMailboxDto,
   CreateClientDto,
@@ -1033,8 +1034,38 @@ export class ProgramsService {
   }
 
   /** Per-cohort live status breakdown for the dashboard. */
-  async cohortStats(user: AuthUser, clientId: string) {
+  /**
+   * Turns an optional YYYY-MM-DD from/to pair into a filter on when an email
+   * was SENT. `to` is inclusive to the end of that day, so picking one date
+   * covers the whole of it. Anything never dispatched has a null sentAt, so it
+   * falls back to createdAt rather than dropping out of every window.
+   */
+  private sentAtWindow(range?: { from?: string; to?: string }): Prisma.EmailMessageWhereInput {
+    const parse = (v?: string) => {
+      if (!v) return null;
+      const d = new Date(v);
+      return isNaN(d.getTime()) ? null : d;
+    };
+    const from = parse(range?.from);
+    const toDay = parse(range?.to);
+    const to = toDay ? new Date(toDay.getTime() + 86_400_000 - 1) : null;
+    if (!from && !to) return {};
+    const window: Prisma.DateTimeFilter = {};
+    if (from) window.gte = from;
+    if (to) window.lte = to;
+    return { OR: [{ sentAt: window }, { AND: [{ sentAt: null }, { createdAt: window }] }] };
+  }
+
+  async cohortStats(
+    user: AuthUser,
+    clientId: string,
+    range?: { from?: string; to?: string },
+  ) {
     const client = await this.assertClient(user, clientId);
+    // Optional reporting window, by the date the email actually went out.
+    // Only the delivery/engagement metrics are windowed — cohort status, month
+    // index and the projected schedule describe the cohort itself, not a period.
+    const sentWindow = this.sentAtWindow(range);
     const cohorts = await this.prisma.cohort.findMany({
       where: { clientId, tenantId: user.tenantId },
       orderBy: { monthIndex: 'asc' },
@@ -1076,7 +1107,11 @@ export class ProgramsService {
     const cohortIds = cohorts.map((c) => c.id);
     const msgGroups = await this.prisma.emailMessage.groupBy({
       by: ['cohortId', 'status'],
-      where: { cohortId: { in: cohortIds }, direction: MessageDirection.OUTBOUND },
+      where: {
+        cohortId: { in: cohortIds },
+        direction: MessageDirection.OUTBOUND,
+        ...sentWindow,
+      },
       _count: { _all: true },
     });
     const sentMsgs = new Map<string, number>();
@@ -1091,7 +1126,10 @@ export class ProgramsService {
     // Unique opens/clicks/replies (distinct message), and unsubscribe counts.
     const evs = await this.prisma.emailEvent.findMany({
       where: {
-        message: { cohortId: { in: cohortIds } },
+        // Windowed by the MESSAGE's send date, not the event date: the report
+        // answers "of the mail sent in this period, how much was engaged with",
+        // so a September open of an August send still counts against August.
+        message: { cohortId: { in: cohortIds }, ...sentWindow },
         eventType: {
           in: [
             EventType.OPEN,
@@ -2073,7 +2111,10 @@ export class ProgramsService {
    */
   private async notifyCampaignDataDue(): Promise<void> {
     const now = new Date();
-    const dayOfMonth = now.getDate();
+    // Same 8–9am IST slot as the other staff mail. This runs on the 60-second
+    // tick, so without the gate it fired at whatever hour the target day began.
+    if (!inStaffMailHour(now)) return;
+    const dayOfMonth = istNow(now).dayOfMonth;
     if (dayOfMonth > 7) return; // only during the first week of the month
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const monthKey = `${now.getFullYear()}-${now.getMonth()}`;
@@ -2099,6 +2140,9 @@ export class ProgramsService {
       // on/after that day so reminders don't all go out on the 1st.
       const targetDay = 1 + (hashInt(c.id + monthKey) % 7);
       if (dayOfMonth < targetDay) continue;
+      // And its own minute inside the slot, so a day's clients don't all leave
+      // at 08:00 together. Deterministic, so a restart can't re-roll it.
+      if (istNow(now).minute < hashInt(c.id + monthKey + 'min') % 55) continue;
 
       const opsEmails = extractOpsEmails(c.operationContacts);
       const recipients = [...new Set([c.salesPerson?.email, ...opsEmails].filter(Boolean) as string[])];

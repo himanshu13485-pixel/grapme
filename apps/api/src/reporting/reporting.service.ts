@@ -7,6 +7,7 @@ import { NotifyService } from '../notifications/notify.service';
 import { QUEUE_ENROLL, JOB_SETUP_NOTIFY } from '../queue/queue.constants';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { AddClientStepDto, AddTemplateStepDto, UpdateSetupStepDto, UpdateTemplateStepDto } from './dto/reporting.dto';
+import { inStaffMailHour, staffMailJitterMs } from '../common/office-hours';
 
 /** A single staggered reminder job: one channel to one owner about one client's pending work. */
 export interface SetupNotifyJob {
@@ -452,6 +453,7 @@ export class ReportingService {
       orderBy: { createdAt: 'desc' },
       select: {
         id: true, name: true, invoiceNo: true, invoiceDate: true, plan: true, status: true,
+        productCategory: true,
         emailEnabled: true, linkedInEnabled: true, createdAt: true,
         setupStartedAt: true, setupFinishedAt: true,
         salesPerson: { select: { id: true, name: true } },
@@ -560,6 +562,11 @@ export class ReportingService {
    */
   async runSetupReminders(): Promise<{ sent: number }> {
     const now = new Date();
+    // Staff reminders belong in the 8–9am IST slot. The sweep ticks hourly, so
+    // exactly one tick a day falls inside it; every other tick returns here.
+    // Before this, a 20-hour cadence meant the mail walked 4 hours earlier each
+    // day and eventually arrived in the middle of the night.
+    if (!inStaffMailHour(now)) return { sent: 0 };
     const enabledTenants = new Set(
       (await this.prisma.tenant.findMany({ where: { setupRemindersEnabled: true }, select: { id: true } })).map((t) => t.id),
     );
@@ -618,15 +625,15 @@ export class ReportingService {
     const stamped = [...groups.values()].flatMap((g) => g.items.map((i) => i.stepId));
     await this.prisma.clientSetupStep.updateMany({ where: { id: { in: stamped } }, data: { lastReminderAt: now } });
 
-    // Dispatch: bell immediately; email + WhatsApp staggered ≥60s apart and between recipients.
-    let slot = 0;
+    // Dispatch: bell immediately; email + WhatsApp go out on a per-recipient
+    // random delay inside the 8–9am slot. A fixed ladder was predictable to the
+    // minute and, past ~30 recipients, walked the tail out of the slot entirely.
     for (const g of groups.values()) {
       const job = buildDigest(g.items);
-      const base = slot * 2 * REMINDER_GAP_MS; // 2 slots per recipient (email + whatsapp)
+      const base = staffMailJitterMs();
       await this.enqueueReminder({ ...job, channel: 'inApp' }, 0);
       await this.enqueueReminder({ ...job, channel: 'email' }, base);
       await this.enqueueReminder({ ...job, channel: 'whatsapp' }, base + REMINDER_GAP_MS);
-      slot += 1;
     }
     this.logger.log(`Setup reminders: ${stamped.length} pending step(s) → ${groups.size} message(s) (staggered)`);
     return { sent: groups.size };

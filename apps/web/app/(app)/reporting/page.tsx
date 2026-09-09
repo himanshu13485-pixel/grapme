@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '@/lib/api';
 import { useAuth, useCanDelete } from '@/lib/auth';
-import { PageHeader, EmptyState, Modal } from '@/components/ui';
+import { PageHeader, EmptyState, Modal, CategoryBadge } from '@/components/ui';
 import { SetupMonthSquares, SetupMonthLegend } from '@/components/SetupMonthSquares';
 
 type Group = 'GENERAL' | 'EMAIL' | 'LINKEDIN' | 'MONTHLY';
@@ -13,6 +13,7 @@ interface Progress { total: number; finished: number; started: number; percent: 
 interface MonthCell { i: number; status: Status }
 interface ClientRow {
   id: string; name: string; invoiceNo?: string | null; invoiceDate?: string | null; plan: string; status: string;
+  productCategory?: string | null;
   emailEnabled: boolean; linkedInEnabled: boolean;
   salesPerson?: { id: string; name: string } | null;
   progress: Progress;
@@ -160,7 +161,10 @@ export default function ReportingPage() {
               </div>
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <div className="truncate font-medium text-slate-800">{c.name}</div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="truncate font-medium text-slate-800">{c.name}</span>
+                    <CategoryBadge category={c.productCategory} />
+                  </div>
                   <div className="mt-0.5 text-xs text-slate-400">
                     {c.plan}{c.invoiceNo ? ` · Invoice ${c.invoiceNo}` : ''}{c.invoiceDate ? ` · ${new Date(c.invoiceDate).toLocaleDateString()}` : ''}
                     {c.salesPerson ? ` · 🧑‍💼 ${c.salesPerson.name}` : ''}

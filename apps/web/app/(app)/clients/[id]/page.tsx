@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useCanDelete, useAuth } from '@/lib/auth';
 import { downloadCsv } from '@/lib/csv';
-import { PageHeader, EmptyState, StatusBadge, Tabs, Modal } from '@/components/ui';
+import { PageHeader, EmptyState, StatusBadge, Tabs, Modal, CategoryBadge } from '@/components/ui';
 import { ClientLinkedIn } from '@/components/ClientLinkedIn';
 import { SubscriptionHistory } from '@/components/SubscriptionHistory';
 import { ContactsManager } from '@/components/ContactsManager';
@@ -263,6 +263,7 @@ export default function ClientCockpit() {
       </div>
       <PageHeader
         title={client.name}
+        badge={<CategoryBadge category={client.productCategory} />}
         subtitle={`${client.plan} · ${client.dailyBatchSize}/day · ${client.followUpCount} follow-ups · ${detailDays(client.workDays)}`}
         action={
           <div className="flex flex-wrap items-center gap-3">
@@ -1042,6 +1043,11 @@ function Cohorts({
   const [openCohort, setOpenCohort] = useState<string | null>(null);
   const [seqCohort, setSeqCohort] = useState<CohortStat | null>(null);
   const [reportCohort, setReportCohort] = useState('ALL');
+  // Report export window — blank = all time, which is what the report on screen shows.
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportFrom, setExportFrom] = useState('');
+  const [exportTo, setExportTo] = useState('');
+  const [exporting, setExporting] = useState(false);
   const [geoCohort, setGeoCohort] = useState('ALL');
   const [geo, setGeo] = useState<GeoData | null>(null);
   const canDelete = useCanDelete();
@@ -1251,7 +1257,10 @@ function Cohorts({
         const pct = (n: number) => (m.sent ? Math.round((n / m.sent) * 1000) / 10 : 0);
         const delivPct = (s: number, b: number) => (s + b ? Math.round((s / (s + b)) * 1000) / 10 : 0);
 
-        function exportCsv() {
+        // Export honours the From/To window: with dates set it re-fetches the
+        // stats scoped to emails SENT in that period, so the file can cover
+        // just August without changing what the report on screen shows.
+        async function runExport() {
           const headers = [
             'Cohort', 'Month', 'Status', 'Sent', 'Delivered', 'Delivery %',
             'Opens', 'Open %', 'Clicks', 'Click %', 'Replies', 'Reply %',
@@ -1264,20 +1273,58 @@ function Cohorts({
             c.metrics.replyRate, c.metrics.forwarded, c.metrics.forwardRate,
             c.metrics.bounces, c.metrics.bounceRate, c.metrics.unsubscribes,
           ];
-          const safe = client.name.replace(/[^\w-]+/g, '_');
-          if (selected) {
-            downloadCsv(`${safe}_${selected.label.replace(/[^\w-]+/g, '_')}_report`, headers, [rowFor(selected)]);
-            return;
+          setExporting(true);
+          setErr('');
+          try {
+            const params = new URLSearchParams();
+            if (exportFrom) params.set('from', exportFrom);
+            if (exportTo) params.set('to', exportTo);
+            const ranged = params.toString().length > 0;
+            const data = ranged
+              ? await api.get<CohortStat[]>(`/clients/${client.id}/cohorts/stats?${params.toString()}`)
+              : cohorts;
+
+            const sum = data.reduce(
+              (a, c) => ({
+                sent: a.sent + c.metrics.sent,
+                opens: a.opens + c.metrics.opens,
+                clicks: a.clicks + c.metrics.clicks,
+                replies: a.replies + c.metrics.replies,
+                bounces: a.bounces + c.metrics.bounces,
+                unsubscribes: a.unsubscribes + c.metrics.unsubscribes,
+                forwarded: a.forwarded + c.metrics.forwarded,
+              }),
+              { sent: 0, opens: 0, clicks: 0, replies: 0, bounces: 0, unsubscribes: 0, forwarded: 0 },
+            );
+            const p = (n: number) => (sum.sent ? Math.round((n / sum.sent) * 1000) / 10 : 0);
+            const dp = (st: number, b: number) => (st + b ? Math.round((st / (st + b)) * 1000) / 10 : 0);
+            const sel = reportCohort === 'ALL' ? null : data.find((c) => c.id === reportCohort) ?? null;
+
+            const safe = client.name.replace(/[^\w-]+/g, '_');
+            const period = ranged ? `_${exportFrom || 'start'}_to_${exportTo || 'today'}` : '';
+            if (sel) {
+              downloadCsv(
+                `${safe}_${sel.label.replace(/[^\w-]+/g, '_')}_report${period}`,
+                headers,
+                [rowFor(sel)],
+              );
+            } else {
+              const rows: (string | number)[][] = data.map(rowFor);
+              rows.push([
+                'ALL COHORTS', '', '', sum.sent, sum.sent,
+                dp(sum.sent, sum.bounces), sum.opens, p(sum.opens),
+                sum.clicks, p(sum.clicks), sum.replies, p(sum.replies),
+                sum.forwarded, p(sum.forwarded), sum.bounces,
+                p(sum.bounces), sum.unsubscribes,
+              ]);
+              downloadCsv(`${safe}_cohort_report${period}`, headers, rows);
+            }
+            setExportOpen(false);
+          } catch (e) {
+            setErr(e instanceof Error ? e.message : 'Export failed');
+          } finally {
+            setExporting(false);
           }
-          const rows: (string | number)[][] = cohorts.map(rowFor);
-          rows.push([
-            'ALL COHORTS', '', '', totals.sent, totals.sent,
-            delivPct(totals.sent, totals.bounces), totals.opens, pct(totals.opens),
-            totals.clicks, pct(totals.clicks), totals.replies, pct(totals.replies),
-            totals.forwarded, pct(totals.forwarded), totals.bounces,
-            pct(totals.bounces), totals.unsubscribes,
-          ]);
-          downloadCsv(`${safe}_cohort_report`, headers, rows);
         }
 
         return (
@@ -1299,11 +1346,59 @@ function Cohorts({
                     </option>
                   ))}
                 </select>
-                <button className="btn-ghost text-xs" onClick={exportCsv}>
+                <button className="btn-ghost text-xs" onClick={() => setExportOpen(true)}>
                   ⭳ Export CSV
                 </button>
               </div>
             </div>
+            <Modal
+              open={exportOpen}
+              onClose={() => setExportOpen(false)}
+              title={selected ? `Export — ${selected.label}` : 'Export — all cohorts'}
+            >
+              <div className="space-y-4">
+                <p className="text-sm text-slate-500">
+                  Leave both dates blank to export everything. Set a period and the file
+                  covers only the emails <strong>sent</strong> in it — a September open of
+                  an August send still counts towards August.
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="block">
+                    <span className="mb-1 block text-xs font-medium text-slate-500">From</span>
+                    <input
+                      type="date"
+                      className="input"
+                      value={exportFrom}
+                      max={exportTo || undefined}
+                      onChange={(e) => setExportFrom(e.target.value)}
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-xs font-medium text-slate-500">To</span>
+                    <input
+                      type="date"
+                      className="input"
+                      value={exportTo}
+                      min={exportFrom || undefined}
+                      onChange={(e) => setExportTo(e.target.value)}
+                    />
+                  </label>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <button
+                    className="btn-ghost text-xs"
+                    onClick={() => { setExportFrom(''); setExportTo(''); }}
+                    disabled={exporting || (!exportFrom && !exportTo)}
+                  >
+                    Clear dates
+                  </button>
+                  <button className="btn-primary" onClick={runExport} disabled={exporting}>
+                    {exporting ? 'Preparing…' : '⭳ Download CSV'}
+                  </button>
+                </div>
+              </div>
+            </Modal>
+
             <div className="grid grid-cols-3 gap-2 sm:grid-cols-5 lg:grid-cols-10">
               {([
                 ['Sent', m.sent],

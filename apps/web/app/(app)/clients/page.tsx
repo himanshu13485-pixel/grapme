@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useCanDelete, useCanEdit, useAuth } from '@/lib/auth';
 import { usePlans, Plan } from '@/lib/plans';
-import { PageHeader, EmptyState, Modal, StatusBadge, Pagination } from '@/components/ui';
+import { PageHeader, EmptyState, Modal, StatusBadge, Pagination, CategoryBadge } from '@/components/ui';
 import { LiClientPlanFields, LiClientSendWindowFields, LiPlanForm, emptyLiPlan } from '@/components/LiClientPlanFields';
 import { SetupMonthSquares } from '@/components/SetupMonthSquares';
 import { LiSubscription, LI_DEFAULTS } from '@/lib/linkedin';
@@ -387,6 +387,7 @@ export default function ClientsPage() {
                 {c.invoiceDate && <span> · {new Date(c.invoiceDate).toLocaleDateString()}</span>}
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                <CategoryBadge category={c.productCategory} compact />
                 <span className="inline-flex items-center rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-700">
                   {channelLabel(c)}
                 </span>
