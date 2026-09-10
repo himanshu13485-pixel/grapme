@@ -125,7 +125,9 @@ export class SetSequenceDto {
 
 export class CreateCohortDto {
   @IsOptional() @IsString() label?: string;
-  @IsOptional() @IsInt() monthIndex?: number;
+  /** Which month this cohort joins. Blank = start the next month in the
+   *  series; an existing month = add to it as the next letter (#2A, #2B, …). */
+  @IsOptional() @IsInt() @Min(1) monthIndex?: number;
   /** Source contacts: a contact list, an explicit set of ids, or both. */
   @IsOptional() @IsString() listId?: string;
   @IsOptional() @IsArray() @IsString({ each: true }) contactIds?: string[];

@@ -30,6 +30,7 @@ import { AuthUser } from '../common/decorators/current-user.decorator';
 import { ActivityService } from '../common/services/activity.service';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { GeoService } from '../common/services/geo.service';
+import { cohortRef } from '../common/cohort-ref.util';
 import { LiCampaignsService } from '../linkedin/campaigns/li-campaigns.service';
 import { LinkedInSubscriptionService } from '../linkedin/subscription/linkedin-subscription.service';
 import { BounceService } from '../bounce/bounce.service';
@@ -899,9 +900,10 @@ export class ProgramsService {
     monthIndexArg?: number,
     startDateArg?: Date,
   ) {
-    const monthIndex =
-      monthIndexArg ??
-      (await this.prisma.cohort.count({ where: { clientId: client.id } })) + 1;
+    const { monthIndex, subIndex } = await this.allocateMonthSlot(
+      client.id,
+      monthIndexArg,
+    );
 
     // Don't start in the past; snap a past/empty start to now.
     const now = new Date();
@@ -914,8 +916,9 @@ export class ProgramsService {
       data: {
         tenantId: client.tenantId,
         clientId: client.id,
-        label: label ?? `Month ${monthIndex}`,
+        label: label ?? `Month ${cohortRef(monthIndex, subIndex).slice(1)}`,
         monthIndex,
+        subIndex,
         startDate: start,
       },
     });
@@ -964,13 +967,72 @@ export class ProgramsService {
       });
       i++;
     }
-    return { cohortId: cohort.id, enrolled: contactIds.length, monthIndex };
+    return {
+      cohortId: cohort.id,
+      enrolled: contactIds.length,
+      monthIndex,
+      subIndex,
+      ref: cohortRef(monthIndex, subIndex),
+    };
+  }
+
+  /** Decide which month a new cohort belongs to, and its letter within it.
+   *
+   *  No target month  -> the next month in the series (#4 after #3).
+   *  A target month   -> the cohort joins that month as the next letter. The
+   *                      cohort already in that month is relabelled from "#2"
+   *                      to "#2A" so the pair reads #2A / #2B. That write
+   *                      touches only the display field: enrollments,
+   *                      sequences and send schedules never read subIndex, so
+   *                      nothing already in flight changes. */
+  private async allocateMonthSlot(
+    clientId: string,
+    monthIndexArg?: number,
+  ): Promise<{ monthIndex: number; subIndex: number | null }> {
+    const top = await this.prisma.cohort.findFirst({
+      where: { clientId },
+      orderBy: { monthIndex: 'desc' },
+      select: { monthIndex: true },
+    });
+    const nextMonth = (top?.monthIndex ?? 0) + 1;
+
+    if (monthIndexArg == null) return { monthIndex: nextMonth, subIndex: null };
+    if (monthIndexArg < 1 || monthIndexArg > nextMonth) {
+      throw new BadRequestException(
+        `Month #${monthIndexArg} does not exist for this client. ` +
+          `Pick an existing month, or leave it blank to start #${nextMonth}.`,
+      );
+    }
+
+    const siblings = await this.prisma.cohort.findMany({
+      where: { clientId, monthIndex: monthIndexArg },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, subIndex: true },
+    });
+    if (siblings.length === 0) {
+      return { monthIndex: monthIndexArg, subIndex: null };
+    }
+
+    const used = siblings
+      .map((c) => c.subIndex)
+      .filter((n): n is number => n !== null);
+    let next = used.length ? Math.max(...used) + 1 : 0;
+    // Cohorts created before sub-cohorts existed carry no letter - give them
+    // theirs (in creation order) so the month reads A, B, C without a gap.
+    for (const c of siblings.filter((x) => x.subIndex === null)) {
+      await this.prisma.cohort.update({
+        where: { id: c.id },
+        data: { subIndex: next },
+      });
+      next++;
+    }
+    return { monthIndex: monthIndexArg, subIndex: next };
   }
 
   listCohorts(user: AuthUser, clientId: string) {
     return this.prisma.cohort.findMany({
       where: { clientId, tenantId: user.tenantId },
-      orderBy: { monthIndex: 'asc' },
+      orderBy: [{ monthIndex: 'asc' }, { subIndex: 'asc' }, { createdAt: 'asc' }],
       include: { _count: { select: { enrollments: true } } },
     });
   }
@@ -1068,7 +1130,7 @@ export class ProgramsService {
     const sentWindow = this.sentAtWindow(range);
     const cohorts = await this.prisma.cohort.findMany({
       where: { clientId, tenantId: user.tenantId },
-      orderBy: { monthIndex: 'asc' },
+      orderBy: [{ monthIndex: 'asc' }, { subIndex: 'asc' }, { createdAt: 'asc' }],
     });
     const now = new Date();
     const grouped = await this.prisma.enrollment.groupBy({
@@ -1234,6 +1296,8 @@ export class ProgramsService {
         id: co.id,
         label: co.label,
         monthIndex: co.monthIndex,
+        subIndex: co.subIndex,
+        ref: cohortRef(co.monthIndex, co.subIndex),
         status: co.status,
         startDate: co.startDate,
         endedAt: co.endedAt,
@@ -1274,6 +1338,7 @@ export class ProgramsService {
         clientId: true,
         label: true,
         monthIndex: true,
+        subIndex: true,
         startDate: true,
       },
     });
@@ -1297,6 +1362,7 @@ export class ProgramsService {
       clientName: string;
       cohortLabel: string;
       monthIndex: number;
+      cohortRef: string;
       stage: string;
       estStart: Date;
       estEnd: Date;
@@ -1319,6 +1385,7 @@ export class ProgramsService {
           clientName: client.name,
           cohortLabel: co.label,
           monthIndex: co.monthIndex,
+          cohortRef: cohortRef(co.monthIndex, co.subIndex),
           stage: s.stage,
           estStart: s.estStart,
           estEnd: s.estEnd,
@@ -1334,7 +1401,12 @@ export class ProgramsService {
   private logCohort(
     user: AuthUser,
     action: string,
-    cohort: { id: string; label: string; monthIndex: number },
+    cohort: {
+      id: string;
+      label: string;
+      monthIndex: number;
+      subIndex?: number | null;
+    },
   ) {
     return this.activity.log({
       tenantId: user.tenantId,
@@ -1342,7 +1414,10 @@ export class ProgramsService {
       action,
       entityType: 'Cohort',
       entityId: cohort.id,
-      after: { label: cohort.label, month: cohort.monthIndex },
+      after: {
+        label: cohort.label,
+        month: cohortRef(cohort.monthIndex, cohort.subIndex),
+      },
     });
   }
 

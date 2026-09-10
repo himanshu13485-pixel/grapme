@@ -8,6 +8,8 @@ interface AgendaRow {
   clientName: string;
   cohortLabel: string;
   monthIndex: number;
+  /** Server-rendered "#2B" - falls back to the plain month if absent. */
+  cohortRef?: string;
   stage: string;
   estStart: string;
   estEnd: string;
@@ -243,7 +245,7 @@ export default function CohortSchedulePage() {
                     {g.items.map((r, i) => (
                       <tr key={i} className="border-t border-slate-100">
                         <td className="px-5 py-3 font-medium text-slate-800">{r.clientName}</td>
-                        <td className="px-5 py-3 text-slate-500">#{r.monthIndex} · {r.cohortLabel}</td>
+                        <td className="px-5 py-3 text-slate-500">{r.cohortRef ?? `#${r.monthIndex}`} · {r.cohortLabel}</td>
                         <td className="px-5 py-3 text-slate-600">{r.stage}</td>
                         <td className="px-5 py-3 text-slate-400">
                           {new Date(r.estEnd).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}

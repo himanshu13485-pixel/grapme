@@ -1,0 +1,20 @@
+/** How a cohort is named in the UI, reports and emails.
+ *
+ *  A month with one cohort stays "#3". Once a month holds several, each gets a
+ *  letter: "#3A", "#3B", … (subIndex 0 = A). Past "Z" it rolls to AA, AB, … so
+ *  the scheme never runs out.
+ */
+export function cohortRef(monthIndex: number, subIndex?: number | null): string {
+  return `#${monthIndex}${subIndex == null ? '' : cohortLetter(subIndex)}`;
+}
+
+/** 0 -> "A", 25 -> "Z", 26 -> "AA" (spreadsheet-column style). */
+export function cohortLetter(subIndex: number): string {
+  let n = Math.max(0, Math.trunc(subIndex));
+  let out = '';
+  for (;;) {
+    out = String.fromCharCode(65 + (n % 26)) + out;
+    if (n < 26) return out;
+    n = Math.floor(n / 26) - 1;
+  }
+}

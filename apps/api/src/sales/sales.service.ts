@@ -556,7 +556,7 @@ export class SalesService {
     const [items, total] = await Promise.all([
       this.prisma.cohort.findMany({
         where, orderBy: { createdAt: 'desc' }, skip, take,
-        select: { id: true, label: true, status: true, monthIndex: true, startDate: true, endedAt: true },
+        select: { id: true, label: true, status: true, monthIndex: true, subIndex: true, startDate: true, endedAt: true },
       }),
       this.prisma.cohort.count({ where }),
     ]);

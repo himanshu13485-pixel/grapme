@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { PageHeader, StatusBadge } from '@/components/ui';
 import { ValidityBadge } from '@/components/Validity';
+import { cohortRef } from '@/lib/cohorts';
 
 interface Summary {
   totalCampaigns: number;
@@ -36,6 +37,7 @@ interface RecentCohort {
   id: string;
   label: string;
   monthIndex: number;
+  subIndex?: number | null;
   status: string;
   startDate: string;
   clientId: string;
@@ -307,7 +309,7 @@ export default function ClientHomePage() {
                       <tr key={c.id} className="border-t border-slate-100">
                         <td className="px-5 py-3 font-medium">
                           <Link href={`/clients/${c.clientId}`} className="hover:text-emerald-600">
-                            #{c.monthIndex} {c.label}
+                            {cohortRef(c.monthIndex, c.subIndex)} {c.label}
                           </Link>
                         </td>
                         <td className="px-5 py-3">

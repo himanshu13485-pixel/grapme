@@ -1103,6 +1103,10 @@ model Cohort {
   clientId   String
   label      String
   monthIndex Int          @default(1)
+  /// Position within the month when a month holds more than one cohort:
+  /// 0 = "A", 1 = "B", … Null means the month has a single cohort and is
+  /// rendered as a plain "#3". Display-only — scheduling never reads it.
+  subIndex   Int?
   status     CohortStatus @default(RUNNING)
   startDate  DateTime     @default(now())
   endedAt    DateTime?

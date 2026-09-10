@@ -8,6 +8,7 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailerService } from '../sending/mailer.service';
+import { cohortRef } from '../common/cohort-ref.util';
 
 export type ReportPeriod = 'daily' | 'weekly' | 'monthly';
 
@@ -118,12 +119,12 @@ export class ClientReportService {
     }
     const cohortRows = await this.prisma.cohort.findMany({
       where: { id: { in: [...byCohort.keys()] } },
-      select: { id: true, label: true, monthIndex: true },
+      select: { id: true, label: true, monthIndex: true, subIndex: true },
     });
     const cohorts = cohortRows.map((c) => {
       const m = byCohort.get(c.id)!;
       return {
-        label: c.label || `Cohort #${c.monthIndex}`,
+        label: c.label || `Cohort ${cohortRef(c.monthIndex, c.subIndex)}`,
         sent: m.sent,
         opens: m.opens,
         clicks: m.clicks,

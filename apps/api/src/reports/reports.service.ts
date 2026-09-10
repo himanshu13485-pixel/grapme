@@ -11,6 +11,7 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
+import { cohortRef } from '../common/cohort-ref.util';
 
 @Injectable()
 export class ReportsService {
@@ -410,6 +411,8 @@ export class ReportsService {
       id: c.id,
       label: c.label,
       monthIndex: c.monthIndex,
+      subIndex: c.subIndex,
+      ref: cohortRef(c.monthIndex, c.subIndex),
       status: c.status,
       startDate: c.startDate,
       clientId: c.clientId,

@@ -18,6 +18,7 @@ import { WorldMap, GeoData } from '@/components/WorldMap';
 import { ValidityBadge } from '@/components/Validity';
 import { LiSubscription, LI_DEFAULTS } from '@/lib/linkedin';
 import { usePlans } from '@/lib/plans';
+import { cohortRef } from '@/lib/cohorts';
 
 function hourLabel(h: number): string {
   const ampm = h < 12 ? 'AM' : 'PM';
@@ -106,6 +107,8 @@ interface CohortStat {
   id: string;
   label: string;
   monthIndex: number;
+  /** Letter position within the month (0 = A). Null when the month has one cohort. */
+  subIndex?: number | null;
   status: string;
   startDate: string;
   endedAt?: string | null;
@@ -1032,6 +1035,9 @@ function Cohorts({
 }) {
   const [listId, setListId] = useState('');
   const [startDate, setStartDate] = useState('');
+  // '' = start the next month in the series; otherwise join that month as a new
+  // lettered sub-cohort (#2A / #2B). Cohorts already running keep running either way.
+  const [targetMonth, setTargetMonth] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [sendingId, setSendingId] = useState<string | null>(null);
@@ -1052,6 +1058,22 @@ function Cohorts({
   const [geo, setGeo] = useState<GeoData | null>(null);
   const canDelete = useCanDelete();
 
+  // Month-picker options. `nextSub` previews the letter a list would get if it
+  // joined that month — mirrors the server's allocation, so the label shown
+  // before uploading is the one the cohort ends up with.
+  const nextMonth = cohorts.reduce((m, c) => Math.max(m, c.monthIndex), 0) + 1;
+  const months = [...new Set(cohorts.map((c) => c.monthIndex))]
+    .sort((a, b) => a - b)
+    .map((monthIndex) => {
+      const inMonth = cohorts.filter((c) => c.monthIndex === monthIndex);
+      const used = inMonth
+        .map((c) => c.subIndex)
+        .filter((n): n is number => n !== null && n !== undefined);
+      const lettered = used.length ? Math.max(...used) + 1 : 0;
+      const unlettered = inMonth.length - used.length; // legacy rows get theirs first
+      return { monthIndex, nextSub: lettered + unlettered };
+    });
+
   useEffect(() => {
     const q = geoCohort === 'ALL' ? '' : `?cohortId=${geoCohort}`;
     api
@@ -1067,10 +1089,12 @@ function Cohorts({
     try {
       await api.post(`/clients/${client.id}/cohorts`, {
         listId,
+        monthIndex: targetMonth ? Number(targetMonth) : undefined,
         startDate: startDate ? new Date(startDate).toISOString() : undefined,
       });
       setListId('');
       setStartDate('');
+      setTargetMonth('');
       onChanged();
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed');
@@ -1161,6 +1185,22 @@ function Cohorts({
             ))}
           </select>
         </div>
+        <div className="w-56">
+          <label className="label">Add to month</label>
+          <select
+            className="input"
+            value={targetMonth}
+            onChange={(e) => setTargetMonth(e.target.value)}
+            title="Leave on the default to open a new month; pick an existing month to add this list alongside what is already running there"
+          >
+            <option value="">New month ({cohortRef(nextMonth)})</option>
+            {months.map((m) => (
+              <option key={m.monthIndex} value={m.monthIndex}>
+                {`#${m.monthIndex} → adds as ${cohortRef(m.monthIndex, m.nextSub)}`}
+              </option>
+            ))}
+          </select>
+        </div>
         <div className="w-44">
           <label className="label">Start date (optional)</label>
           <input
@@ -1174,6 +1214,14 @@ function Cohorts({
         <button className="btn-primary" onClick={upload} disabled={!listId || busy}>
           {busy ? 'Enrolling…' : 'Upload & enroll'}
         </button>
+        <p className="w-full text-xs text-slate-500">
+          {targetMonth
+            ? `This list joins month #${targetMonth} as ${cohortRef(
+                Number(targetMonth),
+                months.find((m) => m.monthIndex === Number(targetMonth))?.nextSub,
+              )} — a separate cohort with its own start date, schedule and sequence. Cohorts already running in that month are not touched.`
+            : `Leave this on "New month" and the list starts ${cohortRef(nextMonth)}, the next month in the series.`}
+        </p>
       </div>
 
       {/* Auto-cohort settings + manual trigger from the source list */}
@@ -1267,7 +1315,7 @@ function Cohorts({
             'Forwarded', 'Forward %', 'Bounces', 'Bounce %', 'Unsub',
           ];
           const rowFor = (c: CohortStat) => [
-            c.label, c.monthIndex, c.status, c.metrics.sent, c.metrics.delivered,
+            c.label, cohortRef(c.monthIndex, c.subIndex), c.status, c.metrics.sent, c.metrics.delivered,
             c.metrics.deliveryRate, c.metrics.opens, c.metrics.openRate,
             c.metrics.clicks, c.metrics.clickRate, c.metrics.replies,
             c.metrics.replyRate, c.metrics.forwarded, c.metrics.forwardRate,
@@ -1331,7 +1379,7 @@ function Cohorts({
           <div className="card p-4">
             <div className="mb-3 flex items-center justify-between gap-3">
               <h3 className="text-sm font-semibold text-slate-700">
-                {selected ? `Report — #${selected.monthIndex} ${selected.label}` : 'Client report — all cohorts'}
+                {selected ? `Report — ${cohortRef(selected.monthIndex, selected.subIndex)} ${selected.label}` : 'Client report — all cohorts'}
               </h3>
               <div className="flex items-center gap-2">
                 <select
@@ -1342,7 +1390,7 @@ function Cohorts({
                   <option value="ALL">All cohorts (total)</option>
                   {cohorts.map((c) => (
                     <option key={c.id} value={c.id}>
-                      #{c.monthIndex} {c.label}
+                      {cohortRef(c.monthIndex, c.subIndex)} {c.label}
                     </option>
                   ))}
                 </select>
@@ -1438,7 +1486,7 @@ function Cohorts({
               <option value="ALL">All cohorts</option>
               {cohorts.map((c) => (
                 <option key={c.id} value={c.id}>
-                  #{c.monthIndex} {c.label}
+                  {cohortRef(c.monthIndex, c.subIndex)} {c.label}
                 </option>
               ))}
             </select>
@@ -1448,7 +1496,10 @@ function Cohorts({
             title={
               geoCohort === 'ALL'
                 ? 'Geographic engagement — all cohorts'
-                : `Geographic engagement — #${cohorts.find((c) => c.id === geoCohort)?.monthIndex ?? ''} ${cohorts.find((c) => c.id === geoCohort)?.label ?? ''}`
+                : `Geographic engagement — ${(() => {
+                    const c = cohorts.find((x) => x.id === geoCohort);
+                    return c ? `${cohortRef(c.monthIndex, c.subIndex)} ${c.label}` : '';
+                  })()}`
             }
           />
         </div>
@@ -1486,7 +1537,7 @@ function Cohorts({
                       onClick={() => setOpenCohort(openCohort === c.id ? null : c.id)}
                       title="Show follow-up schedule"
                     >
-                      {openCohort === c.id ? '▾' : '▸'} #{c.monthIndex}
+                      {openCohort === c.id ? '▾' : '▸'} {cohortRef(c.monthIndex, c.subIndex)}
                     </button>
                   </td>
                   <td className="px-4 py-3 text-slate-600">{c.label}</td>
@@ -1649,7 +1700,7 @@ function Cohorts({
                   {items.map((it) => (
                     <tr key={it.key} className="border-t border-slate-100">
                       <td className="px-4 py-3 font-medium text-slate-700">{fmtDay(it.date)}</td>
-                      <td className="px-4 py-3 text-slate-500">#{it.cohort.monthIndex}</td>
+                      <td className="px-4 py-3 text-slate-500">{cohortRef(it.cohort.monthIndex, it.cohort.subIndex)}</td>
                       <td className="px-4 py-3 text-slate-500">{it.cohort.label}</td>
                       <td className="px-4 py-3 text-slate-600">{it.stage}</td>
                       <td className="px-4 py-3 text-slate-400">{fmtDay(it.end)}</td>
@@ -1670,7 +1721,7 @@ function Cohorts({
       <Modal
         open={!!seqCohort}
         onClose={() => setSeqCohort(null)}
-        title={seqCohort ? `Sequence · #${seqCohort.monthIndex} ${seqCohort.label}` : 'Sequence'}
+        title={seqCohort ? `Sequence · ${cohortRef(seqCohort.monthIndex, seqCohort.subIndex)} ${seqCohort.label}` : 'Sequence'}
         wide
       >
         {seqCohort && (

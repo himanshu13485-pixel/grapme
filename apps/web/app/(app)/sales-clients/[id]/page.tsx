@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { SalesActivityDashboard } from '@/components/SalesActivityDashboard';
 import { CategoryBadge } from '@/components/ui';
+import { cohortRef } from '@/lib/cohorts';
 
 /* ─────────────────────────── types ─────────────────────────── */
 interface ClientDetail {
@@ -293,7 +294,7 @@ function CampaignsTab({ id }: { id: string }) {
   );
 }
 
-interface Cohort { id: string; label: string; status: string; monthIndex: number; startDate: string }
+interface Cohort { id: string; label: string; status: string; monthIndex: number; subIndex?: number | null; startDate: string }
 function CohortsTab({ id }: { id: string }) {
   const p = usePaged<Cohort>(`/sales/my/clients/${id}/cohorts`);
   return (
@@ -302,7 +303,7 @@ function CohortsTab({ id }: { id: string }) {
         {p.rows?.map((c) => (
           <tr key={c.id}>
             <td className="p-3 font-medium text-slate-800">{c.label}</td>
-            <td className="p-3 text-slate-500">#{c.monthIndex}</td>
+            <td className="p-3 text-slate-500">{cohortRef(c.monthIndex, c.subIndex)}</td>
             <td className="p-3"><Pill s={c.status} /></td>
             <td className="p-3 text-slate-500">{new Date(c.startDate).toLocaleDateString()}</td>
           </tr>
