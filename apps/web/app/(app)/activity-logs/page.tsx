@@ -38,6 +38,8 @@ const ACTION_LABEL: Record<string, string> = {
   UNASSIGN_SUBADMIN: 'Unassigned sub-admin',
   GDPR_ERASE: 'Erased contact (GDPR)',
   GDPR_EXPORT: 'Exported contact (GDPR)',
+  IMPERSONATE_USER: 'Logged in as another account',
+  IMPERSONATE_CLIENT: 'Logged in as client',
 };
 
 function actionLabel(a: string) {

@@ -537,32 +537,58 @@ export class AuthService {
    * Registered Clients, when the original never arrived). Issues a fresh 24h token.
    */
   /**
-   * "Log in as client": issue a real session for a CLIENT login so an admin can see
-   * the portal exactly as that client does. Admins only, same tenant, CLIENT role
-   * only — an admin can never impersonate another admin. Recorded in the activity
-   * log. Note this REPLACES the admin's own session in that browser; they sign out
-   * and back in to return to the admin panel.
+   * "Log in as": issue a real session for another login so an admin can see the
+   * app exactly as that person does — a client's portal, a salesperson's panel
+   * or a sub-admin's scoped admin view. Same tenant only, and always recorded
+   * in the activity log.
+   *
+   * Who may impersonate whom:
+   *   SUPER_ADMIN -> CLIENT, SALES, SUB_ADMIN
+   *   SUB_ADMIN   -> CLIENT only
+   * A SUPER_ADMIN is never a target, and nobody impersonates themselves — so
+   * the feature can't be used to climb to more access than the actor has.
+   *
+   * The browser swaps to the returned session; the web app stashes the admin's
+   * own tokens so the banner's "Back to Admin" restores them in one click.
    */
-  async impersonateClient(admin: AuthUser, userId: string, ctx?: SessionCtx) {
+  async impersonate(admin: AuthUser, userId: string, ctx?: SessionCtx) {
     if (admin.role !== Role.SUPER_ADMIN && admin.role !== Role.SUB_ADMIN) {
       throw new ForbiddenException('Admins only');
     }
-    const target = await this.prisma.user.findFirst({
-      where: { id: userId, tenantId: admin.tenantId, role: Role.CLIENT },
-    });
-    if (!target) throw new NotFoundException('Client login not found');
-    if (target.status === 'SUSPENDED') {
-      throw new BadRequestException('This client login is suspended.');
+    if (userId === admin.userId) {
+      throw new BadRequestException('You are already signed in as yourself.');
     }
+    const target = await this.prisma.user.findFirst({
+      where: { id: userId, tenantId: admin.tenantId },
+    });
+    if (!target) throw new NotFoundException('Login not found');
+
+    const allowed: Role[] =
+      admin.role === Role.SUPER_ADMIN
+        ? [Role.CLIENT, Role.SALES, Role.SUB_ADMIN]
+        : [Role.CLIENT];
+    if (!allowed.includes(target.role)) {
+      throw new ForbiddenException(
+        admin.role === Role.SUB_ADMIN
+          ? 'Sub-admins can only log in as a client.'
+          : 'This account cannot be viewed with "Log in as".',
+      );
+    }
+    if (target.status === 'SUSPENDED') {
+      throw new BadRequestException('This login is suspended.');
+    }
+
     await this.activity.log({
       tenantId: admin.tenantId,
       actorId: admin.userId,
-      action: 'IMPERSONATE_CLIENT',
+      action: 'IMPERSONATE_USER',
       entityType: 'User',
       entityId: target.id,
-      after: { email: target.email },
+      after: { email: target.email, role: target.role },
     });
-    this.logger.warn(`${admin.email} logged in as client ${target.email}`);
+    this.logger.warn(
+      `${admin.email} logged in as ${target.role} ${target.email}`,
+    );
     return this.issueSession(target, ctx);
   }
 

@@ -2,6 +2,8 @@
 
 import { FormEvent, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
+import { loginAsUser } from '@/lib/impersonate';
+import { useAuth } from '@/lib/auth';
 import { PageHeader, EmptyState, Pagination, Modal } from '@/components/ui';
 
 interface SubAdmin {
@@ -43,6 +45,8 @@ const MODULES: { key: string; label: string }[] = [
 ];
 
 export default function SubAdminsPage() {
+  const { user } = useAuth();
+  const isSuper = user?.role === 'SUPER_ADMIN';
   const [subAdmins, setSubAdmins] = useState<SubAdmin[]>([]);
   const [error, setError] = useState('');
   const [page, setPage] = useState(1);
@@ -117,6 +121,18 @@ export default function SubAdminsPage() {
                     <div className="text-xs text-slate-400">{sa.email}</div>
                   </div>
                   <div className="whitespace-nowrap">
+                    {isSuper && (
+                      <button
+                        className="btn-ghost text-xs disabled:cursor-not-allowed disabled:text-slate-300"
+                        disabled={sa.status !== 'ACTIVE'}
+                        title={sa.status === 'ACTIVE'
+                          ? 'Open the admin panel as this sub-admin sees it'
+                          : 'This login is suspended'}
+                        onClick={() => loginAsUser(sa.id, sa.name || sa.email, 'SUB_ADMIN')}
+                      >
+                        &#8623; Login as
+                      </button>
+                    )}
                     <button className="btn-ghost text-xs" onClick={() => setEditing(sa)}>
                       Edit
                     </button>

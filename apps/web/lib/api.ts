@@ -33,18 +33,24 @@ export function clearTokens() {
 }
 
 // ── Admin impersonation ("Login as" → "Back to Admin") ──────────────────
-// When an admin impersonates a client we stash the admin's tokens under separate
-// keys so the client portal can offer a one-click return to the admin session.
+// When an admin impersonates someone we stash the admin's tokens under separate
+// keys so their workspace can offer a one-click return to the admin session,
+// along with the page the admin left so they land back where they started.
 const ADMIN_STASH_TOKEN = 'aeo_admin_stash_token';
 const ADMIN_STASH_REFRESH = 'aeo_admin_stash_refresh';
+const ADMIN_STASH_RETURN = 'aeo_admin_stash_return';
 
-/** Save the current (admin) session before swapping to a client session. */
-export function stashAdminSession() {
+/** Save the current (admin) session before swapping to someone else's. */
+export function stashAdminSession(returnTo?: string) {
   if (typeof window === 'undefined') return;
   const t = getToken();
   const r = getRefreshToken();
   if (t) localStorage.setItem(ADMIN_STASH_TOKEN, t);
   if (r) localStorage.setItem(ADMIN_STASH_REFRESH, r);
+  localStorage.setItem(
+    ADMIN_STASH_RETURN,
+    returnTo || window.location.pathname || '/dashboard',
+  );
 }
 
 /** True when an admin session is stashed (i.e. we're currently impersonating). */
@@ -53,17 +59,20 @@ export function hasStashedAdmin(): boolean {
   return !!localStorage.getItem(ADMIN_STASH_TOKEN);
 }
 
-/** Restore the stashed admin session. Returns false if none was stashed. */
-export function restoreAdminSession(): boolean {
-  if (typeof window === 'undefined') return false;
+/**
+ * Restore the stashed admin session. Returns the page the admin came from, or
+ * null if nothing was stashed (i.e. this isn't an impersonated session).
+ */
+export function restoreAdminSession(): string | null {
+  if (typeof window === 'undefined') return null;
   const t = localStorage.getItem(ADMIN_STASH_TOKEN);
-  if (!t) return false;
+  if (!t) return null;
   const r = localStorage.getItem(ADMIN_STASH_REFRESH);
+  const back = localStorage.getItem(ADMIN_STASH_RETURN);
   setToken(t);
   setRefreshToken(r);
-  localStorage.removeItem(ADMIN_STASH_TOKEN);
-  localStorage.removeItem(ADMIN_STASH_REFRESH);
-  return true;
+  clearStashedAdmin();
+  return back || '/dashboard';
 }
 
 /** Drop any stashed admin session (e.g. on a clean sign-out). */
@@ -71,6 +80,7 @@ export function clearStashedAdmin() {
   if (typeof window === 'undefined') return;
   localStorage.removeItem(ADMIN_STASH_TOKEN);
   localStorage.removeItem(ADMIN_STASH_REFRESH);
+  localStorage.removeItem(ADMIN_STASH_RETURN);
 }
 
 export class ApiError extends Error {

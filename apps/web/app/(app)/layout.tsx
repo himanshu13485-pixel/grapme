@@ -17,6 +17,13 @@ type NavItem = {
   admin?: boolean; superOnly?: boolean; sales?: boolean; inboxBadge?: boolean; updatesBadge?: boolean; supportBadge?: boolean; internalBadge?: boolean; group?: 'email' | 'linkedin' | 'main';
 };
 // Pages a salesperson may reach in their restricted panel (nothing else).
+// What the amber impersonation banner calls the account being viewed.
+const VIEWING_AS_LABEL: Record<string, string> = {
+  CLIENT: 'client',
+  SALES: 'salesperson',
+  SUB_ADMIN: 'sub-admin',
+};
+
 const SALES_ALLOWED = ['/sales-home', '/sales-clients', '/reporting', '/internal-work', '/support', '/updates', '/my-profile'];
 const NAV: NavItem[] = [
   // ── Salesperson panel (only these show for role SALES) ──
@@ -99,7 +106,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // Are we inside an admin "Login as" impersonation? (stashed admin session present)
   useEffect(() => { setImpersonating(hasStashedAdmin()); }, [user]);
   function backToAdmin() {
-    if (restoreAdminSession()) window.location.href = '/registered-clients';
+    const back = restoreAdminSession();
+    // Land on the page the admin left, not a fixed one — they now start this
+    // from Registered Clients, Sales Persons or Sub Admins.
+    if (back) window.location.href = back;
   }
 
   // Salespersons live entirely inside their restricted panel — land them on
@@ -525,17 +535,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </aside>
         <div className="flex min-w-0 flex-1 flex-col">
           {impersonating && (
-            <div className="flex items-center justify-between gap-3 bg-amber-500 px-4 py-2 text-sm text-white shadow md:px-8">
-              <span className="min-w-0 truncate">
-                👁 Viewing as <strong>{user.name}</strong> (client) — you’re impersonating this account.
-              </span>
-              <button
-                onClick={backToAdmin}
-                className="shrink-0 rounded-lg bg-white/95 px-3 py-1.5 text-xs font-semibold text-amber-700 shadow hover:bg-white"
-              >
-                ← Back to Admin
-              </button>
-            </div>
+            <ImpersonationBanner name={user.name} role={user.role} onBack={backToAdmin} />
           )}
           <MobileTopBar onMenu={() => setSidebarOpen(true)} />
           <main
@@ -703,6 +703,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       {/* Content */}
       <div className="flex min-w-0 flex-1 flex-col">
+        {impersonating && (
+          <ImpersonationBanner name={user.name} role={user.role} onBack={backToAdmin} />
+        )}
         <MobileTopBar onMenu={() => setSidebarOpen(true)} />
         <main className="flex-1 overflow-auto px-4 py-5 md:px-8 md:py-8">{children}</main>
       </div>
@@ -774,6 +777,34 @@ function ClientNavItem({
       <span className="flex-1 truncate">{label}</span>
       {badge}
     </Link>
+  );
+}
+
+/** Amber bar shown while an admin is signed in as someone else, with the one
+ *  click back to their own session. Rendered by both layout branches so it is
+ *  there whichever workspace the admin is viewing. */
+function ImpersonationBanner({
+  name,
+  role,
+  onBack,
+}: {
+  name: string;
+  role: string;
+  onBack: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 bg-amber-500 px-4 py-2 text-sm text-white shadow md:px-8">
+      <span className="min-w-0 truncate">
+        👁 Viewing as <strong>{name}</strong> ({VIEWING_AS_LABEL[role] ?? 'account'}) — you’re
+        impersonating this account, and anything you do is recorded against them.
+      </span>
+      <button
+        onClick={onBack}
+        className="shrink-0 rounded-lg bg-white/95 px-3 py-1.5 text-xs font-semibold text-amber-700 shadow hover:bg-white"
+      >
+        ← Back to Admin
+      </button>
+    </div>
   );
 }
 

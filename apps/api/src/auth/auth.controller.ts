@@ -130,10 +130,23 @@ export class AuthController {
   }
 
   /**
-   * Admin "Log in as client" — returns a real session for that client login so the
-   * admin can view the portal exactly as they see it. This replaces the admin's own
-   * session in that browser; sign out to come back as admin.
+   * Admin "Log in as" — returns a real session for another login (client,
+   * salesperson or sub-admin) so the admin can view the app exactly as that
+   * person does. The browser swaps to it; "Back to Admin" restores the admin's
+   * own session. The service decides who may impersonate whom.
    */
+  @Roles(Role.SUPER_ADMIN, Role.SUB_ADMIN)
+  @HttpCode(200)
+  @Post('users/:userId/impersonate')
+  impersonate(
+    @CurrentUser() user: AuthUser,
+    @Param('userId') userId: string,
+    @Req() req: Request,
+  ) {
+    return this.auth.impersonate(user, userId, this.sessionCtx(req));
+  }
+
+  /** Legacy route kept so a browser running an older bundle keeps working. */
   @Roles(Role.SUPER_ADMIN, Role.SUB_ADMIN)
   @HttpCode(200)
   @Post('client/:userId/impersonate')
@@ -142,7 +155,7 @@ export class AuthController {
     @Param('userId') userId: string,
     @Req() req: Request,
   ) {
-    return this.auth.impersonateClient(user, userId, this.sessionCtx(req));
+    return this.auth.impersonate(user, userId, this.sessionCtx(req));
   }
 
   /** Client confirms an admin-initiated change to their portal login email. */

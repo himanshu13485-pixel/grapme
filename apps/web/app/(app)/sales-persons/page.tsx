@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { api, ApiError } from '@/lib/api';
+import { loginAsUser } from '@/lib/impersonate';
+import { useAuth } from '@/lib/auth';
 
 interface SalesPerson {
   id: string;
@@ -34,6 +36,8 @@ interface PersonDetail {
 }
 
 export default function SalesPersonsPage() {
+  const { user } = useAuth();
+  const isSuper = user?.role === 'SUPER_ADMIN';
   const [persons, setPersons] = useState<SalesPerson[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -108,6 +112,18 @@ export default function SalesPersonsPage() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right">
+                    {isSuper && (
+                      <button
+                        onClick={() => loginAsUser(p.id, p.name || p.email, 'SALES')}
+                        disabled={p.status !== 'ACTIVE'}
+                        title={p.status === 'ACTIVE'
+                          ? 'Open this salesperson’s own panel as they see it'
+                          : 'This login is suspended'}
+                        className="mr-3 text-sm font-medium text-brand-700 hover:underline disabled:cursor-not-allowed disabled:text-slate-300 disabled:no-underline"
+                      >
+                        &#8623; Login as
+                      </button>
+                    )}
                     <button onClick={() => setEditingId(p.id)} className="text-sm font-medium text-brand-700 hover:underline">
                       Manage
                     </button>
