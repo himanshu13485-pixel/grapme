@@ -27,6 +27,9 @@ interface Template {
   bodyHtml?: string;
   variables: string[];
   client?: { id: string; name: string };
+  /** Only APPROVED templates are sent. Client-portal templates start PENDING. */
+  status?: 'PENDING' | 'APPROVED' | 'REJECTED';
+  reviewNote?: string | null;
 }
 
 const VARS = ['first_name', 'last_name', 'company', 'country', 'email'];
@@ -50,6 +53,8 @@ function renderPreview(html: string): string {
  */
 export function TemplatesManager({ clientId }: { clientId?: string }) {
   const canDelete = useCanDelete();
+  const { user } = useAuth();
+  const isClient = user?.role === 'CLIENT';
   const canUseAi = useCanUseAi();
   const [templates, setTemplates] = useState<Template[]>([]);
   const [editing, setEditing] = useState<Template | 'new' | null>(null);
@@ -128,7 +133,15 @@ export function TemplatesManager({ clientId }: { clientId?: string }) {
         <EmptyState message="No templates yet. Create one with the editor." />
       ) : (
         <>
-        <div className="mb-3 text-sm text-slate-400">{templates.length} template{templates.length === 1 ? '' : 's'}</div>
+        <div className="mb-3 text-sm text-slate-400">
+          {templates.length} template{templates.length === 1 ? '' : 's'}
+          {isClient && (
+            <span className="ml-2 text-slate-500">
+              · New templates and changes to a template&apos;s subject or body are reviewed by our team
+              before they can be sent.
+            </span>
+          )}
+        </div>
         <div className="card divide-y divide-slate-100">
           {paged.map((t) => (
             <div key={t.id} className="flex items-center justify-between p-4">
@@ -140,8 +153,12 @@ export function TemplatesManager({ clientId }: { clientId?: string }) {
                       {t.client.name}
                     </span>
                   )}
+                  <TemplateStatusBadge status={t.status} />
                 </div>
                 <div className="mt-1 text-sm text-slate-500">{t.subject}</div>
+                {t.status === 'REJECTED' && t.reviewNote && (
+                  <div className="mt-1 text-xs text-rose-600">Reviewer: {t.reviewNote}</div>
+                )}
               </div>
               <div className="whitespace-nowrap">
                 <button className="btn-ghost text-xs" onClick={() => setEditing(t)}>
@@ -164,6 +181,31 @@ export function TemplatesManager({ clientId }: { clientId?: string }) {
       )}
     </div>
   );
+}
+
+/** Review state of a template. Approved is the normal state, so it shows nothing. */
+function TemplateStatusBadge({ status }: { status?: Template['status'] }) {
+  if (status === 'PENDING') {
+    return (
+      <span
+        className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700"
+        title="Waiting for an admin to approve it. It won't be sent until then."
+      >
+        Awaiting approval
+      </span>
+    );
+  }
+  if (status === 'REJECTED') {
+    return (
+      <span
+        className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700"
+        title="Not approved. Edit it and save to send it for review again."
+      >
+        Rejected
+      </span>
+    );
+  }
+  return null;
 }
 
 /** Batch template drafting with AI. Generates a set (optional initial + follow-up

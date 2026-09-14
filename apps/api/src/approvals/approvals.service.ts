@@ -9,6 +9,7 @@ import {
   Prisma,
   Role,
   ScheduleStatus,
+  TemplateStatus,
 } from '@prisma/client';
 import { createHash } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -16,6 +17,12 @@ import { ActivityService } from '../common/services/activity.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { LiCampaignsService } from '../linkedin/campaigns/li-campaigns.service';
 import { ListApprovalsQuery } from './dto/approvals.dto';
+
+interface ApprovalMeta {
+  target?: string;
+  clientName?: string;
+  detail?: { subject: string; bodyHtml: string };
+}
 
 @Injectable()
 export class ApprovalsService {
@@ -93,14 +100,17 @@ export class ApprovalsService {
       ...a,
       target: meta.get(a.id)?.target ?? null,
       clientName: meta.get(a.id)?.clientName ?? null,
+      // What the reviewer is actually approving, where it can be shown inline
+      // (today: a template's subject and body).
+      detail: meta.get(a.id)?.detail ?? null,
     }));
   }
 
   /** Human "what" label + owning client name per approval. */
   private async resolveTargets(
     approvals: { id: string; entityType: ApprovalEntity; entityId: string }[],
-  ): Promise<Map<string, { target?: string; clientName?: string }>> {
-    const out = new Map<string, { target?: string; clientName?: string }>();
+  ): Promise<Map<string, ApprovalMeta>> {
+    const out = new Map<string, ApprovalMeta>();
     const idsOf = (t: ApprovalEntity) =>
       approvals.filter((a) => a.entityType === t).map((a) => a.entityId);
 
@@ -158,6 +168,11 @@ export class ApprovalsService {
       select: { id: true, name: true, email: true, pendingEmail: true, companyName: true },
     });
 
+    const templates = await this.prisma.emailTemplate.findMany({
+      where: { id: { in: idsOf(ApprovalEntity.TEMPLATE) } },
+      select: { id: true, name: true, subject: true, bodyHtml: true, clientId: true },
+    });
+
     // Resolve every referenced clientId to a name in one query.
     const clientIds = new Set<string>([...idsOf(ApprovalEntity.CLIENT_DELETE), ...idsOf(ApprovalEntity.LI_CHANNEL_REQUEST)]);
     mailboxes.forEach((m) => m.clientId && clientIds.add(m.clientId));
@@ -166,6 +181,7 @@ export class ApprovalsService {
     schedules.forEach((s) => s.campaign?.clientId && clientIds.add(s.campaign.clientId));
     messages.forEach((m) => m.emailAccount?.clientId && clientIds.add(m.emailAccount.clientId));
     liCampaigns.forEach((c) => c.clientId && clientIds.add(c.clientId));
+    templates.forEach((t) => t.clientId && clientIds.add(t.clientId));
     const clientRows = await this.prisma.client.findMany({
       where: { id: { in: [...clientIds] } },
       select: { id: true, name: true },
@@ -239,8 +255,22 @@ export class ApprovalsService {
       ]),
     );
 
+    const tp = new Map(
+      templates.map((t) => [
+        t.id,
+        {
+          target: `Template · ${t.name}`,
+          clientName: t.clientId ? clientName.get(t.clientId) : undefined,
+          detail: { subject: t.subject, bodyHtml: t.bodyHtml },
+        },
+      ]),
+    );
+
     for (const a of approvals) {
       switch (a.entityType) {
+        case ApprovalEntity.TEMPLATE:
+          if (tp.has(a.entityId)) out.set(a.id, tp.get(a.entityId)!);
+          break;
         case ApprovalEntity.SMTP:
           if (mb.has(a.entityId)) out.set(a.id, mb.get(a.entityId)!);
           break;
@@ -299,7 +329,7 @@ export class ApprovalsService {
 
   async reject(reviewer: AuthUser, approvalId: string, reason: string) {
     const approval = await this.getPending(reviewer.tenantId, approvalId);
-    await this.transitionEntity(approval.entityType, approval.entityId, false);
+    await this.transitionEntity(approval.entityType, approval.entityId, false, reason);
     return this.finalize(reviewer, approvalId, ApprovalStatus.REJECTED, reason);
   }
 
@@ -345,10 +375,21 @@ export class ApprovalsService {
     entityType: ApprovalEntity,
     entityId: string,
     approved: boolean,
+    reason?: string,
   ) {
     // updateMany (not update) so a decision on an approval whose entity was
     // already deleted finalizes cleanly instead of throwing a 500.
     switch (entityType) {
+      case ApprovalEntity.TEMPLATE:
+        // Approve = the template becomes sendable; reject = it stays unsendable
+        // and the reason is shown to the client so they can fix and resubmit.
+        await this.prisma.emailTemplate.updateMany({
+          where: { id: entityId },
+          data: approved
+            ? { status: TemplateStatus.APPROVED, reviewNote: null }
+            : { status: TemplateStatus.REJECTED, reviewNote: reason ?? null },
+        });
+        break;
       case ApprovalEntity.CAMPAIGN:
         await this.prisma.campaign.updateMany({
           where: { id: entityId },

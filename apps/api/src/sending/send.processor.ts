@@ -8,6 +8,7 @@ import {
   EventType,
   MessageStatus,
   StepCondition,
+  TemplateStatus,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailerService } from './mailer.service';
@@ -127,10 +128,17 @@ export class SendProcessor extends WorkerHost {
       // NO_REPLY / ALWAYS: the reply check above already covers NO_REPLY.
     }
 
-    const template = await this.prisma.emailTemplate.findUnique({
-      where: { id: templateId },
+    const template = await this.prisma.emailTemplate.findFirst({
+      where: { id: templateId, status: TemplateStatus.APPROVED },
     });
-    if (!template) return;
+    if (!template) {
+      // Missing, or not approved (e.g. a client rewrote it after the campaign
+      // was approved and it's back in review). Never send unreviewed content.
+      this.logger.warn(
+        `Not sending to ${contact.email}: template ${templateId} is missing or not approved`,
+      );
+      return;
+    }
 
     const data = {
       name: contact.firstName ?? '',

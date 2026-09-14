@@ -20,6 +20,7 @@ import {
   MessageDirection,
   MessageStatus,
   Role,
+  TemplateStatus,
   UserStatus,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -1846,8 +1847,11 @@ export class ProgramsService {
     const contact = await this.prisma.contact.findUnique({
       where: { id: enr.contactId },
     });
-    const template = await this.prisma.emailTemplate.findUnique({
-      where: { id: templateId },
+    // Only an approved template is ever sent. One still awaiting review (or
+    // rejected) holds the enrollment at this stage — it's retried next tick
+    // rather than skipped, so no contact loses the touch once it's approved.
+    const template = await this.prisma.emailTemplate.findFirst({
+      where: { id: templateId, status: TemplateStatus.APPROVED },
     });
     if (!contact || !template) return false;
 
@@ -2418,6 +2422,59 @@ export class ProgramsService {
       after: { validityDays, client: client.name },
     });
     return updated;
+  }
+
+  /**
+   * Add days to a client's CURRENT validity window without restarting it —
+   * e.g. a 30-day plan with 20 days left, +10 → a 40-day plan with 30 days
+   * left, same start date. (Setting a new validity restarts from today.)
+   * Only for a window that is still running; an expired plan is renewed by
+   * setting a fresh validity.
+   */
+  async extendClientValidity(user: AuthUser, clientId: string, days: number) {
+    this.assertAdmin(user);
+    const client = await this.assertClient(user, clientId);
+    const add = Math.floor(Number(days));
+    if (!Number.isFinite(add) || add < 1 || add > 3650) {
+      throw new BadRequestException('Enter a number of days between 1 and 3650.');
+    }
+    if (!client.validityDays || !client.validityStartAt) {
+      throw new BadRequestException('This client has no validity window to extend. Set a validity first.');
+    }
+    const now = Date.now();
+    const oldExpiry = client.validityStartAt.getTime() + client.validityDays * 86_400_000;
+    if (oldExpiry <= now) {
+      throw new BadRequestException('This plan has already expired. Set a new validity to renew it.');
+    }
+
+    const validityDays = client.validityDays + add;
+    const expiresAt = new Date(oldExpiry + add * 86_400_000);
+    const daysLeft = Math.ceil((expiresAt.getTime() - now) / 86_400_000);
+    // Re-arm expiry reminders against the new end date, using the same
+    // thresholds as notifyValidityMilestones: milestones still genuinely
+    // crossed stay sent (nothing re-fires now), the ones the extension pushed
+    // back will send again as the new expiry approaches.
+    const stillCrossed = daysLeft <= 1 ? 3 : daysLeft <= 4 ? 2 : daysLeft <= 10 ? 1 : 0;
+
+    const updated = await this.prisma.client.update({
+      where: { id: clientId },
+      data: {
+        validityDays,
+        validityNotifyStage: Math.min(client.validityNotifyStage, stillCrossed),
+      },
+      select: { id: true, validityDays: true, validityStartAt: true },
+    });
+    await this.subscriptions.extendOpen(clientId, add, expiresAt);
+    await this.activity.log({
+      tenantId: user.tenantId,
+      actorId: user.userId,
+      action: 'EXTEND_CLIENT_VALIDITY',
+      entityType: 'Client',
+      entityId: clientId,
+      before: { validityDays: client.validityDays, expiresAt: new Date(oldExpiry) },
+      after: { validityDays, expiresAt, addedDays: add, client: client.name },
+    });
+    return { ...updated, addedDays: add, daysLeft, expiresAt };
   }
 
   /**

@@ -160,6 +160,16 @@ export class ProgramsController {
     return this.programs.setClientValidity(user, id, dto.days);
   }
 
+  /** Add days to the running validity window, keeping its start date. */
+  @Post('clients/:id/validity/extend')
+  extendClientValidity(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: { days: number },
+  ) {
+    return this.programs.extendClientValidity(user, id, dto.days);
+  }
+
   /** Admin: reset a client login to the shared default password. */
   @Post('clients/:id/reset-password')
   resetClientPassword(@CurrentUser() user: AuthUser, @Param('id') id: string) {

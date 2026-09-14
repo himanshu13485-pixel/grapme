@@ -55,6 +55,23 @@ export class SubscriptionsService {
     });
   }
 
+  /**
+   * Push the running period's end out when an admin adds days to the current
+   * window. Same subscription, just longer — so it's updated in place rather
+   * than closed as SUPERSEDED and replaced like a fresh validity would be.
+   */
+  async extendOpen(clientId: string, addDays: number, newEndAt: Date) {
+    const open = await this.prisma.subscriptionPeriod.findFirst({
+      where: { clientId, endedReason: null, endAt: { gt: new Date() } },
+      orderBy: { startAt: 'desc' },
+    });
+    if (!open) return null;
+    return this.prisma.subscriptionPeriod.update({
+      where: { id: open.id },
+      data: { endAt: newEndAt, validityDays: open.validityDays + addDays },
+    });
+  }
+
   private async planEntitlements(tenantId: string, planName?: string | null) {
     if (!planName) return null;
     const p = await this.prisma.plan.findFirst({

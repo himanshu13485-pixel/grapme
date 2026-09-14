@@ -53,6 +53,15 @@ enum ImportStatus {
   FAILED
 }
 
+/// Review state of an email template. Templates written in the client portal
+/// start PENDING and only become sendable once an admin/sub-admin approves them.
+/// Staff-authored templates are created APPROVED.
+enum TemplateStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 enum CampaignStatus {
   DRAFT
   PENDING
@@ -115,6 +124,7 @@ enum ApprovalEntity {
   LI_CAMPAIGN
   LI_CHANNEL_REQUEST
   CLIENT_LOGIN_EMAIL // admin changed a client's login email; awaiting confirm/approval
+  TEMPLATE // client-portal template (new, or its content edited) awaiting review
 }
 
 enum ApprovalStatus {
@@ -697,6 +707,10 @@ model EmailTemplate {
   bodyText  String?
   variables Json     @default("[]")
   clientId  String? // owning client (null = shared/global)
+  /// Only APPROVED templates are ever sent (cohort engine and campaign sender).
+  status     TemplateStatus @default(APPROVED)
+  /// Reviewer's reason when a template is rejected, shown back to the client.
+  reviewNote String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

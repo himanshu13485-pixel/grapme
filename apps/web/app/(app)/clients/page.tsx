@@ -9,6 +9,7 @@ import { PageHeader, EmptyState, Modal, StatusBadge, Pagination, CategoryBadge }
 import { LiClientPlanFields, LiClientSendWindowFields, LiPlanForm, emptyLiPlan } from '@/components/LiClientPlanFields';
 import { SetupMonthSquares } from '@/components/SetupMonthSquares';
 import { LiSubscription, LI_DEFAULTS } from '@/lib/linkedin';
+import { validityInfo } from '@/components/Validity';
 
 interface Client {
   id: string;
@@ -1006,7 +1007,105 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
   );
 }
 
+/**
+ * "Add to current validity": lengthens the running window without restarting
+ * it — a 30-day plan with 20 days left, +10 → 40 days with 30 left. Applied
+ * straight away (not on Save), so the Validity field below it can't then be
+ * mistaken for a change and restart the window.
+ */
+function ExtendValidity({
+  clientId,
+  days,
+  startAt,
+  dirty,
+  onExtended,
+}: {
+  clientId: string;
+  days: number | null;
+  startAt?: string | null;
+  /** The Validity field has an unsaved edit — extending now would be ambiguous. */
+  dirty: boolean;
+  onExtended: (newDays: number) => void;
+}) {
+  const [add, setAdd] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [err, setErr] = useState('');
+  const v = validityInfo(days, startAt);
+  if (v.none || !startAt) return null; // no running window to extend
+  if (v.expired) {
+    return (
+      <p className="mt-1 text-[11px] text-amber-600">
+        Plan expired. Set a new validity above to renew it.
+      </p>
+    );
+  }
+  const n = Math.floor(Number(add));
+  const valid = Number.isFinite(n) && n >= 1 && n <= 3650;
+  const remaining = v.remaining ?? 0;
+  const newExpiry = v.expiry ? new Date(v.expiry.getTime() + (valid ? n : 0) * 86_400_000) : null;
+
+  async function apply() {
+    if (!valid) return;
+    setBusy(true);
+    setErr('');
+    setMsg('');
+    try {
+      const res = await api.post<{ validityDays: number; daysLeft: number }>(
+        `/clients/${clientId}/validity/extend`,
+        { days: n },
+      );
+      onExtended(res.validityDays);
+      setAdd('');
+      setMsg(`Added ${n} day${n === 1 ? '' : 's'}: now ${res.validityDays} days, ${res.daysLeft} left.`);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+      <label className="text-[11px] font-medium text-slate-600">Add to current validity</label>
+      <div className="mt-1 flex items-center gap-2">
+        <input
+          className="input w-24"
+          type="number"
+          min={1}
+          max={3650}
+          placeholder="Days"
+          value={add}
+          onChange={(e) => setAdd(e.target.value)}
+          disabled={busy || dirty}
+        />
+        <button
+          type="button"
+          className="btn-ghost text-xs"
+          onClick={apply}
+          disabled={busy || dirty || !valid}
+          title={dirty ? 'Save or undo the Validity change first' : 'Adds days without restarting the window'}
+        >
+          {busy ? 'Adding…' : 'Add days'}
+        </button>
+      </div>
+      <p className="mt-1 text-[11px] text-slate-500">
+        {dirty
+          ? 'Save or undo the Validity change above first.'
+          : valid
+            ? `${days} → ${(days ?? 0) + n} days · ${remaining} → ${remaining + n} left${newExpiry ? ` · expires ${newExpiry.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}`
+            : `Currently ${days} days, ${remaining} left. Same start date, applied immediately.`}
+      </p>
+      {msg && <p className="mt-1 text-[11px] text-emerald-600">{msg}</p>}
+      {err && <p className="mt-1 text-[11px] text-rose-600">{err}</p>}
+    </div>
+  );
+}
+
 function EditClientForm({ client, onDone }: { client: Client; onDone: () => void }) {
+  // The validity currently saved on the server — updated by "Add to current
+  // validity", so Save doesn't see the new total as an edit and restart it.
+  const [savedDays, setSavedDays] = useState<number | null>(client.validityDays ?? null);
   const [form, setForm] = useState({
     name: client.name,
     invoiceNo: client.invoiceNo ?? '',
@@ -1413,6 +1512,16 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
             <label className="label">Validity (days)</label>
             <input className="input" type="number" min={0} value={form.validityDays} onChange={(e) => setForm({ ...form, validityDays: Math.max(0, Number(e.target.value) || 0) })} placeholder="0 = no expiry" />
             <p className="mt-0.5 text-[11px] text-slate-400">Changing this restarts the validity window from today.</p>
+            <ExtendValidity
+              clientId={client.id}
+              days={savedDays}
+              startAt={client.validityStartAt}
+              dirty={Number(form.validityDays) !== (savedDays ?? 0)}
+              onExtended={(d) => {
+                setSavedDays(d);
+                setForm((f) => ({ ...f, validityDays: d }));
+              }}
+            />
           </div>
           <div className="sm:col-span-2">
             <label className="label">Outreach channels</label>

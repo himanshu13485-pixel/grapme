@@ -95,7 +95,14 @@ interface Client {
     campaigns: number;
   };
 }
-interface Template { id: string; name: string }
+interface Template { id: string; name: string; status?: 'PENDING' | 'APPROVED' | 'REJECTED' }
+
+/** Dropdown label that flags a template the engine won't send yet. */
+function templateOptionLabel(t: Template): string {
+  if (t.status === 'PENDING') return `${t.name} (awaiting approval)`;
+  if (t.status === 'REJECTED') return `${t.name} (rejected)`;
+  return t.name;
+}
 interface ContactList { id: string; name: string; _count?: { members: number } }
 interface ScheduleItem {
   stage: string;
@@ -785,7 +792,7 @@ function SequenceEditor({
                 >
                   <option value="">— no template —</option>
                   {templates.map((t) => (
-                    <option key={t.id} value={t.id}>{t.name}</option>
+                    <option key={t.id} value={t.id}>{templateOptionLabel(t)}</option>
                   ))}
                 </select>
               ) : (
@@ -805,7 +812,7 @@ function SequenceEditor({
                       >
                         <option value="">— no template —</option>
                         {templates.map((t) => (
-                          <option key={t.id} value={t.id}>{t.name}</option>
+                          <option key={t.id} value={t.id}>{templateOptionLabel(t)}</option>
                         ))}
                       </select>
                     </div>
