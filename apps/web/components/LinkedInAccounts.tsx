@@ -82,10 +82,16 @@ export function useLinkedInAccounts({
     // allow it, then point it at the Unipile URL once we have it.
     const w = mode === 'popup' && typeof window !== 'undefined' ? window.open('', '_blank') : null;
     try {
-      const res = await api.post<{ accountId: string; url: string }>(
+      const res = await api.post<{ accountId?: string; url?: string; pendingApproval?: boolean; message?: string }>(
         `${base}/clients/${clientId}/linkedin-accounts/connect`,
         { successRedirect: typeof window !== 'undefined' ? window.location.href : undefined },
       );
+      if (res.pendingApproval) {
+        // Client portal: connecting needs approval first; no LinkedIn login yet.
+        if (w) w.close();
+        alert(res.message ?? 'Sent for approval.');
+        return;
+      }
       reload(); // the PENDING seat row exists now — show it immediately
       if (res.url) {
         if (mode === 'popup') {

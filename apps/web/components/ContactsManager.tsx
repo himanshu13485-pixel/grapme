@@ -14,6 +14,15 @@ import {
 } from '@/components/ui';
 import { ImportWizard } from '@/components/ImportWizard';
 
+type PendingResult = { pendingApproval?: boolean; message?: string } | null | undefined;
+
+/** Tell the user when the server held their change for review instead of applying it. */
+function heldForApproval(r: PendingResult): boolean {
+  if (!r?.pendingApproval) return false;
+  alert(r.message ?? 'Sent for approval. Nothing changes until our team approves it.');
+  return true;
+}
+
 interface ClientRef { id: string; name: string }
 interface Contact {
   id: string;
@@ -78,7 +87,7 @@ export function ContactsManager({ clientId }: { clientId?: string }) {
   async function deleteContact(c: Contact) {
     if (!confirm(`Delete ${c.email} permanently?`)) return;
     try {
-      await api.del(`/contacts/${c.id}`);
+      heldForApproval(await api.del<PendingResult>(`/contacts/${c.id}`));
       loadAll();
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to delete contact');
@@ -92,10 +101,13 @@ export function ContactsManager({ clientId }: { clientId?: string }) {
     if (ids.length === 0) return;
     if (!confirm(`Delete ${ids.length} selected contact${ids.length === 1 ? '' : 's'} permanently?`)) return;
     try {
-      const r = await api.post<{ deleted: number }>('/contacts/delete', { ids });
+      const r = await api.post<{ deleted?: number; pendingApproval?: boolean; message?: string }>('/contacts/delete', { ids });
       setSelected(new Set());
       loadAll();
-      alert(`Deleted ${r.deleted} contact${r.deleted === 1 ? '' : 's'}.`);
+      if (!heldForApproval(r)) {
+        const n = r.deleted ?? 0;
+        alert(`Deleted ${n} contact${n === 1 ? '' : 's'}.`);
+      }
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to delete contacts');
     }
@@ -490,7 +502,7 @@ function AddContactForm({
     e.preventDefault();
     setError('');
     try {
-      await api.post('/contacts', {
+      const r = await api.post<PendingResult>('/contacts', {
         email: form.email,
         firstName: form.firstName || undefined,
         lastName: form.lastName || undefined,
@@ -499,6 +511,7 @@ function AddContactForm({
         listId: form.listId || undefined,
         clientId: form.clientId || undefined,
       });
+      heldForApproval(r);
       onDone();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed');
@@ -607,11 +620,12 @@ function NewListForm({
     e.preventDefault();
     setError('');
     try {
-      await api.post('/contact-lists', {
+      const r = await api.post<PendingResult>('/contact-lists', {
         name,
         description: description || undefined,
         clientId: clientId || undefined,
       });
+      heldForApproval(r);
       onDone();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed');
@@ -695,7 +709,7 @@ function EditContactForm({
     setError('');
     setBusy(true);
     try {
-      await api.patch(`/contacts/${contact.id}`, {
+      const r = await api.patch<PendingResult>(`/contacts/${contact.id}`, {
         email: form.email,
         firstName: form.firstName || undefined,
         lastName: form.lastName || undefined,
@@ -705,6 +719,7 @@ function EditContactForm({
         clientId: form.clientId,
         listIds,
       });
+      heldForApproval(r);
       onDone();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed');
@@ -718,7 +733,7 @@ function EditContactForm({
     setError('');
     setBusy(true);
     try {
-      await api.del(`/contacts/${contact.id}`);
+      heldForApproval(await api.del<PendingResult>(`/contacts/${contact.id}`));
       onDone();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed');
@@ -895,7 +910,7 @@ function ListDetail({
     if (toAdd.length === 0) return;
     setBusy(true);
     try {
-      await api.post(`/contact-lists/${list.id}/members`, { contactIds: toAdd });
+      heldForApproval(await api.post<PendingResult>(`/contact-lists/${list.id}/members`, { contactIds: toAdd }));
       setToAdd([]);
       load();
       onChanged();
@@ -908,9 +923,11 @@ function ListDetail({
     if (ids.length === 0) return;
     setBusy(true);
     try {
-      await api.post(`/contact-lists/${list.id}/members/remove`, {
-        contactIds: ids,
-      });
+      heldForApproval(
+        await api.post<PendingResult>(`/contact-lists/${list.id}/members/remove`, {
+          contactIds: ids,
+        }),
+      );
       setSelected((prev) => prev.filter((x) => !ids.includes(x)));
       load();
       onChanged();
@@ -928,7 +945,7 @@ function ListDetail({
       return;
     setBusy(true);
     try {
-      await api.del(`/contact-lists/${list.id}`);
+      heldForApproval(await api.del<PendingResult>(`/contact-lists/${list.id}`));
       onDeleted();
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to delete list');

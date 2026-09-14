@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
-import { ApprovalEntity, ApprovalStatus, LiCampaignStatus, LinkedInAccountStatus, LiMessageSource, LiOutreachType } from '@prisma/client';
+import { ApprovalEntity, ApprovalStatus, ClientChangeKind, LiCampaignStatus, LinkedInAccountStatus, LiMessageSource, LiOutreachType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LinkedInSubscriptionService } from '../subscription/linkedin-subscription.service';
 import { LinkedInAccountsService } from '../accounts/linkedin-accounts.service';
@@ -71,9 +71,44 @@ export class LiPortalService {
   }
   async accountsList(userId: string, clientId: string) { await this.assertOwnsClient(userId, clientId); return this.accounts.list(clientId); }
   /** Client connects one of their own LinkedIn seats (bounded by the plan's seat limit). */
+  /**
+   * Connecting a LinkedIn account needs approval first. The first click opens a
+   * request; once an admin approves it, the next click issues the LinkedIn login
+   * link, so nothing reaches LinkedIn before that. An abandoned login can be
+   * retried on the same approval until the seat actually connects.
+   */
   async connectAccount(userId: string, tenantId: string, clientId: string, successRedirect?: string) {
     await this.assertOwnsClient(userId, clientId);
-    return this.accounts.createConnectLink(tenantId, clientId, successRedirect);
+    const grant = await this.approvals.openConnectGrant(tenantId, clientId);
+    if (grant) {
+      const link = await this.accounts.createConnectLink(tenantId, clientId, successRedirect);
+      await this.approvals.useConnectGrant(grant.id, link.accountId);
+      return link;
+    }
+    const [sub, used, reusable] = await Promise.all([
+      this.subs.getOrCreate(tenantId, clientId),
+      this.prisma.linkedInAccount.count({ where: { clientId } }),
+      this.prisma.linkedInAccount.count({
+        where: { clientId, status: LinkedInAccountStatus.PENDING, unipileAccountId: null },
+      }),
+    ]);
+    if (used >= sub.seats && !reusable) {
+      throw new BadRequestException('All LinkedIn seats are in use. Ask your account team for another seat.');
+    }
+    const res = await this.approvals.submitClientChange({
+      tenantId,
+      clientId,
+      requestedById: userId,
+      kind: ClientChangeKind.LI_ACCOUNT_CONNECT,
+      summary: 'Connect a LinkedIn account',
+      payload: { lines: [`Seats in use: ${used} of ${sub.seats}`] },
+    });
+    return {
+      pendingApproval: true,
+      message: res.duplicate
+        ? 'Your request to connect a LinkedIn account is already awaiting approval.'
+        : 'Request sent. Once our team approves it, click Connect account again to sign in to LinkedIn.',
+    };
   }
   /** Client removes one of their own seats (e.g. a stuck pending connection). */
   async removeAccount(userId: string, id: string) {
@@ -104,10 +139,10 @@ export class LiPortalService {
   }
   async updateCampaign(userId: string, id: string, dto: UpdateLiCampaignDto) { return this.editLive(userId, id, () => this.campaigns.update(id, dto)); }
   async listCampaigns(userId: string, clientId: string, view?: string) { await this.assertOwnsClient(userId, clientId); return this.campaigns.list(clientId, view); }
-  /** Client soft-deletes their own campaign (goes to the Deleted tab; restorable). */
-  async deleteCampaign(userId: string, id: string) { await this.assertCampaign(userId, id); return this.campaigns.setStatus(id, LiCampaignStatus.DELETED); }
-  /** Client archives their own campaign (moves it to the Archived tab). */
-  async archiveCampaign(userId: string, id: string) { await this.assertCampaign(userId, id); return this.campaigns.setStatus(id, LiCampaignStatus.ARCHIVED); }
+  /** Client soft-deletes their own campaign (Deleted tab; restorable) once approved. */
+  async deleteCampaign(userId: string, id: string) { return this.requestCampaignStatus(userId, id, ClientChangeKind.LI_CAMPAIGN_DELETE); }
+  /** Client archives their own campaign (Archived tab) once approved. */
+  async archiveCampaign(userId: string, id: string) { return this.requestCampaignStatus(userId, id, ClientChangeKind.LI_CAMPAIGN_ARCHIVE); }
   /** Client restores their own soft-deleted / archived campaign back to Draft. */
   async restoreCampaign(userId: string, id: string) { await this.assertCampaign(userId, id); return this.campaigns.restore(id); }
   /** Read-only upcoming send schedule + forecast for the client's own campaigns. */
@@ -139,6 +174,33 @@ export class LiPortalService {
    * PAUSED one drops it back to DRAFT — it can then only relaunch by being
    * submitted and approved again (Resume only works from PAUSED).
    */
+  /** Archive/delete a campaign on approval; until then it keeps its current state. */
+  private async requestCampaignStatus(userId: string, id: string, kind: ClientChangeKind) {
+    await this.assertCampaign(userId, id);
+    const c = await this.prisma.liCampaign.findUnique({
+      where: { id },
+      select: { tenantId: true, clientId: true, name: true, status: true },
+    });
+    if (!c) throw new BadRequestException('Campaign not found');
+    const verb = kind === ClientChangeKind.LI_CAMPAIGN_DELETE ? 'Delete' : 'Archive';
+    const res = await this.approvals.submitClientChange({
+      tenantId: c.tenantId,
+      clientId: c.clientId,
+      requestedById: userId,
+      kind,
+      targetId: id,
+      summary: `${verb} LinkedIn campaign · ${c.name}`,
+      payload: { lines: [`${verb} campaign: ${c.name} (currently ${c.status.toLowerCase()})`] },
+    });
+    return {
+      ok: true,
+      pendingApproval: true,
+      message: res.duplicate
+        ? `A ${verb.toLowerCase()} request for this campaign is already awaiting approval.`
+        : `${verb} request sent for approval. The campaign stays as it is until then.`,
+    };
+  }
+
   private async editLive<T>(userId: string, id: string, edit: () => Promise<T>): Promise<T> {
     await this.assertCampaign(userId, id);
     const c = await this.prisma.liCampaign.findUnique({ where: { id }, select: { status: true } });
@@ -194,6 +256,28 @@ export class LiPortalService {
   async inboxCounts(userId: string, clientId: string, accountId?: string) { await this.assertOwnsClient(userId, clientId); return this.inbox.counts(clientId, accountId); }
   async thread(userId: string, id: string) { await this.assertConversation(userId, id); return this.inbox.thread(id); }
   async markRead(userId: string, id: string) { await this.assertConversation(userId, id); return this.inbox.markRead(id); }
-  async reply(userId: string, id: string, text: string, source: LiMessageSource) { await this.assertConversation(userId, id); return this.inbox.reply(id, text, source); }
+  /** A client's reply is held for review and sent to LinkedIn only when approved. */
+  async reply(userId: string, id: string, text: string, source: LiMessageSource) {
+    await this.assertConversation(userId, id);
+    const body = (text ?? '').trim();
+    if (!body) throw new BadRequestException('Write a message first');
+    const conv = await this.prisma.liConversation.findUnique({
+      where: { id },
+      select: { lead: { select: { fullName: true, campaign: { select: { tenantId: true, clientId: true, name: true } } } } },
+    });
+    if (!conv) throw new BadRequestException('Conversation not found');
+    const { campaign } = conv.lead;
+    const to = conv.lead.fullName || 'this lead';
+    await this.approvals.submitClientChange({
+      tenantId: campaign.tenantId,
+      clientId: campaign.clientId,
+      requestedById: userId,
+      kind: ClientChangeKind.LI_REPLY,
+      targetId: id,
+      summary: `LinkedIn reply · ${to}`,
+      payload: { lines: [`To: ${to} (campaign ${campaign.name})`, `Message: ${body}`], data: { text: body, source } },
+    });
+    return { ok: true, pendingApproval: true, message: 'Reply sent for approval. It goes to LinkedIn once our team approves it.' };
+  }
   async aiFetch(userId: string, id: string) { await this.assertConversation(userId, id); return this.inbox.aiFetch(id); }
 }

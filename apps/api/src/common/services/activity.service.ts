@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { activityContext } from '../activity-context';
 
 interface LogInput {
   tenantId: string;
@@ -18,6 +19,9 @@ export class ActivityService {
   constructor(private prisma: PrismaService) {}
 
   log(input: LogInput) {
+    // Tell the global audit interceptor this request has its own entry.
+    const ctx = activityContext.getStore();
+    if (ctx) ctx.logged = true;
     return this.prisma.activityLog.create({
       data: {
         tenantId: input.tenantId,

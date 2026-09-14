@@ -7,6 +7,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { json, urlencoded } from 'express';
 import { AppModule } from './app.module';
 import { AuthService } from './auth/auth.service';
+import { activityContext } from './common/activity-context';
 
 /**
  * Fail fast (in production) when a security-critical secret is missing, weak, or
@@ -66,6 +67,11 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bodyParser: false });
   app.use(json({ limit: '8mb' }));
   app.use(urlencoded({ extended: true, limit: '8mb' }));
+  // Per-request audit context: lets the global activity-audit interceptor know
+  // whether a handler already wrote its own, more specific activity entry.
+  app.use((_req: Request, _res: Response, next: NextFunction) =>
+    activityContext.run({ logged: false }, next),
+  );
   const config = app.get(ConfigService);
   assertSecrets(config);
   warnLinkedInConfig(config);

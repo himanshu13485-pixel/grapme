@@ -1931,6 +1931,18 @@ enum ClientChangeKind {
   SETTINGS // apply operational client settings
   COHORT_STOP // stop a cohort permanently
   COHORT_DELETE // delete a cohort and its enrollments
+  CONTACT_CREATE // add one contact (optionally into a list)
+  CONTACT_UPDATE // edit one contact's fields / lists
+  CONTACT_DELETE // delete one contact
+  CONTACT_BULK_DELETE // delete several contacts
+  LIST_CREATE // create a contact list
+  LIST_DELETE // delete a contact list (contacts are kept)
+  LIST_MEMBERS_ADD // add contacts to a list
+  LIST_MEMBERS_REMOVE // remove contacts from a list
+  LI_REPLY // send a LinkedIn inbox reply
+  LI_CAMPAIGN_ARCHIVE // archive a LinkedIn campaign
+  LI_CAMPAIGN_DELETE // soft-delete a LinkedIn campaign
+  LI_ACCOUNT_CONNECT // permission to connect a LinkedIn account
 }
 
 /// A change made in the client portal, held for admin/sub-admin review

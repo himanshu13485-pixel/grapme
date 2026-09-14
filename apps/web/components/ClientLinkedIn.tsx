@@ -95,7 +95,12 @@ function ClientCampaigns({ clientId }: { clientId: string }) {
 
   async function act(id: string, path: string, okMsg?: string) {
     setBusy(id + path);
-    try { await api.post(`${BASE}/campaigns/${id}/${path}`); if (okMsg) alert(okMsg); await load(); }
+    try {
+      const r = await api.post<{ pendingApproval?: boolean; message?: string }>(`${BASE}/campaigns/${id}/${path}`);
+      if (r?.pendingApproval) alert(r.message ?? 'Sent for approval.');
+      else if (okMsg) alert(okMsg);
+      await load();
+    }
     catch (e: any) { alert(e.message ?? 'Action failed'); }
     finally { setBusy(''); }
   }

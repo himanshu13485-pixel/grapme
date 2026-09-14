@@ -179,10 +179,27 @@ export async function fetchBlob(path: string): Promise<Blob> {
   return res.blob();
 }
 
+/** Fired when the server holds a change for approval instead of applying it. */
+export const PENDING_CHANGE_EVENT = 'aeo:pending-change';
+
+function notePending<T>(p: Promise<T>): Promise<T> {
+  return p.then((r) => {
+    if (
+      typeof window !== 'undefined' &&
+      r &&
+      typeof r === 'object' &&
+      (r as { pendingApproval?: boolean }).pendingApproval
+    ) {
+      window.dispatchEvent(new Event(PENDING_CHANGE_EVENT));
+    }
+    return r;
+  });
+}
+
 export const api = {
   get: <T>(path: string) => request<T>('GET', path),
-  post: <T>(path: string, body?: unknown) => request<T>('POST', path, body),
-  put: <T>(path: string, body?: unknown) => request<T>('PUT', path, body),
-  patch: <T>(path: string, body?: unknown) => request<T>('PATCH', path, body),
-  del: <T>(path: string) => request<T>('DELETE', path),
+  post: <T>(path: string, body?: unknown) => notePending(request<T>('POST', path, body)),
+  put: <T>(path: string, body?: unknown) => notePending(request<T>('PUT', path, body)),
+  patch: <T>(path: string, body?: unknown) => notePending(request<T>('PATCH', path, body)),
+  del: <T>(path: string) => notePending(request<T>('DELETE', path)),
 };

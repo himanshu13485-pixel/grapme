@@ -40,12 +40,38 @@ const ACTION_LABEL: Record<string, string> = {
   GDPR_EXPORT: 'Exported contact (GDPR)',
   IMPERSONATE_USER: 'Logged in as another account',
   IMPERSONATE_CLIENT: 'Logged in as client',
+  EXTEND_CLIENT_VALIDITY: 'Added days to validity',
+  SET_CLIENT_VALIDITY: 'Set validity',
+  FORCE_EXPIRE_SUBSCRIPTION: 'Force-expired plan',
+  ACTIVATE_CLIENT: 'Activated client',
+  DEACTIVATE_CLIENT: 'Deactivated client',
+  UPDATE_CLIENT_OWNER: 'Updated client login details',
+  SET_CLIENT_LOGIN: 'Set client login',
+  DELETE_CLIENT_LOGIN: 'Deleted client login',
+  RESET_CLIENT_DEFAULT_PASSWORD: 'Reset client password',
+  REQUEST_CLIENT_LOGIN_EMAIL_CHANGE: 'Requested login email change',
+  DELETE_CLIENT: 'Deleted client',
+  DUPLICATE_MAILBOX: 'Duplicated mailbox',
+  APPROVE: 'Approved',
+  REJECT: 'Rejected',
+  CREATE_SUBADMIN: 'Created sub-admin',
+  UPDATE_SUBADMIN: 'Updated sub-admin',
+  DELETE_SUBADMIN: 'Deleted sub-admin',
+  CREATE_SALESPERSON: 'Created salesperson',
+  UPDATE_SALESPERSON: 'Updated salesperson',
+  DELETE_SALESPERSON: 'Deleted salesperson',
+  ASSIGN_SALESPERSON: 'Assigned salesperson',
+  UNASSIGN_SALESPERSON: 'Unassigned salesperson',
 };
 
 function actionLabel(a: string) {
   return (
     ACTION_LABEL[a] ??
-    a.toLowerCase().replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())
+    a
+      .toLowerCase()
+      .replace(/_/g, ' ')
+      .replace(/\bli\b/g, 'LinkedIn')
+      .replace(/^\w/, (c) => c.toUpperCase())
   );
 }
 
@@ -53,22 +79,26 @@ const ROLE_LABEL: Record<string, string> = {
   SUPER_ADMIN: 'Super admin',
   SUB_ADMIN: 'Sub admin',
   USER: 'User',
+  CLIENT: 'Client',
+  SALES: 'Salesperson',
 };
 
 function roleBadgeClass(role?: string) {
   if (role === 'SUPER_ADMIN') return 'bg-violet-100 text-violet-700';
   if (role === 'SUB_ADMIN') return 'bg-sky-100 text-sky-700';
+  if (role === 'CLIENT') return 'bg-emerald-100 text-emerald-700';
+  if (role === 'SALES') return 'bg-amber-100 text-amber-700';
   return 'bg-slate-100 text-slate-600';
 }
 
 function isDestructive(a: string) {
-  return /DELETE|STOP|ERASE|UNASSIGN/.test(a);
+  return /DELETE|STOP|ERASE|UNASSIGN|REJECT|EXPIRE|DEACTIVATE|REMOVE/.test(a);
 }
 
 /** Short human label for the affected record, from the change payload. */
 function targetLabel(l: Log): string {
   const o = (l.after ?? l.before ?? {}) as Record<string, unknown>;
-  const name = o.name ?? o.label ?? o.client;
+  const name = o.name ?? o.label ?? o.subject ?? o.email ?? o.title ?? o.client;
   if (typeof name === 'string' && name) return name;
   return l.entityId ? `${l.entityId.slice(0, 8)}…` : '—';
 }
@@ -86,6 +116,10 @@ function diffRows(l: Log): { key: string; before?: unknown; after?: unknown }[] 
 function fmtVal(v: unknown): string {
   if (v === null || v === undefined) return '—';
   if (typeof v === 'boolean') return v ? 'yes' : 'no';
+  if (typeof v === 'object') {
+    const json = JSON.stringify(v);
+    return json.length > 200 ? `${json.slice(0, 200)}…` : json;
+  }
   return String(v);
 }
 
@@ -162,6 +196,8 @@ export default function ActivityLogsPage() {
           <option value="SUPER_ADMIN">Super admin</option>
           <option value="SUB_ADMIN">Sub admin</option>
           <option value="USER">User</option>
+          <option value="CLIENT">Client</option>
+          <option value="SALES">Salesperson</option>
           <option value="SYSTEM">System</option>
         </select>
         <span className="ml-auto text-sm text-slate-400">

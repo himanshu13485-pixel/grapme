@@ -114,7 +114,8 @@ export function ThreadModal({ conversationId, onClose, base }: { conversationId:
     if (!text.trim()) return;
     setBusy('send'); setErr('');
     try {
-      await api.post(`${base}/conversations/${conversationId}/reply`, { text, source: usedAi ? 'AI' : 'MANUAL' });
+      const r = await api.post<{ pendingApproval?: boolean; message?: string }>(`${base}/conversations/${conversationId}/reply`, { text, source: usedAi ? 'AI' : 'MANUAL' });
+      if (r?.pendingApproval) alert(r.message ?? 'Reply sent for approval.');
       setText(''); setUsedAi(false);
       await load();
     } catch (e: any) { setErr(e.message ?? 'Send failed'); }

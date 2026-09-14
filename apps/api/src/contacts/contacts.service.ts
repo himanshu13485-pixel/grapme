@@ -4,8 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ApprovalEntity, ImportStatus, Role } from '@prisma/client';
-import { createHash } from 'crypto';
+import { ApprovalEntity, ClientChangeKind, ImportStatus, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { ActivityService } from '../common/services/activity.service';
@@ -21,10 +20,15 @@ import {
   ImportContactsDto,
   UpdateContactDto,
 } from './dto/contacts.dto';
+import {
+  checkContactCreate,
+  checkContactUpdate,
+  dedupeHash,
+  writeContactCreate,
+  writeContactUpdate,
+} from './contact-writes.util';
 
-export function dedupeHash(email: string): string {
-  return createHash('sha256').update(email.trim().toLowerCase()).digest('hex');
-}
+export { dedupeHash };
 
 @Injectable()
 export class ContactsService {
@@ -39,6 +43,40 @@ export class ContactsService {
   private async ownScope(user: AuthUser): Promise<Record<string, unknown>> {
     const ids = await ownedClientIds(this.prisma, user);
     return ids === null ? {} : { clientId: { in: ids } };
+  }
+
+  /** Hold a client-portal contact/list change for review; applied on approval. */
+  private async requestChange(
+    user: AuthUser,
+    clientId: string,
+    kind: ClientChangeKind,
+    targetId: string | null,
+    summary: string,
+    lines: Array<string | null | undefined | false>,
+    data: Record<string, unknown>,
+  ) {
+    const res = await this.approvals.submitClientChange({
+      tenantId: user.tenantId,
+      clientId,
+      requestedById: user.userId,
+      kind,
+      targetId,
+      summary,
+      payload: JSON.parse(JSON.stringify({ lines: lines.filter((l): l is string => !!l), data })),
+    });
+    return {
+      ok: true,
+      pendingApproval: true,
+      message: res.duplicate
+        ? 'This request is already awaiting approval.'
+        : 'Sent for approval. Nothing changes until our team approves it.',
+    };
+  }
+
+  /** "a@x.com, b@y.com and 12 more" for review lines. */
+  private emailSample(rows: { email: string }[]) {
+    const shown = rows.slice(0, 10).map((r) => r.email).join(', ');
+    return rows.length > 10 ? `${shown} and ${rows.length - 10} more` : shown;
   }
 
   async list(user: AuthUser, clientId?: string) {
@@ -62,136 +100,111 @@ export class ContactsService {
     }));
   }
 
-  /** Manual single add — immediately active, optionally added to a list. */
+  /** Manual single add, optionally into a list. A client-portal add is held for
+   *  review and written on approval. */
   async create(user: AuthUser, dto: CreateContactDto) {
-    const { listId, ...fields } = dto;
-    if (user.role === Role.CLIENT) {
-      await assertClientAccess(this.prisma, user, fields.clientId);
-      // Contacts are unique per tenant: a client must never overwrite one that
-      // belongs to another workspace.
-      const owned = (await ownedClientIds(this.prisma, user)) ?? [];
-      const existing = await this.prisma.contact.findUnique({
-        where: { tenantId_dedupeHash: { tenantId: user.tenantId, dedupeHash: dedupeHash(dto.email) } },
-        select: { clientId: true },
-      });
-      if (existing && !(existing.clientId && owned.includes(existing.clientId))) {
-        throw new ConflictException('This email address can’t be added to this workspace.');
-      }
+    if (user.role !== Role.CLIENT) {
+      return writeContactCreate(this.prisma, { tenantId: user.tenantId, userId: user.userId }, dto, null);
     }
-
-    const contact = await this.prisma.contact.upsert({
-      where: {
-        tenantId_dedupeHash: {
-          tenantId: user.tenantId,
-          dedupeHash: dedupeHash(dto.email),
-        },
-      },
-      update: {
-        email: fields.email,
-        firstName: fields.firstName,
-        lastName: fields.lastName,
-        company: fields.company,
-        country: fields.country,
-      },
-      create: {
-        tenantId: user.tenantId,
-        userId: user.userId,
-        email: fields.email,
-        firstName: fields.firstName,
-        lastName: fields.lastName,
-        company: fields.company,
-        country: fields.country,
-        clientId: fields.clientId || null,
-        dedupeHash: dedupeHash(dto.email),
-      },
-    });
-
-    // Optionally attach to an existing list (idempotent).
-    if (listId) {
-      const list = await this.prisma.contactList.findFirst({
-        where: { id: listId, tenantId: user.tenantId, ...(await this.ownScope(user)) },
-      });
-      if (!list) throw new NotFoundException('List not found');
-      await this.prisma.contactListMember.upsert({
-        where: { listId_contactId: { listId, contactId: contact.id } },
-        update: {},
-        create: { listId, contactId: contact.id },
-      });
-    }
-
-    return contact;
+    await assertClientAccess(this.prisma, user, dto.clientId);
+    const own = (await ownedClientIds(this.prisma, user)) ?? [];
+    await checkContactCreate(this.prisma, user.tenantId, dto, own);
+    const list = dto.listId
+      ? await this.prisma.contactList.findUnique({ where: { id: dto.listId }, select: { name: true } })
+      : null;
+    const name = [dto.firstName, dto.lastName].filter(Boolean).join(' ');
+    return this.requestChange(
+      user,
+      dto.clientId as string,
+      ClientChangeKind.CONTACT_CREATE,
+      null,
+      `Add contact · ${dto.email}`,
+      [
+        `Email: ${dto.email}`,
+        name && `Name: ${name}`,
+        dto.company && `Company: ${dto.company}`,
+        dto.country && `Country: ${dto.country}`,
+        list && `Add to list: ${list.name}`,
+      ],
+      { ...dto },
+    );
   }
 
-  /** Edit an existing contact's fields, status, and list memberships. */
+  /** Edit an existing contact's fields, status, and list memberships. A
+   *  client-portal edit is held for review and applied on approval. */
   async update(user: AuthUser, id: string, dto: UpdateContactDto) {
+    if (user.role !== Role.CLIENT) {
+      return writeContactUpdate(this.prisma, user.tenantId, id, dto, null);
+    }
+    const own = (await ownedClientIds(this.prisma, user)) ?? [];
     const existing = await this.prisma.contact.findFirst({
-      where: { id, tenantId: user.tenantId, ...(await this.ownScope(user)) },
+      where: { id, tenantId: user.tenantId, clientId: { in: own } },
+      include: { lists: { select: { list: { select: { id: true, name: true } } } } },
     });
     if (!existing) throw new NotFoundException('Contact not found');
+    await checkContactUpdate(this.prisma, user.tenantId, existing, dto, own);
 
-    const data: Record<string, unknown> = {
-      firstName: dto.firstName,
-      lastName: dto.lastName,
-      company: dto.company,
-      country: dto.country,
-    };
-    if (dto.status !== undefined) data.status = dto.status;
-    if (dto.clientId !== undefined) {
-      if (user.role === Role.CLIENT) await assertClientAccess(this.prisma, user, dto.clientId);
-      data.clientId = dto.clientId || null;
+    // Only what actually changes goes to the reviewer (the edit form resends every field).
+    const lines: string[] = [];
+    const before = existing as unknown as Record<string, unknown>;
+    const after = dto as unknown as Record<string, unknown>;
+    const FIELDS: [string, string][] = [
+      ['email', 'Email'],
+      ['firstName', 'First name'],
+      ['lastName', 'Last name'],
+      ['company', 'Company'],
+      ['country', 'Country'],
+      ['status', 'Status'],
+    ];
+    for (const [key, label] of FIELDS) {
+      if (after[key] === undefined) continue;
+      const from = String(before[key] ?? '');
+      const to = String(after[key] ?? '');
+      if (from !== to) lines.push(`${label}: ${from || '—'} → ${to || '—'}`);
     }
-
-    // Changing the email changes the dedupe hash — guard against collisions.
-    if (
-      dto.email !== undefined &&
-      dedupeHash(dto.email) !== existing.dedupeHash
-    ) {
-      const newHash = dedupeHash(dto.email);
-      const clash = await this.prisma.contact.findFirst({
-        where: { tenantId: user.tenantId, dedupeHash: newHash, NOT: { id } },
-      });
-      if (clash) {
-        throw new BadRequestException(
-          'Another contact already uses that email',
-        );
-      }
-      data.email = dto.email;
-      data.dedupeHash = newHash;
+    if (dto.clientId !== undefined && (dto.clientId || null) !== existing.clientId) {
+      lines.push('Move to another of your workspaces');
     }
-
-    const contact = await this.prisma.contact.update({
-      where: { id },
-      data,
-    });
-
-    // Sync list memberships to exactly match listIds (when provided).
     if (dto.listIds) {
-      const valid = await this.prisma.contactList.findMany({
-        where: { id: { in: dto.listIds }, tenantId: user.tenantId, ...(await this.ownScope(user)) },
-        select: { id: true },
+      const current = new Map(existing.lists.map((l) => [l.list.id, l.list.name]));
+      const wanted = await this.prisma.contactList.findMany({
+        where: { id: { in: dto.listIds }, tenantId: user.tenantId, clientId: { in: own } },
+        select: { id: true, name: true },
       });
-      const desired = valid.map((v) => v.id);
-      await this.prisma.contactListMember.deleteMany({
-        where: { contactId: id, listId: { notIn: desired } },
-      });
-      for (const listId of desired) {
-        await this.prisma.contactListMember.upsert({
-          where: { listId_contactId: { listId, contactId: id } },
-          update: {},
-          create: { listId, contactId: id },
-        });
-      }
+      const added = wanted.filter((l) => !current.has(l.id)).map((l) => l.name);
+      const removed = [...current].filter(([lid]) => !wanted.some((w) => w.id === lid)).map(([, n]) => n);
+      if (added.length) lines.push(`Add to lists: ${added.join(', ')}`);
+      if (removed.length) lines.push(`Remove from lists: ${removed.join(', ')}`);
     }
-
-    return contact;
+    if (lines.length === 0) return { ...existing, pendingApproval: false };
+    return this.requestChange(
+      user,
+      existing.clientId as string,
+      ClientChangeKind.CONTACT_UPDATE,
+      id,
+      `Edit contact · ${existing.email}`,
+      [`Contact: ${existing.email}`, ...lines],
+      { ...dto },
+    );
   }
 
-  /** Permanently delete a contact (memberships cascade). */
+  /** Permanently delete a contact (memberships cascade). A client's delete is a request. */
   async remove(user: AuthUser, id: string) {
     const existing = await this.prisma.contact.findFirst({
       where: { id, tenantId: user.tenantId, ...(await this.ownScope(user)) },
     });
     if (!existing) throw new NotFoundException('Contact not found');
+    if (user.role === Role.CLIENT) {
+      return this.requestChange(
+        user,
+        existing.clientId as string,
+        ClientChangeKind.CONTACT_DELETE,
+        id,
+        `Delete contact · ${existing.email}`,
+        [`Delete contact: ${existing.email}`],
+        {},
+      );
+    }
     await this.prisma.contact.delete({ where: { id } });
     return { ok: true };
   }
@@ -200,8 +213,38 @@ export class ContactsService {
   async removeMany(user: AuthUser, ids: string[]) {
     const clean = [...new Set((ids ?? []).filter(Boolean))];
     if (clean.length === 0) return { ok: true, deleted: 0 };
+    if (user.role === Role.CLIENT) {
+      const rows = await this.prisma.contact.findMany({
+        where: { id: { in: clean }, tenantId: user.tenantId, ...(await this.ownScope(user)) },
+        select: { id: true, email: true, clientId: true },
+      });
+      if (rows.length === 0) return { ok: true, deleted: 0 };
+      // One request per workspace, so each is reviewed and applied against its own client.
+      const byClient = new Map<string, typeof rows>();
+      for (const r of rows) {
+        const key = r.clientId as string;
+        byClient.set(key, [...(byClient.get(key) ?? []), r]);
+      }
+      for (const [clientId, group] of byClient) {
+        await this.requestChange(
+          user,
+          clientId,
+          ClientChangeKind.CONTACT_BULK_DELETE,
+          null,
+          `Delete ${group.length} contact${group.length === 1 ? '' : 's'}`,
+          [`Delete: ${this.emailSample(group)}`],
+          { ids: group.map((g) => g.id) },
+        );
+      }
+      return {
+        ok: true,
+        deleted: 0,
+        pendingApproval: true,
+        message: `Request to delete ${rows.length} contact${rows.length === 1 ? '' : 's'} sent for approval. Nothing is deleted until our team approves it.`,
+      };
+    }
     const res = await this.prisma.contact.deleteMany({
-      where: { id: { in: clean }, tenantId: user.tenantId, ...(await this.ownScope(user)) },
+      where: { id: { in: clean }, tenantId: user.tenantId },
     });
     return { ok: true, deleted: res.count };
   }
@@ -223,7 +266,18 @@ export class ContactsService {
   }
 
   async createList(user: AuthUser, dto: CreateListDto) {
-    if (user.role === Role.CLIENT) await assertClientAccess(this.prisma, user, dto.clientId);
+    if (user.role === Role.CLIENT) {
+      await assertClientAccess(this.prisma, user, dto.clientId);
+      return this.requestChange(
+        user,
+        dto.clientId as string,
+        ClientChangeKind.LIST_CREATE,
+        null,
+        `New list · ${dto.name}`,
+        [`New list: ${dto.name}`, dto.description && `Description: ${dto.description}`],
+        { name: dto.name, description: dto.description ?? null },
+      );
+    }
     return this.prisma.contactList.create({
       data: {
         tenantId: user.tenantId,
@@ -358,8 +412,21 @@ export class ContactsService {
   async removeList(user: AuthUser, id: string) {
     const list = await this.prisma.contactList.findFirst({
       where: { id, tenantId: user.tenantId, ...(await this.ownScope(user)) },
+      include: { _count: { select: { members: true } } },
     });
     if (!list) throw new NotFoundException('List not found');
+    if (user.role === Role.CLIENT) {
+      const n = list._count.members;
+      return this.requestChange(
+        user,
+        list.clientId as string,
+        ClientChangeKind.LIST_DELETE,
+        id,
+        `Delete list · ${list.name}`,
+        [`Delete list: ${list.name} (${n} contact${n === 1 ? '' : 's'}; the contacts themselves are kept)`],
+        {},
+      );
+    }
     await this.prisma.contactList.delete({ where: { id } });
     return { ok: true };
   }
@@ -373,8 +440,21 @@ export class ContactsService {
 
     const valid = await this.prisma.contact.findMany({
       where: { id: { in: contactIds }, tenantId: user.tenantId, ...(await this.ownScope(user)) },
-      select: { id: true },
+      select: { id: true, email: true },
     });
+    if (user.role === Role.CLIENT) {
+      if (valid.length === 0) return { added: 0 };
+      const held = await this.requestChange(
+        user,
+        list.clientId as string,
+        ClientChangeKind.LIST_MEMBERS_ADD,
+        listId,
+        `Add ${valid.length} to list · ${list.name}`,
+        [`List: ${list.name}`, `Add: ${this.emailSample(valid)}`],
+        { contactIds: valid.map((c) => c.id) },
+      );
+      return { added: 0, ...held };
+    }
     for (const c of valid) {
       await this.prisma.contactListMember.upsert({
         where: { listId_contactId: { listId, contactId: c.id } },
@@ -392,6 +472,24 @@ export class ContactsService {
     });
     if (!list) throw new NotFoundException('List not found');
 
+    if (user.role === Role.CLIENT) {
+      const members = await this.prisma.contactListMember.findMany({
+        where: { listId, contactId: { in: contactIds } },
+        select: { contact: { select: { id: true, email: true } } },
+      });
+      if (members.length === 0) return { removed: 0 };
+      const rows = members.map((m) => m.contact);
+      const held = await this.requestChange(
+        user,
+        list.clientId as string,
+        ClientChangeKind.LIST_MEMBERS_REMOVE,
+        listId,
+        `Remove ${rows.length} from list · ${list.name}`,
+        [`List: ${list.name}`, `Remove: ${this.emailSample(rows)}`],
+        { contactIds: rows.map((c) => c.id) },
+      );
+      return { removed: 0, ...held };
+    }
     const res = await this.prisma.contactListMember.deleteMany({
       where: { listId, contactId: { in: contactIds } },
     });

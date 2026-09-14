@@ -5,6 +5,8 @@ import {
   CampaignStatus,
   ImportStatus,
   LiCampaignStatus,
+  LinkedInAccountStatus,
+  LiMessageSource,
   MailboxStatus,
   ClientChangeKind,
   CohortStatus,
@@ -19,6 +21,13 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ActivityService } from '../common/services/activity.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { LiCampaignsService } from '../linkedin/campaigns/li-campaigns.service';
+import { LiInboxService } from '../linkedin/inbox/li-inbox.service';
+import {
+  ContactCreateInput,
+  ContactUpdateInput,
+  writeContactCreate,
+  writeContactUpdate,
+} from '../contacts/contact-writes.util';
 import { ListApprovalsQuery } from './dto/approvals.dto';
 import { cohortRef } from '../common/cohort-ref.util';
 import {
@@ -43,7 +52,36 @@ interface ApprovalMeta {
 interface ChangePayload {
   steps?: SequenceStepInput[];
   changes?: Record<string, { from: unknown; to: unknown }>;
+  /** Review lines written when the request was made (contacts, lists, LinkedIn). */
+  lines?: string[];
+  /** Kind-specific input used to apply the change. */
+  data?: Record<string, unknown>;
+  /** LI_ACCOUNT_CONNECT: the seat an approved request was used to start. */
+  accountId?: string;
 }
+
+/** Repeating one of these while one is still waiting is a no-op. */
+const ONE_SHOT_CHANGES: ClientChangeKind[] = [
+  ClientChangeKind.COHORT_STOP,
+  ClientChangeKind.COHORT_DELETE,
+  ClientChangeKind.CONTACT_DELETE,
+  ClientChangeKind.LIST_DELETE,
+  ClientChangeKind.LI_CAMPAIGN_ARCHIVE,
+  ClientChangeKind.LI_CAMPAIGN_DELETE,
+  ClientChangeKind.LI_ACCOUNT_CONNECT,
+];
+/** A newer one of these replaces the one still waiting (settings are merged). */
+const SUPERSEDING_CHANGES: ClientChangeKind[] = [
+  ClientChangeKind.SEQUENCE,
+  ClientChangeKind.COHORT_SEQUENCE,
+  ClientChangeKind.SETTINGS,
+  ClientChangeKind.CONTACT_UPDATE,
+];
+// Everything else (new contacts and lists, list membership, bulk deletes,
+// LinkedIn replies) queues up independently.
+
+const idsIn = (v: unknown): string[] =>
+  Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
 
 @Injectable()
 export class ApprovalsService {
@@ -51,6 +89,7 @@ export class ApprovalsService {
     private prisma: PrismaService,
     private activity: ActivityService,
     private liCampaigns: LiCampaignsService,
+    private liInbox: LiInboxService,
   ) {}
 
   /** Called by other modules when a user submits an entity for review. */
@@ -75,6 +114,7 @@ export class ApprovalsService {
       action: 'SUBMIT_FOR_APPROVAL',
       entityType: params.entityType,
       entityId: params.entityId,
+      after: await this.describeForLog(approval),
     });
     return approval;
   }
@@ -116,10 +156,7 @@ export class ApprovalsService {
       : new Set<string>();
     const pending = earlier.filter((e) => waiting.has(e.id));
 
-    const oneShot =
-      params.kind === ClientChangeKind.COHORT_STOP ||
-      params.kind === ClientChangeKind.COHORT_DELETE;
-    if (oneShot && pending.length) {
+    if (ONE_SHOT_CHANGES.includes(params.kind) && pending.length) {
       return { id: pending[pending.length - 1].id, duplicate: true };
     }
 
@@ -133,7 +170,7 @@ export class ApprovalsService {
       summary = `Settings · ${Object.keys(merged).map((k) => CLIENT_FIELD_LABEL[k] ?? k).join(', ')}`;
     }
 
-    if (pending.length) {
+    if (pending.length && SUPERSEDING_CHANGES.includes(params.kind)) {
       await this.prisma.approval.updateMany({
         where: {
           entityType: ApprovalEntity.CLIENT_CHANGE,
@@ -165,6 +202,122 @@ export class ApprovalsService {
       entityId: request.id,
     });
     return { id: request.id, duplicate: false };
+  }
+
+  /**
+   * An approved "connect a LinkedIn account" request the client hasn't finished
+   * using. It stays usable while the seat it started is still unconnected, so an
+   * abandoned LinkedIn login can be retried without asking again.
+   */
+  async openConnectGrant(tenantId: string, clientId: string) {
+    const requests = await this.prisma.clientChangeRequest.findMany({
+      where: { tenantId, clientId, kind: ClientChangeKind.LI_ACCOUNT_CONNECT },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, payload: true, createdAt: true },
+    });
+    if (!requests.length) return null;
+    const approved = new Set(
+      (
+        await this.prisma.approval.findMany({
+          where: {
+            tenantId,
+            entityType: ApprovalEntity.CLIENT_CHANGE,
+            status: ApprovalStatus.APPROVED,
+            entityId: { in: requests.map((r) => r.id) },
+          },
+          select: { entityId: true },
+        })
+      ).map((a) => a.entityId),
+    );
+    for (const r of requests) {
+      if (!approved.has(r.id)) continue;
+      const accountId = (r.payload as ChangePayload)?.accountId;
+      if (!accountId) return { id: r.id, createdAt: r.createdAt };
+      const seat = await this.prisma.linkedInAccount.findUnique({
+        where: { id: accountId },
+        select: { status: true, unipileAccountId: true },
+      });
+      if (seat && seat.status === LinkedInAccountStatus.PENDING && !seat.unipileAccountId) {
+        return { id: r.id, createdAt: r.createdAt };
+      }
+    }
+    return null;
+  }
+
+  /** Record which seat an approved connect request started. */
+  async useConnectGrant(requestId: string, accountId: string) {
+    const r = await this.prisma.clientChangeRequest.findUnique({
+      where: { id: requestId },
+      select: { payload: true },
+    });
+    await this.prisma.clientChangeRequest.update({
+      where: { id: requestId },
+      data: { payload: { ...((r?.payload as Record<string, unknown>) ?? {}), accountId } as Prisma.InputJsonValue },
+    });
+  }
+
+  /** What is waiting for review in one workspace, for the client portal. */
+  async pendingForClient(user: AuthUser, clientId: string) {
+    const client = await this.prisma.client.findFirst({
+      where: {
+        id: clientId,
+        tenantId: user.tenantId,
+        ...(user.role === Role.CLIENT ? { ownerUserId: user.userId } : {}),
+      },
+      select: { id: true },
+    });
+    if (!client) throw new NotFoundException('Workspace not found');
+
+    const [requests, cohorts, grant] = await Promise.all([
+      this.prisma.clientChangeRequest.findMany({
+        where: { clientId },
+        orderBy: { createdAt: 'desc' },
+        take: 500,
+        select: { id: true, kind: true, summary: true, createdAt: true },
+      }),
+      this.prisma.cohort.findMany({
+        where: { clientId, status: CohortStatus.PENDING },
+        select: { id: true, label: true, monthIndex: true, subIndex: true, createdAt: true },
+      }),
+      this.openConnectGrant(user.tenantId, clientId),
+    ]);
+    const waiting = requests.length
+      ? new Set(
+          (
+            await this.prisma.approval.findMany({
+              where: {
+                tenantId: user.tenantId,
+                entityType: ApprovalEntity.CLIENT_CHANGE,
+                status: ApprovalStatus.PENDING,
+                entityId: { in: requests.map((r) => r.id) },
+              },
+              select: { entityId: true },
+            })
+          ).map((a) => a.entityId),
+        )
+      : new Set<string>();
+
+    const items: { id: string; kind: string; summary: string; createdAt: Date; ready?: boolean }[] = [
+      ...requests
+        .filter((r) => waiting.has(r.id))
+        .map((r) => ({ id: r.id, kind: r.kind as string, summary: r.summary, createdAt: r.createdAt })),
+      ...cohorts.map((c) => ({
+        id: c.id,
+        kind: 'COHORT',
+        summary: `New cohort ${cohortRef(c.monthIndex, c.subIndex)} · ${c.label}`,
+        createdAt: c.createdAt,
+      })),
+    ];
+    if (grant) {
+      items.push({
+        id: grant.id,
+        kind: ClientChangeKind.LI_ACCOUNT_CONNECT,
+        summary: 'LinkedIn account connection approved. Click Connect account to sign in to LinkedIn.',
+        createdAt: grant.createdAt,
+        ready: true,
+      });
+    }
+    return items.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 
   async list(reviewer: AuthUser, query: ListApprovalsQuery) {
@@ -452,7 +605,9 @@ export class ApprovalsService {
       changeRows.map((r): [string, ApprovalMeta] => {
         const p = (r.payload ?? {}) as ChangePayload;
         let lines: string[];
-        if (r.kind === ClientChangeKind.SEQUENCE || r.kind === ClientChangeKind.COHORT_SEQUENCE) {
+        if (p.lines?.length) {
+          lines = p.lines;
+        } else if (r.kind === ClientChangeKind.SEQUENCE || r.kind === ClientChangeKind.COHORT_SEQUENCE) {
           lines = [...(p.steps ?? [])]
             .sort((a, b) => a.stageOrder - b.stageOrder)
             .map((step, i) => {
@@ -535,16 +690,39 @@ export class ApprovalsService {
     return out;
   }
 
+  /** What an approval is about, for the activity log: item, company and the reviewed detail. */
+  private async describeForLog(a: { id: string; entityType: ApprovalEntity; entityId: string }) {
+    try {
+      const meta = (await this.resolveTargets([a])).get(a.id);
+      const details =
+        meta?.detail?.lines?.join(' · ') ??
+        (meta?.detail?.subject ? `Subject: ${meta.detail.subject}` : undefined);
+      return JSON.parse(
+        JSON.stringify({
+          name: meta?.target,
+          client: meta?.clientName,
+          type: a.entityType,
+          details: details?.slice(0, 1000),
+        }),
+      ) as Record<string, unknown>;
+    } catch {
+      return { type: a.entityType };
+    }
+  }
+
   async approve(reviewer: AuthUser, approvalId: string) {
     const approval = await this.getPending(reviewer.tenantId, approvalId);
+    // Described before it's applied: approving a delete removes the thing it names.
+    const what = await this.describeForLog(approval);
     await this.transitionEntity(approval.entityType, approval.entityId, true);
-    return this.finalize(reviewer, approvalId, ApprovalStatus.APPROVED);
+    return this.finalize(reviewer, approvalId, ApprovalStatus.APPROVED, undefined, what);
   }
 
   async reject(reviewer: AuthUser, approvalId: string, reason: string) {
     const approval = await this.getPending(reviewer.tenantId, approvalId);
+    const what = await this.describeForLog(approval);
     await this.transitionEntity(approval.entityType, approval.entityId, false, reason);
-    return this.finalize(reviewer, approvalId, ApprovalStatus.REJECTED, reason);
+    return this.finalize(reviewer, approvalId, ApprovalStatus.REJECTED, reason, what);
   }
 
   private async getPending(tenantId: string, approvalId: string) {
@@ -560,6 +738,7 @@ export class ApprovalsService {
     approvalId: string,
     status: ApprovalStatus,
     reason?: string,
+    what?: Record<string, unknown>,
   ) {
     const updated = await this.prisma.approval.update({
       where: { id: approvalId },
@@ -576,7 +755,7 @@ export class ApprovalsService {
       action: status === ApprovalStatus.APPROVED ? 'APPROVE' : 'REJECT',
       entityType: updated.entityType,
       entityId: updated.entityId,
-      after: { reason },
+      after: { ...(what ?? {}), reason },
     });
     return updated;
   }
@@ -739,6 +918,15 @@ export class ApprovalsService {
     const req = await this.prisma.clientChangeRequest.findUnique({ where: { id: requestId } });
     if (!req) return;
     const p = (req.payload ?? {}) as ChangePayload;
+    // Workspaces the requesting client owns, re-read now so the checks the
+    // direct path runs are enforced again at apply time.
+    const requesterClients = async () =>
+      (
+        await this.prisma.client.findMany({
+          where: { tenantId: req.tenantId, ownerUserId: req.requestedById },
+          select: { id: true },
+        })
+      ).map((c) => c.id);
     switch (req.kind) {
       case ClientChangeKind.SEQUENCE: {
         const steps = p.steps ?? [];
@@ -794,6 +982,105 @@ export class ApprovalsService {
         if (req.targetId) {
           await this.prisma.cohort.deleteMany({ where: { id: req.targetId, clientId: req.clientId } });
         }
+        break;
+      case ClientChangeKind.CONTACT_CREATE:
+        await writeContactCreate(
+          this.prisma,
+          { tenantId: req.tenantId, userId: req.requestedById },
+          p.data as unknown as ContactCreateInput,
+          await requesterClients(),
+        );
+        break;
+      case ClientChangeKind.CONTACT_UPDATE:
+        if (req.targetId) {
+          await writeContactUpdate(
+            this.prisma,
+            req.tenantId,
+            req.targetId,
+            p.data as unknown as ContactUpdateInput,
+            await requesterClients(),
+          );
+        }
+        break;
+      case ClientChangeKind.CONTACT_DELETE:
+        if (req.targetId) {
+          await this.prisma.contact.deleteMany({ where: { id: req.targetId, clientId: req.clientId } });
+        }
+        break;
+      case ClientChangeKind.CONTACT_BULK_DELETE:
+        await this.prisma.contact.deleteMany({
+          where: { id: { in: idsIn(p.data?.ids) }, clientId: req.clientId },
+        });
+        break;
+      case ClientChangeKind.LIST_CREATE:
+        await this.prisma.contactList.create({
+          data: {
+            tenantId: req.tenantId,
+            userId: req.requestedById,
+            clientId: req.clientId,
+            name: String(p.data?.name ?? 'New list'),
+            description: typeof p.data?.description === 'string' ? p.data.description : null,
+          },
+        });
+        break;
+      case ClientChangeKind.LIST_DELETE:
+        if (req.targetId) {
+          await this.prisma.contactList.deleteMany({ where: { id: req.targetId, clientId: req.clientId } });
+        }
+        break;
+      case ClientChangeKind.LIST_MEMBERS_ADD: {
+        if (!req.targetId) break;
+        const listId = req.targetId;
+        const live = await this.prisma.contactList.count({ where: { id: listId, clientId: req.clientId } });
+        if (!live) break;
+        const contacts = await this.prisma.contact.findMany({
+          where: { id: { in: idsIn(p.data?.contactIds) }, clientId: { in: await requesterClients() } },
+          select: { id: true },
+        });
+        for (const c of contacts) {
+          await this.prisma.contactListMember.upsert({
+            where: { listId_contactId: { listId, contactId: c.id } },
+            update: {},
+            create: { listId, contactId: c.id },
+          });
+        }
+        break;
+      }
+      case ClientChangeKind.LIST_MEMBERS_REMOVE: {
+        if (!req.targetId) break;
+        const live = await this.prisma.contactList.count({ where: { id: req.targetId, clientId: req.clientId } });
+        if (!live) break;
+        await this.prisma.contactListMember.deleteMany({
+          where: { listId: req.targetId, contactId: { in: idsIn(p.data?.contactIds) } },
+        });
+        break;
+      }
+      case ClientChangeKind.LI_REPLY:
+        // Sends now, from the client's seat. If LinkedIn rejects the send the
+        // approval throws and stays pending, so the reviewer sees the failure.
+        if (req.targetId) {
+          await this.liInbox.reply(
+            req.targetId,
+            String(p.data?.text ?? ''),
+            p.data?.source === LiMessageSource.AI ? LiMessageSource.AI : LiMessageSource.MANUAL,
+          );
+        }
+        break;
+      case ClientChangeKind.LI_CAMPAIGN_ARCHIVE:
+      case ClientChangeKind.LI_CAMPAIGN_DELETE: {
+        if (!req.targetId) break;
+        const target =
+          req.kind === ClientChangeKind.LI_CAMPAIGN_DELETE ? LiCampaignStatus.DELETED : LiCampaignStatus.ARCHIVED;
+        const c = await this.prisma.liCampaign.findFirst({
+          where: { id: req.targetId, clientId: req.clientId },
+          select: { status: true },
+        });
+        if (c && c.status !== target) await this.liCampaigns.setStatus(req.targetId, target);
+        break;
+      }
+      case ClientChangeKind.LI_ACCOUNT_CONNECT:
+        // The approval is the permission: the client's next Connect click issues
+        // the LinkedIn login link (see openConnectGrant).
         break;
     }
   }

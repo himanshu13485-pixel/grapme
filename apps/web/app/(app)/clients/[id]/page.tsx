@@ -19,6 +19,7 @@ import { ValidityBadge } from '@/components/Validity';
 import { LiSubscription, LI_DEFAULTS } from '@/lib/linkedin';
 import { usePlans } from '@/lib/plans';
 import { cohortRef } from '@/lib/cohorts';
+import { PendingChanges } from '@/components/PendingChanges';
 
 function hourLabel(h: number): string {
   const ampm = h < 12 ? 'AM' : 'PM';
@@ -373,6 +374,17 @@ export default function ClientCockpit() {
         ))}
       </div>
 
+      {isClient && (
+        <div className="mb-4 space-y-2">
+          <p className="text-xs text-slate-500">
+            Changes you make here are reviewed by our team before they take effect: templates, cohorts,
+            sequences, settings, contacts and lists, mailbox logins, and on LinkedIn your replies,
+            campaign archive/delete and account connections.
+          </p>
+          <PendingChanges clientId={client.id} />
+        </div>
+      )}
+
       {(channel === 'email' ? emailOn : linkedInOn) ? (
         channel === 'linkedin' ? (
           isClient ? (
@@ -397,13 +409,6 @@ export default function ClientCockpit() {
                 { key: 'inbox', label: 'Inbox & Sent', count: inboxUnread || undefined },
               ]}
             />
-
-            {isClient && (
-              <p className="mb-3 text-xs text-slate-500">
-                New templates and cohorts, sequence and settings changes, cohort stop/delete requests and
-                mailbox login changes are reviewed by our team before they take effect.
-              </p>
-            )}
 
             {tab === 'mailboxes' && <MailboxesManager clientId={client.id} />}
             {tab === 'inbox' && <MailboxManager clientId={client.id} />}
