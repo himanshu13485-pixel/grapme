@@ -398,16 +398,23 @@ export default function ClientCockpit() {
               ]}
             />
 
+            {isClient && (
+              <p className="mb-3 text-xs text-slate-500">
+                New templates and cohorts, sequence and settings changes, cohort stop/delete requests and
+                mailbox login changes are reviewed by our team before they take effect.
+              </p>
+            )}
+
             {tab === 'mailboxes' && <MailboxesManager clientId={client.id} />}
             {tab === 'inbox' && <MailboxManager clientId={client.id} />}
             {tab === 'rotation' && !isClient && (
               <MailboxGroup client={client} allMailboxes={allMailboxes} onChanged={() => { load(); flash('Mailbox group updated.'); }} />
             )}
             {tab === 'sequence' && (
-              <SequenceEditor client={client} templates={templates} onChanged={() => { load(); flash('Sequence saved.'); }} />
+              <SequenceEditor client={client} templates={templates} onChanged={(msg) => { load(); flash(msg ?? 'Sequence saved.'); }} />
             )}
             {tab === 'cohorts' && (
-              <Cohorts client={client} cohorts={cohorts} lists={lists} templates={templates} onChanged={() => { load(); flash('Cohort uploaded & enrolled.'); }} />
+              <Cohorts client={client} cohorts={cohorts} lists={lists} templates={templates} onChanged={(msg) => { load(); flash(msg ?? 'Cohort updated.'); }} />
             )}
             {tab === 'contacts' && <ContactsManager clientId={client.id} />}
             {tab === 'templates' && <TemplatesManager clientId={client.id} />}
@@ -648,7 +655,8 @@ function SequenceEditor({
   client: Client;
   templates: Template[];
   cohortId?: string; // when set, edits that cohort's OWN sequence
-  onChanged: () => void;
+  /** Called after saving; `message` is set when the change is held for approval. */
+  onChanged: (message?: string) => void;
 }) {
   // Active mailboxes drive how many template variants each stage can hold — one
   // per mailbox (by rotation slot) so each mailbox sends its own message.
@@ -749,8 +757,8 @@ function SequenceEditor({
       const url = cohortId
         ? `/cohorts/${cohortId}/sequence`
         : `/clients/${client.id}/sequence`;
-      await api.put(url, { steps });
-      onChanged();
+      const res = await api.put<{ pendingApproval?: boolean; message?: string }>(url, { steps });
+      onChanged(res && !Array.isArray(res) && res.pendingApproval ? res.message : undefined);
     } finally {
       setBusy(false);
     }
@@ -912,13 +920,13 @@ function ReportSettings({ client, onChanged }: { client: Client; onChanged: () =
     setBusy(true);
     setNote('');
     try {
-      await api.patch(`/clients/${client.id}`, {
+      const res = await api.patch<{ pendingApproval?: boolean; message?: string }>(`/clients/${client.id}`, {
         reportDaily: daily,
         reportWeekly: weekly,
         reportMonthly: monthly,
         reportHour: Number(hour),
       });
-      setNote('Report schedule saved.');
+      setNote(res?.pendingApproval ? (res.message ?? 'Sent for approval.') : 'Report schedule saved.');
       onChanged();
     } catch (e) {
       setNote(e instanceof Error ? e.message : 'Failed');
@@ -1038,8 +1046,11 @@ function Cohorts({
   cohorts: CohortStat[];
   lists: ContactList[];
   templates: Template[];
-  onChanged: () => void;
+  /** `message` replaces the default toast (e.g. when a change is held for approval). */
+  onChanged: (message?: string) => void;
 }) {
+  const { user } = useAuth();
+  const isClient = user?.role === 'CLIENT';
   const [listId, setListId] = useState('');
   const [startDate, setStartDate] = useState('');
   // '' = start the next month in the series; otherwise join that month as a new
@@ -1094,7 +1105,7 @@ function Cohorts({
     setBusy(true);
     setErr('');
     try {
-      await api.post(`/clients/${client.id}/cohorts`, {
+      const res = await api.post<{ pendingApproval?: boolean; message?: string }>(`/clients/${client.id}/cohorts`, {
         listId,
         monthIndex: targetMonth ? Number(targetMonth) : undefined,
         startDate: startDate ? new Date(startDate).toISOString() : undefined,
@@ -1102,7 +1113,7 @@ function Cohorts({
       setListId('');
       setStartDate('');
       setTargetMonth('');
-      onChanged();
+      onChanged(res?.pendingApproval ? res.message : 'Cohort uploaded & enrolled.');
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed');
     } finally {
@@ -1113,12 +1124,12 @@ function Cohorts({
   async function saveAuto() {
     setErr('');
     try {
-      await api.patch(`/clients/${client.id}`, {
+      const res = await api.patch<{ pendingApproval?: boolean; message?: string }>(`/clients/${client.id}`, {
         autoCohortEnabled: autoEnabled,
         autoCohortListId: autoListId || undefined,
         autoCohortDay: Number(autoDay),
       });
-      onChanged();
+      onChanged(res?.pendingApproval ? res.message : 'Auto-cohort settings saved.');
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed');
     }
@@ -1128,8 +1139,8 @@ function Cohorts({
     setBusy(true);
     setErr('');
     try {
-      await api.post(`/clients/${client.id}/auto-cohort/run`);
-      onChanged();
+      const res = await api.post<{ pendingApproval?: boolean; message?: string }>(`/clients/${client.id}/auto-cohort/run`);
+      onChanged(res?.pendingApproval ? res.message : 'Next cohort created.');
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed');
     } finally {
@@ -1138,10 +1149,14 @@ function Cohorts({
   }
 
   async function lifecycle(cohortId: string, action: 'pause' | 'resume' | 'stop') {
-    if (action === 'stop' && !confirm('Stop this cohort permanently? Remaining contacts will not be emailed.')) return;
+    const stopPrompt = isClient
+      ? 'Request to stop this cohort? Our team reviews it; the cohort keeps its current state until then.'
+      : 'Stop this cohort permanently? Remaining contacts will not be emailed.';
+    if (action === 'stop' && !confirm(stopPrompt)) return;
     try {
-      await api.post(`/cohorts/${cohortId}/${action}`);
-      onChanged();
+      const res = await api.post<{ pendingApproval?: boolean; message?: string }>(`/cohorts/${cohortId}/${action}`);
+      const done = { pause: 'Cohort paused.', resume: 'Cohort resumed.', stop: 'Cohort stopped.' }[action];
+      onChanged(res?.pendingApproval ? res.message : done);
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed');
     }
@@ -1162,10 +1177,15 @@ function Cohorts({
   }
 
   async function deleteCohort(cohortId: string) {
-    if (!confirm('Delete this cohort and all its enrollments permanently?')) return;
+    const target = cohorts.find((c) => c.id === cohortId);
+    const asRequest = isClient && target?.status !== 'PENDING';
+    const prompt = asRequest
+      ? 'Request to delete this cohort? Our team reviews it; nothing changes until then.'
+      : 'Delete this cohort and all its enrollments permanently?';
+    if (!confirm(prompt)) return;
     try {
-      await api.del(`/cohorts/${cohortId}`);
-      onChanged();
+      const res = await api.del<{ pendingApproval?: boolean; message?: string }>(`/cohorts/${cohortId}`);
+      onChanged(res?.pendingApproval ? res.message : 'Cohort deleted.');
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Failed');
     }
@@ -1243,12 +1263,18 @@ function Cohorts({
                 const v = e.target.checked;
                 setAutoEnabled(v);
                 try {
-                  await api.patch(`/clients/${client.id}`, {
+                  const res = await api.patch<{ pendingApproval?: boolean; message?: string }>(`/clients/${client.id}`, {
                     autoCohortEnabled: v,
                     autoCohortListId: autoListId || undefined,
                     autoCohortDay: Number(autoDay),
                   });
-                  onChanged();
+                  // Held for approval: show the setting as it really is until then.
+                  if (res?.pendingApproval) setAutoEnabled(!v);
+                  onChanged(
+                    res?.pendingApproval
+                      ? res.message
+                      : v ? 'Automatic monthly cohort enabled.' : 'Automatic monthly cohort disabled.',
+                  );
                 } catch (err) {
                   setErr(err instanceof Error ? err.message : 'Failed to save');
                   setAutoEnabled(!v); // revert on failure
@@ -1564,28 +1590,30 @@ function Cohorts({
                   <td className="px-4 py-3 text-right whitespace-nowrap">
                     {c.status === 'RUNNING' && (
                       <>
-                        <button
-                          className="btn-ghost text-xs text-brand-600 disabled:opacity-50"
-                          onClick={() => sendNow(c.id)}
-                          disabled={sendingId === c.id}
-                        >
-                          {sendingId === c.id ? (
-                            <><span className="inline-block animate-spin">⟳</span> Sending…</>
-                          ) : (
-                            'Send now'
-                          )}
-                        </button>
+                        {!isClient && (
+                          <button
+                            className="btn-ghost text-xs text-brand-600 disabled:opacity-50"
+                            onClick={() => sendNow(c.id)}
+                            disabled={sendingId === c.id}
+                          >
+                            {sendingId === c.id ? (
+                              <><span className="inline-block animate-spin">⟳</span> Sending…</>
+                            ) : (
+                              'Send now'
+                            )}
+                          </button>
+                        )}
                         <button className="btn-ghost text-xs" onClick={() => lifecycle(c.id, 'pause')}>Pause</button>
                       </>
                     )}
                     {c.status === 'PAUSED' && (
                       <button className="btn-ghost text-xs text-emerald-600" onClick={() => lifecycle(c.id, 'resume')}>Resume</button>
                     )}
-                    {c.status !== 'STOPPED' && c.status !== 'COMPLETED' && (
+                    {c.status !== 'STOPPED' && c.status !== 'COMPLETED' && c.status !== 'PENDING' && (
                       <button className="btn-ghost text-xs text-rose-600" onClick={() => lifecycle(c.id, 'stop')}>Stop</button>
                     )}
                     <button className="btn-ghost text-xs" onClick={() => setSeqCohort(c)}>Sequence</button>
-                    {canDelete && (
+                    {(canDelete || isClient) && (
                       <button className="btn-ghost text-xs text-rose-600" onClick={() => deleteCohort(c.id)}>Delete</button>
                     )}
                   </td>
@@ -1736,9 +1764,9 @@ function Cohorts({
             client={client}
             templates={templates}
             cohortId={seqCohort.id}
-            onChanged={() => {
+            onChanged={(msg) => {
               setSeqCohort(null);
-              onChanged();
+              onChanged(msg ?? 'Cohort sequence saved.');
             }}
           />
         )}

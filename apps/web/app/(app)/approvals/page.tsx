@@ -17,7 +17,7 @@ interface Approval {
   submittedBy?: { name: string; email: string };
   reviewer?: { name: string; email: string } | null;
   /** Inline content under review (a template's subject + body). */
-  detail?: { subject: string; bodyHtml: string } | null;
+  detail?: { subject?: string; bodyHtml?: string; lines?: string[] } | null;
 }
 
 // What each approval type means, in plain language.
@@ -34,6 +34,8 @@ const TYPE_LABEL: Record<string, string> = {
   LI_CHANNEL_REQUEST: 'LinkedIn channel request',
   CLIENT_LOGIN_EMAIL: 'Client login email change',
   TEMPLATE: 'Email template',
+  COHORT: 'New cohort',
+  CLIENT_CHANGE: 'Client change request',
 };
 function typeLabel(t: string) {
   return TYPE_LABEL[t] ?? t;
@@ -227,18 +229,29 @@ export default function ApprovalsPage() {
                         )}
                         {a.detail && (
                           <div className="col-span-full mt-2 space-y-2">
-                            <div>
-                              <span className="text-slate-400">Subject: </span>
-                              <span className="font-medium text-slate-700">{a.detail.subject}</span>
-                            </div>
+                            {a.detail.lines && a.detail.lines.length > 0 && (
+                              <ul className="list-disc space-y-0.5 pl-5 text-slate-600">
+                                {a.detail.lines.map((line, i) => (
+                                  <li key={i}>{line}</li>
+                                ))}
+                              </ul>
+                            )}
+                            {a.detail.subject !== undefined && (
+                              <div>
+                                <span className="text-slate-400">Subject: </span>
+                                <span className="font-medium text-slate-700">{a.detail.subject}</span>
+                              </div>
+                            )}
                             {/* Rendered sandboxed: client-written HTML must never run
                                 script or reach the admin's session. */}
-                            <iframe
-                              title="Template preview"
-                              sandbox=""
-                              srcDoc={a.detail.bodyHtml}
-                              className="h-72 w-full rounded-lg border border-slate-200 bg-white"
-                            />
+                            {a.detail.bodyHtml !== undefined && (
+                              <iframe
+                                title="Template preview"
+                                sandbox=""
+                                srcDoc={a.detail.bodyHtml}
+                                className="h-72 w-full rounded-lg border border-slate-200 bg-white"
+                              />
+                            )}
                           </div>
                         )}
                         <div className="col-span-full text-slate-300">Ref: {a.entityId}</div>

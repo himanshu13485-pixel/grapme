@@ -3,6 +3,7 @@ import { SuppressionReason } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActivityService } from '../common/services/activity.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
+import { ownedClientIds } from '../common/client-scope';
 
 @Injectable()
 export class ComplianceService {
@@ -13,6 +14,12 @@ export class ComplianceService {
 
   // ── Suppression list ──────────────────────────────────────
   /** Suppressed addresses, enriched with the matching contact's client + lists. */
+  /** Keeps a client-portal user to contacts of their own workspaces (staff: no restriction). */
+  private async ownScope(user: AuthUser): Promise<Record<string, unknown>> {
+    const ids = await ownedClientIds(this.prisma, user);
+    return ids === null ? {} : { clientId: { in: ids } };
+  }
+
   async listSuppression(tenantId: string) {
     const rows = await this.prisma.suppression.findMany({
       where: { tenantId },
@@ -67,7 +74,7 @@ export class ComplianceService {
   /** Returns everything held about a contact (right to access / portability). */
   async exportContact(user: AuthUser, contactId: string) {
     const contact = await this.prisma.contact.findFirst({
-      where: { id: contactId, tenantId: user.tenantId },
+      where: { id: contactId, tenantId: user.tenantId, ...(await this.ownScope(user)) },
       include: {
         lists: { include: { list: { select: { name: true } } } },
         messages: {
@@ -111,7 +118,7 @@ export class ComplianceService {
   /** Right to erasure: scrub PII, suppress the address, keep an audit marker. */
   async eraseContact(user: AuthUser, contactId: string) {
     const contact = await this.prisma.contact.findFirst({
-      where: { id: contactId, tenantId: user.tenantId },
+      where: { id: contactId, tenantId: user.tenantId, ...(await this.ownScope(user)) },
     });
     if (!contact) throw new NotFoundException('Contact not found');
 

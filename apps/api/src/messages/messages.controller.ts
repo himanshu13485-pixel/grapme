@@ -29,8 +29,8 @@ export class MessagesController {
    *  the background poll), optionally scoped to one client's mailboxes. */
   @HttpCode(200)
   @Post('sync')
-  sync(@CurrentUser() user: AuthUser, @Query('clientId') clientId?: string) {
-    return this.inbound.syncTenant(user.tenantId, clientId);
+  async sync(@CurrentUser() user: AuthUser, @Query('clientId') clientId?: string) {
+    return this.inbound.syncTenant(user.tenantId, await this.messages.ownClientParam(user, clientId));
   }
 
   /** Unread inbound count for the Inbox badge / new-mail alert. */

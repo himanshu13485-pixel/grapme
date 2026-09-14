@@ -31,6 +31,9 @@ class AddSuppressionDto {
 export class ComplianceController {
   constructor(private readonly compliance: ComplianceService) {}
 
+  // The tenant-wide suppression list is staff-only: it names every client's
+  // opted-out contacts, and removing an entry would re-enable emailing them.
+  @SalesGateRoles(SalesGateRole.SUPER_ADMIN, SalesGateRole.SUB_ADMIN, SalesGateRole.USER)
   @Get('suppression')
   list(@CurrentUser('tenantId') tenantId: string) {
     return this.compliance.listSuppression(tenantId);
@@ -45,6 +48,7 @@ export class ComplianceController {
     );
   }
 
+  @SalesGateRoles(SalesGateRole.SUPER_ADMIN, SalesGateRole.SUB_ADMIN, SalesGateRole.USER)
   @Delete('suppression/:id')
   remove(
     @CurrentUser('tenantId') tenantId: string,

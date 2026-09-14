@@ -7,12 +7,18 @@ import {
   ApprovalEntity,
   CampaignStatus,
   EventType,
+  Role,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { ActivityService } from '../common/services/activity.service';
 import { GeoService } from '../common/services/geo.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
+import {
+  assertClientAccess,
+  ownedClientIds,
+  resourceClientScope,
+} from '../common/client-scope';
 import {
   CreateCampaignDto,
   UpdateCampaignDto,
@@ -53,11 +59,18 @@ export class CampaignsService {
     );
   }
 
-  list(user: AuthUser, clientId?: string) {
+  /** Keeps a client-portal user inside their own workspaces (staff: no restriction). */
+  private async ownScope(user: AuthUser): Promise<Record<string, unknown>> {
+    const ids = await ownedClientIds(this.prisma, user);
+    return ids === null ? {} : { clientId: { in: ids } };
+  }
+
+  async list(user: AuthUser, clientId?: string) {
+    const scope = await resourceClientScope(this.prisma, user, clientId);
     return this.prisma.campaign.findMany({
       where: {
         tenantId: user.tenantId,
-        ...(clientId ? { clientId } : {}),
+        ...scope,
       },
       orderBy: { createdAt: 'desc' },
       include: {
@@ -69,7 +82,7 @@ export class CampaignsService {
 
   async getOne(user: AuthUser, id: string) {
     const campaign = await this.prisma.campaign.findFirst({
-      where: { id, tenantId: user.tenantId },
+      where: { id, tenantId: user.tenantId, ...(await this.ownScope(user)) },
       include: { steps: { orderBy: { stepOrder: 'asc' } }, schedules: true },
     });
     if (!campaign) throw new NotFoundException('Campaign not found');
@@ -92,6 +105,10 @@ export class CampaignsService {
   }
 
   async create(user: AuthUser, dto: CreateCampaignDto) {
+    if (user.role === Role.CLIENT) {
+      await assertClientAccess(this.prisma, user, dto.clientId);
+      await this.assertOwnRefs(user, dto.clientId, dto);
+    }
     // Enforce the plan's Email campaign limit for the target client (0 = unlimited).
     if (dto.clientId) {
       const client = await this.prisma.client.findFirst({
@@ -126,12 +143,18 @@ export class CampaignsService {
   async update(user: AuthUser, id: string, dto: UpdateCampaignDto) {
     const campaign = await this.getOne(user, id);
     this.assertEditable(campaign.status);
+    if (user.role === Role.CLIENT) {
+      const clientId = dto.clientId !== undefined ? dto.clientId : campaign.clientId;
+      await assertClientAccess(this.prisma, user, clientId);
+      await this.assertOwnRefs(user, clientId, dto);
+    }
     return this.prisma.campaign.update({ where: { id }, data: { ...dto } });
   }
 
   async addStep(user: AuthUser, id: string, dto: AddStepDto) {
     const campaign = await this.getOne(user, id);
     this.assertEditable(campaign.status);
+    await this.assertOwnRefs(user, campaign.clientId, { templateId: dto.templateId });
     return this.prisma.campaignStep.create({
       data: {
         campaignId: id,
@@ -281,6 +304,25 @@ export class CampaignsService {
       bounceRate: pct(counts[EventType.BOUNCE] ?? 0),
       forwardRate: pct(forwarded),
     };
+  }
+
+  /** A client may only wire its own workspace's mailbox, list and template into a campaign. */
+  private async assertOwnRefs(
+    user: AuthUser,
+    clientId: string | null | undefined,
+    refs: { emailAccountId?: string | null; listId?: string | null; templateId?: string | null },
+  ) {
+    if (user.role !== Role.CLIENT) return;
+    const where = { tenantId: user.tenantId, clientId: clientId ?? '__none__' };
+    if (refs.emailAccountId && !(await this.prisma.emailAccount.count({ where: { id: refs.emailAccountId, ...where } }))) {
+      throw new BadRequestException('Choose a mailbox from this workspace.');
+    }
+    if (refs.listId && !(await this.prisma.contactList.count({ where: { id: refs.listId, ...where } }))) {
+      throw new BadRequestException('Choose a contact list from this workspace.');
+    }
+    if (refs.templateId && !(await this.prisma.emailTemplate.count({ where: { id: refs.templateId, ...where } }))) {
+      throw new BadRequestException('Choose a template from this workspace.');
+    }
   }
 
   private setStatus(id: string, status: CampaignStatus) {

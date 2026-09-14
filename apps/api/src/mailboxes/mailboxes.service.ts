@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { ImapFlow } from 'imapflow';
-import { ApprovalEntity, MailboxStatus, Role } from '@prisma/client';
+import { ApprovalEntity, ApprovalStatus, MailboxStatus, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { ActivityService } from '../common/services/activity.service';
@@ -10,7 +10,7 @@ import {
   decryptCredential,
 } from '../common/crypto/credential-crypto';
 import { AuthUser } from '../common/decorators/current-user.decorator';
-import { resourceClientScope } from '../common/client-scope';
+import { assertClientAccess, resourceClientScope } from '../common/client-scope';
 import {
   CreateMailboxDto,
   SendTestEmailDto,
@@ -67,6 +67,7 @@ export class MailboxesService {
 
   /** Creating a mailbox stages it PENDING and opens an SMTP approval. */
   async create(user: AuthUser, dto: CreateMailboxDto) {
+    if (user.role === Role.CLIENT) await assertClientAccess(this.prisma, user, dto.clientId);
     const account = await this.prisma.emailAccount.create({
       data: {
         tenantId: user.tenantId,
@@ -194,9 +195,30 @@ export class MailboxesService {
     if (dto.imapPassword) {
       data.imapCredentialsEncrypted = encryptCredential(dto.imapPassword);
     }
-    // Editing a mailbox the bounce circuit breaker auto-disabled re-enables it
-    // (the admin is fixing the list/settings), and clears the disable reason.
-    if (before.status === MailboxStatus.DISABLED && before.statusReason?.startsWith('Auto-disabled')) {
+    // How the mailbox logs in and where it sends from — what SMTP approval vetted.
+    const LOGIN_FIELDS = [
+      'protocol', 'emailAddress', 'smtpUsername', 'smtpHost', 'smtpPort', 'smtpSecure',
+      'smtpEncryption', 'imapHost', 'imapPort', 'imapEncryption', 'imapUsername', 'imapAllowSelfSigned',
+    ] as const;
+    const loginChanged =
+      !!dto.password ||
+      !!dto.imapPassword ||
+      LOGIN_FIELDS.some((k) => {
+        const v = dto[k as keyof UpdateMailboxDto];
+        return v !== undefined && v !== (before as Record<string, unknown>)[k];
+      });
+    const autoDisabled =
+      before.status === MailboxStatus.DISABLED && !!before.statusReason?.startsWith('Auto-disabled');
+    // A client changing a mailbox's login (or re-enabling one the bounce breaker
+    // disabled) sends it back for SMTP approval; it stops sending until approved.
+    // Staff edits re-enable an auto-disabled mailbox directly, as before.
+    const needsReview = user.role === Role.CLIENT && (loginChanged || autoDisabled);
+    if (needsReview) {
+      data.status = MailboxStatus.PENDING;
+      data.statusReason = loginChanged
+        ? 'Login details changed — awaiting approval'
+        : 'Re-enable requested — awaiting approval';
+    } else if (autoDisabled) {
       data.status = MailboxStatus.ACTIVE;
       data.statusReason = null;
     }
@@ -233,7 +255,20 @@ export class MailboxesService {
       before: changedBefore,
       after: changedAfter,
     });
-    return account;
+    if (needsReview) {
+      const open = await this.prisma.approval.count({
+        where: { tenantId: user.tenantId, entityType: ApprovalEntity.SMTP, entityId: id, status: ApprovalStatus.PENDING },
+      });
+      if (!open) {
+        await this.approvals.submit({
+          tenantId: user.tenantId,
+          submittedById: user.userId,
+          entityType: ApprovalEntity.SMTP,
+          entityId: id,
+        });
+      }
+    }
+    return { ...account, pendingApproval: needsReview };
   }
 
   /** Delete a mailbox. Campaign/message references are set null (schema). */

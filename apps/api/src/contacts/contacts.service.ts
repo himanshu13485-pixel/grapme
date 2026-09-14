@@ -4,13 +4,17 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ApprovalEntity, ImportStatus } from '@prisma/client';
+import { ApprovalEntity, ImportStatus, Role } from '@prisma/client';
 import { createHash } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { ActivityService } from '../common/services/activity.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
-import { resourceClientScope } from '../common/client-scope';
+import {
+  assertClientAccess,
+  ownedClientIds,
+  resourceClientScope,
+} from '../common/client-scope';
 import {
   CreateContactDto,
   CreateListDto,
@@ -31,6 +35,12 @@ export class ContactsService {
   ) {}
 
   // ── Contacts ──────────────────────────────────────────────
+  /** Keeps a client-portal user inside their own workspaces (staff: no restriction). */
+  private async ownScope(user: AuthUser): Promise<Record<string, unknown>> {
+    const ids = await ownedClientIds(this.prisma, user);
+    return ids === null ? {} : { clientId: { in: ids } };
+  }
+
   async list(user: AuthUser, clientId?: string) {
     const scope = await resourceClientScope(this.prisma, user, clientId);
     const contacts = await this.prisma.contact.findMany({
@@ -55,6 +65,19 @@ export class ContactsService {
   /** Manual single add — immediately active, optionally added to a list. */
   async create(user: AuthUser, dto: CreateContactDto) {
     const { listId, ...fields } = dto;
+    if (user.role === Role.CLIENT) {
+      await assertClientAccess(this.prisma, user, fields.clientId);
+      // Contacts are unique per tenant: a client must never overwrite one that
+      // belongs to another workspace.
+      const owned = (await ownedClientIds(this.prisma, user)) ?? [];
+      const existing = await this.prisma.contact.findUnique({
+        where: { tenantId_dedupeHash: { tenantId: user.tenantId, dedupeHash: dedupeHash(dto.email) } },
+        select: { clientId: true },
+      });
+      if (existing && !(existing.clientId && owned.includes(existing.clientId))) {
+        throw new ConflictException('This email address can’t be added to this workspace.');
+      }
+    }
 
     const contact = await this.prisma.contact.upsert({
       where: {
@@ -86,7 +109,7 @@ export class ContactsService {
     // Optionally attach to an existing list (idempotent).
     if (listId) {
       const list = await this.prisma.contactList.findFirst({
-        where: { id: listId, tenantId: user.tenantId },
+        where: { id: listId, tenantId: user.tenantId, ...(await this.ownScope(user)) },
       });
       if (!list) throw new NotFoundException('List not found');
       await this.prisma.contactListMember.upsert({
@@ -102,7 +125,7 @@ export class ContactsService {
   /** Edit an existing contact's fields, status, and list memberships. */
   async update(user: AuthUser, id: string, dto: UpdateContactDto) {
     const existing = await this.prisma.contact.findFirst({
-      where: { id, tenantId: user.tenantId },
+      where: { id, tenantId: user.tenantId, ...(await this.ownScope(user)) },
     });
     if (!existing) throw new NotFoundException('Contact not found');
 
@@ -113,7 +136,10 @@ export class ContactsService {
       country: dto.country,
     };
     if (dto.status !== undefined) data.status = dto.status;
-    if (dto.clientId !== undefined) data.clientId = dto.clientId || null;
+    if (dto.clientId !== undefined) {
+      if (user.role === Role.CLIENT) await assertClientAccess(this.prisma, user, dto.clientId);
+      data.clientId = dto.clientId || null;
+    }
 
     // Changing the email changes the dedupe hash — guard against collisions.
     if (
@@ -141,7 +167,7 @@ export class ContactsService {
     // Sync list memberships to exactly match listIds (when provided).
     if (dto.listIds) {
       const valid = await this.prisma.contactList.findMany({
-        where: { id: { in: dto.listIds }, tenantId: user.tenantId },
+        where: { id: { in: dto.listIds }, tenantId: user.tenantId, ...(await this.ownScope(user)) },
         select: { id: true },
       });
       const desired = valid.map((v) => v.id);
@@ -163,7 +189,7 @@ export class ContactsService {
   /** Permanently delete a contact (memberships cascade). */
   async remove(user: AuthUser, id: string) {
     const existing = await this.prisma.contact.findFirst({
-      where: { id, tenantId: user.tenantId },
+      where: { id, tenantId: user.tenantId, ...(await this.ownScope(user)) },
     });
     if (!existing) throw new NotFoundException('Contact not found');
     await this.prisma.contact.delete({ where: { id } });
@@ -175,7 +201,7 @@ export class ContactsService {
     const clean = [...new Set((ids ?? []).filter(Boolean))];
     if (clean.length === 0) return { ok: true, deleted: 0 };
     const res = await this.prisma.contact.deleteMany({
-      where: { id: { in: clean }, tenantId: user.tenantId },
+      where: { id: { in: clean }, tenantId: user.tenantId, ...(await this.ownScope(user)) },
     });
     return { ok: true, deleted: res.count };
   }
@@ -196,7 +222,8 @@ export class ContactsService {
     });
   }
 
-  createList(user: AuthUser, dto: CreateListDto) {
+  async createList(user: AuthUser, dto: CreateListDto) {
+    if (user.role === Role.CLIENT) await assertClientAccess(this.prisma, user, dto.clientId);
     return this.prisma.contactList.create({
       data: {
         tenantId: user.tenantId,
@@ -228,10 +255,20 @@ export class ContactsService {
     let clientId = dto.clientId || null;
     if (!clientId && dto.listId) {
       const list = await this.prisma.contactList.findFirst({
-        where: { id: dto.listId, tenantId: user.tenantId },
+        where: { id: dto.listId, tenantId: user.tenantId, ...(await this.ownScope(user)) },
         select: { clientId: true },
       });
       clientId = list?.clientId ?? null;
+    }
+    if (user.role === Role.CLIENT) {
+      // A client imports only into its own workspace and its own lists.
+      await assertClientAccess(this.prisma, user, clientId);
+      if (dto.listId) {
+        const own = await this.prisma.contactList.count({
+          where: { id: dto.listId, tenantId: user.tenantId, clientId },
+        });
+        if (!own) throw new NotFoundException('List not found');
+      }
     }
 
     // Guard against accidental double-submits (clicking Import 2–3 times): if the
@@ -310,7 +347,7 @@ export class ContactsService {
 
   async getList(user: AuthUser, id: string) {
     const list = await this.prisma.contactList.findFirst({
-      where: { id, tenantId: user.tenantId },
+      where: { id, tenantId: user.tenantId, ...(await this.ownScope(user)) },
       include: { members: { include: { contact: true } } },
     });
     if (!list) throw new NotFoundException('List not found');
@@ -320,7 +357,7 @@ export class ContactsService {
   /** Delete a list (its membership rows cascade; contacts are untouched). */
   async removeList(user: AuthUser, id: string) {
     const list = await this.prisma.contactList.findFirst({
-      where: { id, tenantId: user.tenantId },
+      where: { id, tenantId: user.tenantId, ...(await this.ownScope(user)) },
     });
     if (!list) throw new NotFoundException('List not found');
     await this.prisma.contactList.delete({ where: { id } });
@@ -330,12 +367,12 @@ export class ContactsService {
   /** Add existing contacts to a list (idempotent). */
   async addMembers(user: AuthUser, listId: string, contactIds: string[]) {
     const list = await this.prisma.contactList.findFirst({
-      where: { id: listId, tenantId: user.tenantId },
+      where: { id: listId, tenantId: user.tenantId, ...(await this.ownScope(user)) },
     });
     if (!list) throw new NotFoundException('List not found');
 
     const valid = await this.prisma.contact.findMany({
-      where: { id: { in: contactIds }, tenantId: user.tenantId },
+      where: { id: { in: contactIds }, tenantId: user.tenantId, ...(await this.ownScope(user)) },
       select: { id: true },
     });
     for (const c of valid) {
@@ -351,7 +388,7 @@ export class ContactsService {
   /** Remove contacts from a list. */
   async removeMembers(user: AuthUser, listId: string, contactIds: string[]) {
     const list = await this.prisma.contactList.findFirst({
-      where: { id: listId, tenantId: user.tenantId },
+      where: { id: listId, tenantId: user.tenantId, ...(await this.ownScope(user)) },
     });
     if (!list) throw new NotFoundException('List not found');
 
@@ -369,7 +406,7 @@ export class ContactsService {
    */
   async cleanList(user: AuthUser, listId: string) {
     const list = await this.prisma.contactList.findFirst({
-      where: { id: listId, tenantId: user.tenantId },
+      where: { id: listId, tenantId: user.tenantId, ...(await this.ownScope(user)) },
     });
     if (!list) throw new NotFoundException('List not found');
 

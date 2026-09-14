@@ -102,7 +102,7 @@ export class LiPortalService {
     await this.assertOwnsClient(userId, dto.clientId);
     return this.campaigns.create(tenantId, dto);
   }
-  async updateCampaign(userId: string, id: string, dto: UpdateLiCampaignDto) { await this.assertCampaign(userId, id); return this.campaigns.update(id, dto); }
+  async updateCampaign(userId: string, id: string, dto: UpdateLiCampaignDto) { return this.editLive(userId, id, () => this.campaigns.update(id, dto)); }
   async listCampaigns(userId: string, clientId: string, view?: string) { await this.assertOwnsClient(userId, clientId); return this.campaigns.list(clientId, view); }
   /** Client soft-deletes their own campaign (goes to the Deleted tab; restorable). */
   async deleteCampaign(userId: string, id: string) { await this.assertCampaign(userId, id); return this.campaigns.setStatus(id, LiCampaignStatus.DELETED); }
@@ -118,19 +118,42 @@ export class LiPortalService {
   async getCampaign(userId: string, id: string) { await this.assertCampaign(userId, id); return this.campaigns.get(id); }
   async campaignStats(userId: string, id: string, opts?: { period?: string; from?: string; to?: string }) { await this.assertCampaign(userId, id); return this.campaigns.stats(id, opts); }
   async campaignLeads(userId: string, id: string, opts: any) { await this.assertCampaign(userId, id); return this.campaigns.leads(id, opts); }
-  async importLeads(userId: string, id: string, dto: ImportLiLeadsDto) { await this.assertCampaign(userId, id); return this.campaigns.importLeads(id, dto); }
+  async importLeads(userId: string, id: string, dto: ImportLiLeadsDto) { return this.editLive(userId, id, () => this.campaigns.importLeads(id, dto)); }
   async deleteLead(userId: string, id: string, leadId: string) { await this.assertCampaign(userId, id); return this.campaigns.deleteLead(id, leadId); }
   // Audience presets scoped to a client workspace the user owns.
   async listPresets(userId: string, tenantId: string, clientId: string) { await this.assertOwnsClient(userId, clientId); return this.campaigns.listPresets(tenantId, clientId); }
   async createPreset(userId: string, tenantId: string, clientId: string, name: string, spec: unknown) { await this.assertOwnsClient(userId, clientId); return this.campaigns.createPreset(tenantId, clientId, name, spec); }
   async deletePreset(userId: string, tenantId: string, clientId: string, id: string) { await this.assertOwnsClient(userId, clientId); return this.campaigns.deletePreset(tenantId, clientId, id); }
   /** Client imports their own seat's existing 1st-degree connections (credit-metered). */
-  async importConnections(userId: string, id: string, limit?: number) { await this.assertCampaign(userId, id); return this.generation.importConnections(id, limit); }
-  async updateAudience(userId: string, id: string, dto: UpsertLiAudienceDto) { await this.assertCampaign(userId, id); return this.campaigns.upsertAudience(id, dto); }
-  async updateSequence(userId: string, id: string, dto: UpdateLiSequenceDto) { await this.assertCampaign(userId, id); return this.campaigns.updateSequence(id, dto); }
-  async updateSchedule(userId: string, id: string, dto: UpdateLiScheduleDto) { await this.assertCampaign(userId, id); return this.campaigns.updateSchedule(id, dto); }
-  async generateAudience(userId: string, id: string) { await this.assertCampaign(userId, id); return this.generation.generateAudience(id); }
-  async generateMessages(userId: string, id: string, opts: { outreachType?: LiOutreachType; followUps?: number; variants?: number }) { await this.assertCampaign(userId, id); return this.generation.generateMessages(id, opts); }
+  async importConnections(userId: string, id: string, limit?: number) { return this.editLive(userId, id, () => this.generation.importConnections(id, limit)); }
+  async updateAudience(userId: string, id: string, dto: UpsertLiAudienceDto) { return this.editLive(userId, id, () => this.campaigns.upsertAudience(id, dto)); }
+  async updateSequence(userId: string, id: string, dto: UpdateLiSequenceDto) { return this.editLive(userId, id, () => this.campaigns.updateSequence(id, dto)); }
+  async updateSchedule(userId: string, id: string, dto: UpdateLiScheduleDto) { return this.editLive(userId, id, () => this.campaigns.updateSchedule(id, dto)); }
+  async generateAudience(userId: string, id: string) { return this.editLive(userId, id, () => this.generation.generateAudience(id)); }
+  async generateMessages(userId: string, id: string, opts: { outreachType?: LiOutreachType; followUps?: number; variants?: number }) { return this.editLive(userId, id, () => this.generation.generateMessages(id, opts)); }
+
+  /**
+   * Every client edit to a LinkedIn campaign's messages, audience, leads or
+   * schedule goes through here, so an approved campaign can't be changed
+   * without review: a RUNNING campaign must be paused first, and editing a
+   * PAUSED one drops it back to DRAFT — it can then only relaunch by being
+   * submitted and approved again (Resume only works from PAUSED).
+   */
+  private async editLive<T>(userId: string, id: string, edit: () => Promise<T>): Promise<T> {
+    await this.assertCampaign(userId, id);
+    const c = await this.prisma.liCampaign.findUnique({ where: { id }, select: { status: true } });
+    if (!c) throw new BadRequestException('Campaign not found');
+    if (c.status === LiCampaignStatus.RUNNING) {
+      throw new BadRequestException(
+        'Pause the campaign before editing it. Changes to a live campaign are reviewed again before it relaunches.',
+      );
+    }
+    const result = await edit();
+    if (c.status === LiCampaignStatus.PAUSED) {
+      await this.campaigns.setStatus(id, LiCampaignStatus.DRAFT);
+    }
+    return result;
+  }
 
   /**
    * Client submits a built campaign for admin approval to launch. Also used when a

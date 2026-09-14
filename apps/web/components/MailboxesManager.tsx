@@ -596,7 +596,7 @@ function EditMailboxForm({
     setError('');
     setBusy(true);
     try {
-      await api.patch(`/email-accounts/${mailbox.id}`, {
+      const res = await api.patch<{ pendingApproval?: boolean }>(`/email-accounts/${mailbox.id}`, {
         label: form.label,
         protocol: form.protocol,
         emailAddress: form.emailAddress,
@@ -616,6 +616,9 @@ function EditMailboxForm({
         sendSpeedSeconds: Number(form.sendSpeedSeconds),
         warmupEnabled: form.warmupEnabled,
       });
+      if (res?.pendingApproval) {
+        alert('Login details changed. This mailbox stops sending until an admin approves the new details.');
+      }
       onDone();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed');

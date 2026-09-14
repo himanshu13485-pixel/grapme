@@ -348,18 +348,21 @@ export class ProgramsController {
   }
 
   // Manual engine trigger (useful for testing without waiting for the tick).
+  @Roles(Role.SUPER_ADMIN, Role.SUB_ADMIN) // tenant-wide: never a client
   @Post('programs/run-now')
   runNow() {
     return this.programs.runDueNow();
   }
 
   // Manual trigger of the monthly auto-cohort cron across all clients.
+  @Roles(Role.SUPER_ADMIN, Role.SUB_ADMIN) // tenant-wide: never a client
   @Post('programs/run-auto-cohorts')
   runAutoCohorts() {
     return this.programs.runAutoCohorts();
   }
 
   // Emergency: pause / resume / stop every cohort in the tenant at once.
+  @Roles(Role.SUPER_ADMIN, Role.SUB_ADMIN) // tenant-wide: never a client
   @Post('programs/cohorts/:action')
   controlAll(
     @CurrentUser() user: AuthUser,

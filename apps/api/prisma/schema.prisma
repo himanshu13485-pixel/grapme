@@ -125,6 +125,8 @@ enum ApprovalEntity {
   LI_CHANNEL_REQUEST
   CLIENT_LOGIN_EMAIL // admin changed a client's login email; awaiting confirm/approval
   TEMPLATE // client-portal template (new, or its content edited) awaiting review
+  COHORT // client-portal cohort (Upload & enroll / Create next now) awaiting review
+  CLIENT_CHANGE // client-portal change request: sequence, settings, cohort stop/delete
 }
 
 enum ApprovalStatus {
@@ -148,6 +150,7 @@ enum EnrollmentStatus {
 }
 
 enum CohortStatus {
+  PENDING // created in the client portal; nothing sends until an admin approves it
   RUNNING
   PAUSED
   STOPPED
@@ -1919,4 +1922,31 @@ model ClientSetupEvent {
   step ClientSetupStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
 
   @@index([stepId])
+}
+
+/// What a client-portal change request does once approved.
+enum ClientChangeKind {
+  SEQUENCE // replace the client's default sequence
+  COHORT_SEQUENCE // replace one cohort's own sequence
+  SETTINGS // apply operational client settings
+  COHORT_STOP // stop a cohort permanently
+  COHORT_DELETE // delete a cohort and its enrollments
+}
+
+/// A change made in the client portal, held for admin/sub-admin review
+/// (ApprovalEntity.CLIENT_CHANGE). Nothing in `payload` takes effect until the
+/// approval is approved; the live sequence/settings/cohort keep running as-is.
+model ClientChangeRequest {
+  id            String           @id @default(uuid())
+  tenantId      String
+  clientId      String
+  requestedById String
+  kind          ClientChangeKind
+  targetId      String? // the cohort, for cohort-scoped kinds
+  summary       String // one line for the Approvals list
+  payload       Json             @default("{}")
+  createdAt     DateTime         @default(now())
+
+  @@index([tenantId])
+  @@index([clientId, kind, targetId])
 }

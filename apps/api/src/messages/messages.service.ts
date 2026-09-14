@@ -13,6 +13,7 @@ import { ApprovalsService } from '../approvals/approvals.service';
 import { MailerService } from '../sending/mailer.service';
 import { QUEUE_SEND, JOB_RESEND_MESSAGE } from '../queue/queue.constants';
 import { AuthUser } from '../common/decorators/current-user.decorator';
+import { ownedClientIds } from '../common/client-scope';
 
 @Injectable()
 export class MessagesService {
@@ -23,17 +24,11 @@ export class MessagesService {
     @Optional() @InjectQueue(QUEUE_SEND) private sendQueue?: Queue,
   ) {}
 
-  private base(user: AuthUser, where: object, clientId?: string, mailboxId?: string) {
+  private async base(user: AuthUser, where: object, clientId?: string, mailboxId?: string) {
     // Scope to one client = messages either sent through one of its mailboxes
-    // or addressed to/from one of its contacts.
-    const clientScope = clientId
-      ? {
-          OR: [
-            { emailAccount: { clientId } },
-            { contact: { clientId } },
-          ],
-        }
-      : {};
+    // or addressed to/from one of its contacts. A client-portal user is always
+    // held to their own workspaces.
+    const clientScope = await this.scopeFor(user, clientId);
     // Optional single-mailbox filter — the shared inbox aggregates every
     // registered address, so this narrows the view to one mailbox (matched on
     // whichever mailbox sent/received the message).
@@ -89,10 +84,24 @@ export class MessagesService {
     );
   }
 
-  private clientScope(clientId?: string) {
-    return clientId
-      ? { OR: [{ emailAccount: { clientId } }, { contact: { clientId } }] }
-      : {};
+  /** Messages of one client — or, for a client-portal user, only their own workspaces. */
+  private async scopeFor(user: AuthUser, clientId?: string): Promise<Record<string, unknown>> {
+    const owned = await ownedClientIds(this.prisma, user);
+    if (owned === null) {
+      return clientId ? { OR: [{ emailAccount: { clientId } }, { contact: { clientId } }] } : {};
+    }
+    const ids = clientId && owned.includes(clientId) ? [clientId] : owned;
+    return {
+      OR: [{ emailAccount: { clientId: { in: ids } } }, { contact: { clientId: { in: ids } } }],
+    };
+  }
+
+  /** The workspace a client-portal user may act on (must be theirs); staff pass through. */
+  async ownClientParam(user: AuthUser, clientId?: string): Promise<string | undefined> {
+    const owned = await ownedClientIds(this.prisma, user);
+    if (owned === null) return clientId;
+    if (!clientId || !owned.includes(clientId)) throw new NotFoundException('Workspace not found');
+    return clientId;
   }
 
   /** Count of unread inbound replies (optionally for one client) — Inbox badge. */
@@ -102,7 +111,7 @@ export class MessagesService {
         tenantId: user.tenantId,
         direction: MessageDirection.INBOUND,
         readAt: null,
-        ...this.clientScope(clientId),
+        ...(await this.scopeFor(user, clientId)),
       },
     });
     return { count };
@@ -115,7 +124,7 @@ export class MessagesService {
         tenantId: user.tenantId,
         direction: MessageDirection.INBOUND,
         readAt: null,
-        ...this.clientScope(clientId),
+        ...(await this.scopeFor(user, clientId)),
       },
       data: { readAt: new Date() },
     });
@@ -128,7 +137,7 @@ export class MessagesService {
    */
   async remove(user: AuthUser, id: string) {
     const msg = await this.prisma.emailMessage.findFirst({
-      where: { id, tenantId: user.tenantId },
+      where: { id, tenantId: user.tenantId, ...(await this.scopeFor(user)) },
       select: { id: true },
     });
     if (!msg) throw new NotFoundException('Message not found');
@@ -162,7 +171,7 @@ export class MessagesService {
 
   /** Re-send one FAILED email now (instant, for the per-row button). */
   async resend(user: AuthUser, id: string): Promise<{ ok: boolean }> {
-    const m = await this.loadResendable(id, user.tenantId);
+    const m = await this.loadResendable(id, user.tenantId, await this.scopeFor(user));
     if (m.status !== MessageStatus.FAILED) throw new BadRequestException('Only failed emails can be resent (bounced/sent are not).');
     await this.deliverMessage(user.tenantId, m);
     return { ok: true };
@@ -170,7 +179,7 @@ export class MessagesService {
 
   /** Bulk re-send: queue EVERY failed email to the send worker (background, uncapped). */
   async resendFailed(user: AuthUser, clientId?: string): Promise<{ queued: number }> {
-    const clientScope = clientId ? { OR: [{ emailAccount: { clientId } }, { contact: { clientId } }] } : {};
+    const clientScope = await this.scopeFor(user, clientId);
     const failed = await this.prisma.emailMessage.findMany({
       where: { tenantId: user.tenantId, status: MessageStatus.FAILED, ...clientScope },
       orderBy: { createdAt: 'desc' },
@@ -202,9 +211,9 @@ export class MessagesService {
     await this.deliverMessage(m.tenantId, m);
   }
 
-  private loadResendable(id: string, tenantId: string) {
+  private loadResendable(id: string, tenantId: string, scope: Record<string, unknown> = {}) {
     return this.prisma.emailMessage
-      .findFirst({ where: { id, tenantId }, include: { emailAccount: true, contact: { select: { email: true, status: true } } } })
+      .findFirst({ where: { id, tenantId, ...scope }, include: { emailAccount: true, contact: { select: { email: true, status: true } } } })
       .then((m) => { if (!m) throw new NotFoundException('Message not found'); return m; });
   }
 

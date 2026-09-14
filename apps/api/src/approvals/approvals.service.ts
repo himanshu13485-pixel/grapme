@@ -6,6 +6,9 @@ import {
   ImportStatus,
   LiCampaignStatus,
   MailboxStatus,
+  ClientChangeKind,
+  CohortStatus,
+  EnrollmentStatus,
   Prisma,
   Role,
   ScheduleStatus,
@@ -17,11 +20,29 @@ import { ActivityService } from '../common/services/activity.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { LiCampaignsService } from '../linkedin/campaigns/li-campaigns.service';
 import { ListApprovalsQuery } from './dto/approvals.dto';
+import { cohortRef } from '../common/cohort-ref.util';
+import {
+  persistSequenceSteps,
+  rebaseCohortStart,
+  SequenceStepInput,
+} from '../programs/schedule.util';
+import {
+  CLIENT_FIELD_LABEL,
+  describeClientValue,
+  settingsUpdateData,
+} from '../programs/client-settings';
 
 interface ApprovalMeta {
   target?: string;
   clientName?: string;
-  detail?: { subject: string; bodyHtml: string };
+  /** What is being approved, shown inline: a template's content, or summary lines. */
+  detail?: { subject?: string; bodyHtml?: string; lines?: string[] };
+}
+
+/** Shape of ClientChangeRequest.payload. */
+interface ChangePayload {
+  steps?: SequenceStepInput[];
+  changes?: Record<string, { from: unknown; to: unknown }>;
 }
 
 @Injectable()
@@ -56,6 +77,94 @@ export class ApprovalsService {
       entityId: params.entityId,
     });
     return approval;
+  }
+
+  /**
+   * Hold a client-portal change for review. A newer request for the same thing
+   * supersedes the one still waiting (settings requests are merged, so no
+   * earlier field change is lost); a repeated stop/delete request is a no-op.
+   */
+  async submitClientChange(params: {
+    tenantId: string;
+    clientId: string;
+    requestedById: string;
+    kind: ClientChangeKind;
+    targetId?: string | null;
+    summary: string;
+    payload: Prisma.InputJsonValue;
+  }): Promise<{ id: string; duplicate: boolean }> {
+    const targetId = params.targetId ?? null;
+    const earlier = await this.prisma.clientChangeRequest.findMany({
+      where: { tenantId: params.tenantId, clientId: params.clientId, kind: params.kind, targetId },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, payload: true },
+    });
+    const waiting = earlier.length
+      ? new Set(
+          (
+            await this.prisma.approval.findMany({
+              where: {
+                tenantId: params.tenantId,
+                entityType: ApprovalEntity.CLIENT_CHANGE,
+                status: ApprovalStatus.PENDING,
+                entityId: { in: earlier.map((e) => e.id) },
+              },
+              select: { entityId: true },
+            })
+          ).map((a) => a.entityId),
+        )
+      : new Set<string>();
+    const pending = earlier.filter((e) => waiting.has(e.id));
+
+    const oneShot =
+      params.kind === ClientChangeKind.COHORT_STOP ||
+      params.kind === ClientChangeKind.COHORT_DELETE;
+    if (oneShot && pending.length) {
+      return { id: pending[pending.length - 1].id, duplicate: true };
+    }
+
+    let payload = params.payload;
+    let summary = params.summary;
+    if (params.kind === ClientChangeKind.SETTINGS) {
+      const merged: Record<string, unknown> = {};
+      for (const p of pending) Object.assign(merged, (p.payload as ChangePayload)?.changes ?? {});
+      Object.assign(merged, (params.payload as ChangePayload)?.changes ?? {});
+      payload = { changes: merged } as Prisma.InputJsonValue;
+      summary = `Settings · ${Object.keys(merged).map((k) => CLIENT_FIELD_LABEL[k] ?? k).join(', ')}`;
+    }
+
+    if (pending.length) {
+      await this.prisma.approval.updateMany({
+        where: {
+          entityType: ApprovalEntity.CLIENT_CHANGE,
+          status: ApprovalStatus.PENDING,
+          entityId: { in: pending.map((p) => p.id) },
+        },
+        data: {
+          status: ApprovalStatus.REJECTED,
+          decisionReason: 'Superseded by a newer request',
+          decidedAt: new Date(),
+        },
+      });
+    }
+    const request = await this.prisma.clientChangeRequest.create({
+      data: {
+        tenantId: params.tenantId,
+        clientId: params.clientId,
+        requestedById: params.requestedById,
+        kind: params.kind,
+        targetId,
+        summary,
+        payload,
+      },
+    });
+    await this.submit({
+      tenantId: params.tenantId,
+      submittedById: params.requestedById,
+      entityType: ApprovalEntity.CLIENT_CHANGE,
+      entityId: request.id,
+    });
+    return { id: request.id, duplicate: false };
   }
 
   async list(reviewer: AuthUser, query: ListApprovalsQuery) {
@@ -173,6 +282,50 @@ export class ApprovalsService {
       select: { id: true, name: true, subject: true, bodyHtml: true, clientId: true },
     });
 
+    const changeRows = await this.prisma.clientChangeRequest.findMany({
+      where: { id: { in: idsOf(ApprovalEntity.CLIENT_CHANGE) } },
+    });
+    const cohortRows = await this.prisma.cohort.findMany({
+      where: {
+        id: {
+          in: [
+            ...idsOf(ApprovalEntity.COHORT),
+            ...changeRows.map((r) => r.targetId).filter((x): x is string => !!x),
+          ],
+        },
+      },
+      select: {
+        id: true,
+        label: true,
+        monthIndex: true,
+        subIndex: true,
+        clientId: true,
+        startDate: true,
+        _count: { select: { enrollments: true } },
+      },
+    });
+    // Names for the templates and lists a change request refers to.
+    const refTemplateIds = new Set<string>();
+    const refListIds = new Set<string>();
+    for (const r of changeRows) {
+      const p = (r.payload ?? {}) as ChangePayload;
+      for (const step of p.steps ?? []) {
+        [step.templateId, ...(step.templateIds ?? [])].forEach((t) => t && refTemplateIds.add(t));
+      }
+      const l = p.changes?.autoCohortListId;
+      [l?.from, l?.to].forEach((v) => typeof v === 'string' && v && refListIds.add(v));
+    }
+    const [refTemplates, refLists] = await Promise.all([
+      this.prisma.emailTemplate.findMany({
+        where: { id: { in: [...refTemplateIds] } },
+        select: { id: true, name: true, status: true },
+      }),
+      this.prisma.contactList.findMany({
+        where: { id: { in: [...refListIds] } },
+        select: { id: true, name: true },
+      }),
+    ]);
+
     // Resolve every referenced clientId to a name in one query.
     const clientIds = new Set<string>([...idsOf(ApprovalEntity.CLIENT_DELETE), ...idsOf(ApprovalEntity.LI_CHANNEL_REQUEST)]);
     mailboxes.forEach((m) => m.clientId && clientIds.add(m.clientId));
@@ -182,6 +335,8 @@ export class ApprovalsService {
     messages.forEach((m) => m.emailAccount?.clientId && clientIds.add(m.emailAccount.clientId));
     liCampaigns.forEach((c) => c.clientId && clientIds.add(c.clientId));
     templates.forEach((t) => t.clientId && clientIds.add(t.clientId));
+    cohortRows.forEach((c) => clientIds.add(c.clientId));
+    changeRows.forEach((r) => clientIds.add(r.clientId));
     const clientRows = await this.prisma.client.findMany({
       where: { id: { in: [...clientIds] } },
       select: { id: true, name: true },
@@ -266,10 +421,69 @@ export class ApprovalsService {
       ]),
     );
 
+    const tplName = new Map(
+      refTemplates.map((t) => [
+        t.id,
+        t.status === TemplateStatus.APPROVED ? t.name : `${t.name} (${t.status.toLowerCase()})`,
+      ]),
+    );
+    const listName = new Map(refLists.map((l) => [l.id, l.name]));
+    const cohortById = new Map(cohortRows.map((c) => [c.id, c]));
+    const cohortLine = (id: string | null) => {
+      const c = id ? cohortById.get(id) : undefined;
+      return c ? `${cohortRef(c.monthIndex, c.subIndex)} · ${c.label}` : 'a cohort that no longer exists';
+    };
+    const co = new Map<string, ApprovalMeta>(
+      cohortRows.map((c): [string, ApprovalMeta] => [
+        c.id,
+        {
+          target: `New cohort ${cohortRef(c.monthIndex, c.subIndex)} · ${c.label}`,
+          clientName: clientName.get(c.clientId),
+          detail: {
+            lines: [
+              `${c._count.enrollments} contact${c._count.enrollments === 1 ? '' : 's'}`,
+              `Starts ${c.startDate.toISOString().slice(0, 10)}, or on approval if that is later`,
+            ],
+          },
+        },
+      ]),
+    );
+    const cc = new Map<string, ApprovalMeta>(
+      changeRows.map((r): [string, ApprovalMeta] => {
+        const p = (r.payload ?? {}) as ChangePayload;
+        let lines: string[];
+        if (r.kind === ClientChangeKind.SEQUENCE || r.kind === ClientChangeKind.COHORT_SEQUENCE) {
+          lines = [...(p.steps ?? [])]
+            .sort((a, b) => a.stageOrder - b.stageOrder)
+            .map((step, i) => {
+              const ids = (step.templateIds?.length ? step.templateIds : [step.templateId])
+                .filter((t): t is string => !!t);
+              const names = ids.map((t) => tplName.get(t) ?? 'unknown template');
+              return `${i === 0 ? 'Initial' : `Follow-up ${i}`} · month ${step.monthOffset ?? 1} · ${names.join(' / ') || 'no template'}`;
+            });
+          if (r.kind === ClientChangeKind.COHORT_SEQUENCE) lines.unshift(`Cohort: ${cohortLine(r.targetId)}`);
+        } else if (r.kind === ClientChangeKind.SETTINGS) {
+          lines = Object.entries(p.changes ?? {}).map(
+            ([k, c]) =>
+              `${CLIENT_FIELD_LABEL[k] ?? k}: ${describeClientValue(k, c.from, listName)} → ${describeClientValue(k, c.to, listName)}`,
+          );
+        } else {
+          lines = [`Cohort: ${cohortLine(r.targetId)}`];
+        }
+        return [r.id, { target: r.summary, clientName: clientName.get(r.clientId), detail: { lines } }];
+      }),
+    );
+
     for (const a of approvals) {
       switch (a.entityType) {
         case ApprovalEntity.TEMPLATE:
           if (tp.has(a.entityId)) out.set(a.id, tp.get(a.entityId)!);
+          break;
+        case ApprovalEntity.COHORT:
+          if (co.has(a.entityId)) out.set(a.id, co.get(a.entityId)!);
+          break;
+        case ApprovalEntity.CLIENT_CHANGE:
+          if (cc.has(a.entityId)) out.set(a.id, cc.get(a.entityId)!);
           break;
         case ApprovalEntity.SMTP:
           if (mb.has(a.entityId)) out.set(a.id, mb.get(a.entityId)!);
@@ -390,6 +604,30 @@ export class ApprovalsService {
             : { status: TemplateStatus.REJECTED, reviewNote: reason ?? null },
         });
         break;
+      case ApprovalEntity.COHORT: {
+        // Approve = start sending; reject = remove the cohort so its contacts
+        // are free for a future cohort (a contact can only be in one).
+        const waiting = await this.prisma.cohort.count({
+          where: { id: entityId, status: CohortStatus.PENDING },
+        });
+        if (!waiting) break;
+        if (approved) {
+          await rebaseCohortStart(this.prisma, entityId, new Date());
+          await this.prisma.cohort.updateMany({
+            where: { id: entityId, status: CohortStatus.PENDING },
+            data: { status: CohortStatus.RUNNING },
+          });
+        } else {
+          await this.prisma.cohort.deleteMany({
+            where: { id: entityId, status: CohortStatus.PENDING },
+          });
+        }
+        break;
+      }
+      case ApprovalEntity.CLIENT_CHANGE:
+        // Approve = apply the held change; reject = discard it (nothing was changed).
+        if (approved) await this.applyClientChange(entityId);
+        break;
       case ApprovalEntity.CAMPAIGN:
         await this.prisma.campaign.updateMany({
           where: { id: entityId },
@@ -493,6 +731,70 @@ export class ApprovalsService {
         }
         break;
       }
+    }
+  }
+
+  /** Carry out an approved client-portal change request. */
+  private async applyClientChange(requestId: string) {
+    const req = await this.prisma.clientChangeRequest.findUnique({ where: { id: requestId } });
+    if (!req) return;
+    const p = (req.payload ?? {}) as ChangePayload;
+    switch (req.kind) {
+      case ClientChangeKind.SEQUENCE: {
+        const steps = p.steps ?? [];
+        if (!steps.length) break;
+        await persistSequenceSteps(this.prisma, { clientId: req.clientId, cohortId: null }, steps);
+        await this.prisma.client.updateMany({
+          where: { id: req.clientId },
+          data: { followUpCount: steps.reduce((m, st) => Math.max(m, st.stageOrder), 0) },
+        });
+        break;
+      }
+      case ClientChangeKind.COHORT_SEQUENCE: {
+        if (!req.targetId || !p.steps?.length) break;
+        const live = await this.prisma.cohort.count({ where: { id: req.targetId, clientId: req.clientId } });
+        if (!live) break;
+        await persistSequenceSteps(this.prisma, { clientId: req.clientId, cohortId: req.targetId }, p.steps);
+        break;
+      }
+      case ClientChangeKind.SETTINGS: {
+        const data = settingsUpdateData(p.changes ?? {});
+        const listId = data.autoCohortListId;
+        if (typeof listId === 'string' && listId) {
+          const own = await this.prisma.contactList.count({ where: { id: listId, clientId: req.clientId } });
+          if (!own) delete data.autoCohortListId;
+        }
+        if (Object.keys(data).length) {
+          await this.prisma.client.updateMany({
+            where: { id: req.clientId },
+            data: data as Prisma.ClientUncheckedUpdateManyInput,
+          });
+        }
+        break;
+      }
+      case ClientChangeKind.COHORT_STOP: {
+        if (!req.targetId) break;
+        const stopped = await this.prisma.cohort.updateMany({
+          where: {
+            id: req.targetId,
+            clientId: req.clientId,
+            status: { in: [CohortStatus.RUNNING, CohortStatus.PAUSED] },
+          },
+          data: { status: CohortStatus.STOPPED, endedAt: new Date() },
+        });
+        if (stopped.count) {
+          await this.prisma.enrollment.updateMany({
+            where: { cohortId: req.targetId, status: EnrollmentStatus.ACTIVE },
+            data: { status: EnrollmentStatus.STOPPED },
+          });
+        }
+        break;
+      }
+      case ClientChangeKind.COHORT_DELETE:
+        if (req.targetId) {
+          await this.prisma.cohort.deleteMany({ where: { id: req.targetId, clientId: req.clientId } });
+        }
+        break;
     }
   }
 

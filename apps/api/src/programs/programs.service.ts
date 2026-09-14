@@ -12,6 +12,8 @@ import {
   ApprovalEntity,
   ApprovalStatus,
   Client,
+  ClientChangeKind,
+  CohortStatus,
   Prisma,
   EmailAccount,
   EnrollmentStatus,
@@ -32,6 +34,20 @@ import { ActivityService } from '../common/services/activity.service';
 import { ApprovalsService } from '../approvals/approvals.service';
 import { GeoService } from '../common/services/geo.service';
 import { cohortRef } from '../common/cohort-ref.util';
+import {
+  addBusinessDays,
+  persistSequenceSteps,
+  randomInt,
+  withSendTime,
+} from './schedule.util';
+import {
+  ADMIN_ONLY_CLIENT_FIELDS,
+  CLIENT_FIELD_LABEL,
+  CLIENT_REQUESTABLE_FIELDS,
+  currentClientValue,
+  normalizeClientValue,
+  sameClientValue,
+} from './client-settings';
 import { LiCampaignsService } from '../linkedin/campaigns/li-campaigns.service';
 import { LinkedInSubscriptionService } from '../linkedin/subscription/linkedin-subscription.service';
 import { BounceService } from '../bounce/bounce.service';
@@ -45,32 +61,6 @@ import {
   SetSequenceDto,
   UpdateClientDto,
 } from './dto/programs.dto';
-
-/** Adds `n` business days (Mon–Fri) to a date; snaps weekends forward. */
-function addBusinessDays(base: Date, n: number): Date {
-  const d = new Date(base);
-  // Snap the starting point to a weekday first.
-  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
-  let added = 0;
-  while (added < n) {
-    d.setDate(d.getDate() + 1);
-    if (d.getDay() !== 0 && d.getDay() !== 6) added++;
-  }
-  return d;
-}
-
-
-function randomInt(min: number, max: number): number {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-/** Sets a random clock time within the client's send window (human-like). */
-function withSendTime(date: Date, startHour: number, endHour: number): Date {
-  const d = new Date(date);
-  const hi = Math.max(startHour + 1, endHour);
-  d.setHours(randomInt(startHour, hi - 1), randomInt(0, 59), randomInt(0, 59), 0);
-  return d;
-}
 
 @Injectable()
 export class ProgramsService {
@@ -623,8 +613,52 @@ export class ProgramsService {
     return client;
   }
 
+  /**
+   * A client-portal settings edit. Plan, entitlements, validity, billing,
+   * channels and status are staff-only; any other change is held for review
+   * and applied on approval. Nothing is written to the client here.
+   */
+  private async requestClientSettings(user: AuthUser, before: Client, dto: UpdateClientDto) {
+    const changes: Record<string, { from: unknown; to: unknown }> = {};
+    for (const [key, raw] of Object.entries(dto)) {
+      if (raw === undefined) continue;
+      const to = normalizeClientValue(key, raw);
+      const from = currentClientValue(before as unknown as Record<string, unknown>, key);
+      if (sameClientValue(from, to)) continue;
+      if (ADMIN_ONLY_CLIENT_FIELDS.includes(key)) {
+        throw new ForbiddenException(
+          `${CLIENT_FIELD_LABEL[key] ?? key} can only be changed by your account team.`,
+        );
+      }
+      if (CLIENT_REQUESTABLE_FIELDS.includes(key)) changes[key] = { from, to };
+    }
+    if (Object.keys(changes).length === 0) return { ...before, pendingApproval: false };
+
+    const listId = changes.autoCohortListId?.to;
+    if (typeof listId === 'string' && listId) {
+      const own = await this.prisma.contactList.count({
+        where: { id: listId, tenantId: user.tenantId, clientId: before.id },
+      });
+      if (!own) throw new NotFoundException('Contact list not found');
+    }
+    await this.approvals.submitClientChange({
+      tenantId: user.tenantId,
+      clientId: before.id,
+      requestedById: user.userId,
+      kind: ClientChangeKind.SETTINGS,
+      summary: 'Settings',
+      payload: JSON.parse(JSON.stringify({ changes })),
+    });
+    return {
+      ...before,
+      pendingApproval: true,
+      message: 'Settings change sent for approval. Your current settings stay in place until it is approved.',
+    };
+  }
+
   async updateClient(user: AuthUser, id: string, dto: UpdateClientDto) {
     const before = await this.assertClient(user, id);
+    if (user.role === Role.CLIENT) return this.requestClientSettings(user, before, dto);
     // Validity is stored with a start date; changing the window (re)starts the clock.
     const { validityDays, operationContacts, invoiceDate, ...rest } = dto;
     const data: Prisma.ClientUpdateInput = { ...rest };
@@ -676,6 +710,7 @@ export class ProgramsService {
 
   // ── Mailbox group ─────────────────────────────────────────
   async assignMailbox(user: AuthUser, clientId: string, dto: AssignMailboxDto) {
+    this.assertAdmin(user); // Mailbox Group is staff-only
     const client = await this.assertClient(user, clientId);
     const mailbox = await this.prisma.emailAccount.findFirst({
       where: { id: dto.mailboxId, tenantId: user.tenantId },
@@ -697,6 +732,7 @@ export class ProgramsService {
   }
 
   async unassignMailbox(user: AuthUser, clientId: string, mailboxId: string) {
+    this.assertAdmin(user);
     await this.assertClient(user, clientId);
     await this.prisma.emailAccount.updateMany({
       where: { id: mailboxId, tenantId: user.tenantId, clientId },
@@ -712,46 +748,29 @@ export class ProgramsService {
     scope: { clientId: string; cohortId: string | null },
     steps: SequenceStepDto[],
   ) {
-    await this.prisma.sequenceStep.deleteMany({
-      where: scope.cohortId
-        ? { cohortId: scope.cohortId }
-        : { clientId: scope.clientId, cohortId: null },
-    });
-    // Same month as previous → ~10-day in-month gap; each extra month → ~21 days.
-    const sorted = [...steps].sort((a, b) => a.stageOrder - b.stageOrder);
-    let prevMonth = 1;
-    for (let i = 0; i < sorted.length; i++) {
-      const step = sorted[i];
-      const month =
-        i === 0 ? 1 : Math.max(prevMonth, step.monthOffset ?? prevMonth);
-      const waitDays =
-        i === 0 ? 0 : month === prevMonth ? 10 : (month - prevMonth) * 21;
-      // Per-mailbox variants: keep empties so a variant maps to its mailbox slot,
-      // but drop trailing blanks. templateId mirrors the first for back-compat.
-      const rawVariants = (step.templateIds ?? []).map((t) => (t ?? '').trim());
-      while (rawVariants.length && !rawVariants[rawVariants.length - 1]) {
-        rawVariants.pop();
-      }
-      const variants =
-        rawVariants.length || !step.templateId ? rawVariants : [step.templateId];
-      await this.prisma.sequenceStep.create({
-        data: {
-          clientId: scope.clientId,
-          cohortId: scope.cohortId,
-          stageOrder: step.stageOrder,
-          templateId: variants.find((v) => v) ?? null,
-          templateIds: variants,
-          monthOffset: month,
-          waitDays,
-        },
-      });
-      prevMonth = month;
-    }
+    return persistSequenceSteps(this.prisma, scope, steps);
   }
 
   /** Edit the client's DEFAULT sequence (template new cohorts start from). */
   async setSequence(user: AuthUser, clientId: string, dto: SetSequenceDto) {
     await this.assertClient(user, clientId);
+    if (user.role === Role.CLIENT) {
+      // Held for review; the live sequence keeps running until it's approved.
+      await this.assertSequenceTemplates(user, clientId, dto.steps);
+      const n = dto.steps.length;
+      await this.approvals.submitClientChange({
+        tenantId: user.tenantId,
+        clientId,
+        requestedById: user.userId,
+        kind: ClientChangeKind.SEQUENCE,
+        summary: `Default sequence · ${n} stage${n === 1 ? '' : 's'}`,
+        payload: JSON.parse(JSON.stringify({ steps: dto.steps })),
+      });
+      return {
+        pendingApproval: true,
+        message: 'Sequence change sent for approval. The current sequence keeps running until it is approved.',
+      };
+    }
     await this.persistSteps({ clientId, cohortId: null }, dto.steps);
     const maxStage = dto.steps.reduce((m, s) => Math.max(m, s.stageOrder), 0);
     await this.prisma.client.update({
@@ -780,6 +799,23 @@ export class ProgramsService {
 
   async setCohortSequence(user: AuthUser, cohortId: string, dto: SetSequenceDto) {
     const cohort = await this.assertCohort(user, cohortId);
+    if (user.role === Role.CLIENT) {
+      await this.assertSequenceTemplates(user, cohort.clientId, dto.steps);
+      const n = dto.steps.length;
+      await this.approvals.submitClientChange({
+        tenantId: user.tenantId,
+        clientId: cohort.clientId,
+        requestedById: user.userId,
+        kind: ClientChangeKind.COHORT_SEQUENCE,
+        targetId: cohortId,
+        summary: `Cohort ${cohortRef(cohort.monthIndex, cohort.subIndex)} sequence · ${n} stage${n === 1 ? '' : 's'}`,
+        payload: JSON.parse(JSON.stringify({ steps: dto.steps })),
+      });
+      return {
+        pendingApproval: true,
+        message: 'Cohort sequence change sent for approval. This cohort keeps its current sequence until then.',
+      };
+    }
     await this.persistSteps({ clientId: cohort.clientId, cohortId }, dto.steps);
     return this.prisma.sequenceStep.findMany({
       where: { cohortId },
@@ -791,6 +827,23 @@ export class ProgramsService {
   /** Manual upload: enroll a chosen list / contact set as a new cohort. */
   async createCohort(user: AuthUser, clientId: string, dto: CreateCohortDto) {
     const client = await this.assertClient(user, clientId);
+    const isClient = user.role === Role.CLIENT;
+    // A client-portal user can only enroll their own workspace's list / contacts.
+    if (isClient && dto.listId) {
+      const own = await this.prisma.contactList.count({
+        where: { id: dto.listId, tenantId: user.tenantId, clientId },
+      });
+      if (!own) throw new NotFoundException('Contact list not found');
+    }
+    if (isClient && dto.contactIds?.length) {
+      const wanted = new Set(dto.contactIds);
+      const own = await this.prisma.contact.count({
+        where: { id: { in: [...wanted] }, tenantId: user.tenantId, clientId },
+      });
+      if (own !== wanted.size) {
+        throw new BadRequestException('Some of these contacts are not in this workspace.');
+      }
+    }
     const ids = new Set<string>(dto.contactIds ?? []);
     if (dto.listId) {
       const members = await this.prisma.contactListMember.findMany({
@@ -836,6 +889,7 @@ export class ProgramsService {
       label,
       dto.monthIndex,
       startDate,
+      isClient ? CohortStatus.PENDING : CohortStatus.RUNNING,
     );
     await this.activity.log({
       tenantId: user.tenantId,
@@ -845,6 +899,7 @@ export class ProgramsService {
       entityId: cohort.cohortId,
       after: { label: label ?? null, contacts: fresh.length, client: client.name },
     });
+    if (isClient) return this.submitCohortForApproval(user, cohort);
     return cohort;
   }
 
@@ -860,10 +915,42 @@ export class ProgramsService {
     if (!listId) {
       throw new BadRequestException('No source list configured for this client');
     }
-    return this.createFromSource(client, listId);
+    const isClient = user.role === Role.CLIENT;
+    if (isClient) {
+      const own = await this.prisma.contactList.count({
+        where: { id: listId, tenantId: user.tenantId, clientId },
+      });
+      if (!own) throw new NotFoundException('Contact list not found');
+    }
+    const cohort = await this.createFromSource(
+      client,
+      listId,
+      isClient ? CohortStatus.PENDING : CohortStatus.RUNNING,
+    );
+    if (isClient) return this.submitCohortForApproval(user, cohort);
+    return cohort;
   }
 
-  private async createFromSource(client: Client, listId: string) {
+  /** A cohort a client created waits for review; nothing sends until it's approved. */
+  private async submitCohortForApproval<T extends { cohortId: string }>(user: AuthUser, cohort: T) {
+    await this.approvals.submit({
+      tenantId: user.tenantId,
+      submittedById: user.userId,
+      entityType: ApprovalEntity.COHORT,
+      entityId: cohort.cohortId,
+    });
+    return {
+      ...cohort,
+      pendingApproval: true,
+      message: 'Cohort uploaded. It starts sending once an admin approves it.',
+    };
+  }
+
+  private async createFromSource(
+    client: Client,
+    listId: string,
+    status: CohortStatus = CohortStatus.RUNNING,
+  ) {
     const list = await this.prisma.contactList.findFirst({
       where: { id: listId },
       select: { name: true },
@@ -887,7 +974,7 @@ export class ProgramsService {
     if (fresh.length === 0) {
       throw new BadRequestException('No fresh contacts left in the source list');
     }
-    return this.createAndEnroll(client, fresh, list?.name);
+    return this.createAndEnroll(client, fresh, list?.name, undefined, undefined, status);
   }
 
   /** Shared: create the Cohort row and enroll contacts with day-slot scheduling.
@@ -900,6 +987,7 @@ export class ProgramsService {
     label?: string,
     monthIndexArg?: number,
     startDateArg?: Date,
+    status: CohortStatus = CohortStatus.RUNNING,
   ) {
     const { monthIndex, subIndex } = await this.allocateMonthSlot(
       client.id,
@@ -921,6 +1009,7 @@ export class ProgramsService {
         monthIndex,
         subIndex,
         startDate: start,
+        status,
       },
     });
 
@@ -1424,6 +1513,11 @@ export class ProgramsService {
 
   async pauseCohort(user: AuthUser, cohortId: string) {
     const cohort = await this.assertCohort(user, cohortId);
+    if (cohort.status !== CohortStatus.RUNNING) {
+      throw new BadRequestException(
+        cohort.status === CohortStatus.PENDING ? 'This cohort is awaiting approval.' : 'Only a running cohort can be paused.',
+      );
+    }
     await this.prisma.cohort.update({
       where: { id: cohortId },
       data: { status: 'PAUSED' },
@@ -1434,6 +1528,12 @@ export class ProgramsService {
 
   async resumeCohort(user: AuthUser, cohortId: string) {
     const cohort = await this.assertCohort(user, cohortId);
+    // Resume never starts a cohort that hasn't been approved.
+    if (cohort.status !== CohortStatus.PAUSED) {
+      throw new BadRequestException(
+        cohort.status === CohortStatus.PENDING ? 'This cohort is awaiting approval.' : 'Only a paused cohort can be resumed.',
+      );
+    }
     await this.prisma.cohort.update({
       where: { id: cohortId },
       data: { status: 'RUNNING' },
@@ -1445,6 +1545,15 @@ export class ProgramsService {
   /** Stop permanently: halt the cohort and end every still-active contact. */
   async stopCohort(user: AuthUser, cohortId: string) {
     const cohort = await this.assertCohort(user, cohortId);
+    if (cohort.status === CohortStatus.PENDING) {
+      throw new BadRequestException('This cohort is still awaiting approval. Delete it instead.');
+    }
+    if (cohort.status === CohortStatus.STOPPED || cohort.status === CohortStatus.COMPLETED) {
+      throw new BadRequestException('This cohort has already ended.');
+    }
+    if (user.role === Role.CLIENT) {
+      return this.requestCohortAction(user, cohort, ClientChangeKind.COHORT_STOP);
+    }
     await this.prisma.cohort.update({
       where: { id: cohortId },
       data: { status: 'STOPPED', endedAt: new Date() },
@@ -1460,7 +1569,13 @@ export class ProgramsService {
   /** Delete a cohort and all its enrollments (cascade). */
   async deleteCohort(user: AuthUser, cohortId: string) {
     const cohort = await this.assertCohort(user, cohortId);
+    // A client removes a cohort that never sent (still awaiting approval) right
+    // away — that frees its contacts. Deleting a live one is a request.
+    if (user.role === Role.CLIENT && cohort.status !== CohortStatus.PENDING) {
+      return this.requestCohortAction(user, cohort, ClientChangeKind.COHORT_DELETE);
+    }
     await this.prisma.cohort.delete({ where: { id: cohortId } });
+    await this.closeCohortApprovals(user.tenantId, cohortId);
     await this.logCohort(user, 'DELETE_COHORT', cohort);
     return { ok: true };
   }
@@ -1472,6 +1587,7 @@ export class ProgramsService {
    *  - stop: all RUNNING/PAUSED → STOPPED and end their active enrollments
    */
   async controlAllCohorts(user: AuthUser, action: 'pause' | 'resume' | 'stop') {
+    this.assertAdmin(user); // tenant-wide: every client's cohorts
     const tenantId = user.tenantId;
     let affected = 0;
     if (action === 'pause') {
@@ -1515,7 +1631,11 @@ export class ProgramsService {
   /** Send now: make this cohort's active contacts due immediately, then run the
    *  engine. Per-mailbox daily caps still throttle the actual volume. */
   async sendCohortNow(user: AuthUser, cohortId: string) {
-    await this.assertCohort(user, cohortId);
+    this.assertAdmin(user);
+    const cohort = await this.assertCohort(user, cohortId);
+    if (cohort.status !== CohortStatus.RUNNING) {
+      throw new BadRequestException('Only a running cohort can send now.');
+    }
     await this.prisma.enrollment.updateMany({
       where: { cohortId, status: EnrollmentStatus.ACTIVE },
       data: { nextTouchAt: new Date() },
@@ -1523,9 +1643,88 @@ export class ProgramsService {
     return this.runDueNow();
   }
 
+  /** A client's stop/delete of a live cohort becomes a change request for review. */
+  private async requestCohortAction(
+    user: AuthUser,
+    cohort: { id: string; clientId: string; label: string; monthIndex: number; subIndex: number | null },
+    kind: ClientChangeKind,
+  ) {
+    const verb = kind === ClientChangeKind.COHORT_STOP ? 'Stop' : 'Delete';
+    const res = await this.approvals.submitClientChange({
+      tenantId: user.tenantId,
+      clientId: cohort.clientId,
+      requestedById: user.userId,
+      kind,
+      targetId: cohort.id,
+      summary: `${verb} cohort ${cohortRef(cohort.monthIndex, cohort.subIndex)} · ${cohort.label}`,
+      payload: {},
+    });
+    return {
+      ok: true,
+      pendingApproval: true,
+      message: res.duplicate
+        ? `A ${verb.toLowerCase()} request for this cohort is already awaiting approval.`
+        : `${verb} request sent for approval. The cohort stays as it is until then.`,
+    };
+  }
+
+  /** Close reviews that would otherwise point at a cohort that no longer exists. */
+  private async closeCohortApprovals(tenantId: string, cohortId: string) {
+    const changeIds = (
+      await this.prisma.clientChangeRequest.findMany({
+        where: { tenantId, targetId: cohortId },
+        select: { id: true },
+      })
+    ).map((r) => r.id);
+    await this.prisma.approval.updateMany({
+      where: {
+        tenantId,
+        status: ApprovalStatus.PENDING,
+        OR: [
+          { entityType: ApprovalEntity.COHORT, entityId: cohortId },
+          { entityType: ApprovalEntity.CLIENT_CHANGE, entityId: { in: changeIds } },
+        ],
+      },
+      data: {
+        status: ApprovalStatus.REJECTED,
+        decisionReason: 'Cohort deleted before review',
+        decidedAt: new Date(),
+      },
+    });
+  }
+
+  /** Templates a client puts in a sequence must belong to that workspace. */
+  private async assertSequenceTemplates(
+    user: AuthUser,
+    clientId: string,
+    steps: SequenceStepDto[],
+  ) {
+    if (user.role !== Role.CLIENT) return;
+    const ids = [
+      ...new Set(
+        steps
+          .flatMap((st) => [st.templateId, ...(st.templateIds ?? [])])
+          .map((t) => (t ?? '').trim())
+          .filter(Boolean),
+      ),
+    ];
+    if (!ids.length) return;
+    const own = await this.prisma.emailTemplate.count({
+      where: { id: { in: ids }, tenantId: user.tenantId, clientId },
+    });
+    if (own !== ids.length) {
+      throw new BadRequestException('A selected template is not in this workspace.');
+    }
+  }
+
   private async assertCohort(user: AuthUser, cohortId: string) {
     const cohort = await this.prisma.cohort.findFirst({
-      where: { id: cohortId, tenantId: user.tenantId },
+      where: {
+        id: cohortId,
+        tenantId: user.tenantId,
+        // A client-portal user can only reach cohorts of a workspace they own.
+        ...(user.role === Role.CLIENT ? { client: { ownerUserId: user.userId } } : {}),
+      },
     });
     if (!cohort) throw new NotFoundException('Cohort not found');
     return cohort;
