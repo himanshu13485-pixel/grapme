@@ -10,6 +10,9 @@ import { LiClientPlanFields, LiClientSendWindowFields, LiPlanForm, emptyLiPlan }
 import { SetupMonthSquares } from '@/components/SetupMonthSquares';
 import { LiSubscription, LI_DEFAULTS } from '@/lib/linkedin';
 import { validityInfo } from '@/components/Validity';
+import { TagInput } from '@/components/TagInput';
+import { SubscriptionHistory } from '@/components/SubscriptionHistory';
+import { ClientHistory } from '@/components/ClientHistory';
 
 interface Client {
   id: string;
@@ -49,6 +52,11 @@ interface Client {
   owner?: { id: string; name: string; email: string; contactMobile?: string | null; emailVerified?: boolean | null; pendingEmail?: string | null } | null;
   salesPerson?: { id: string; name: string; email: string } | null;
   operationContacts?: { name: string; email: string }[];
+  /** Times a new invoice has started a fresh window; > 0 shows the Renewed badge. */
+  renewalCount?: number;
+  lastRenewedAt?: string | null;
+  /** The subscription this client renewed from (list endpoint only). */
+  previousSubscription?: { plan: string; invoiceNo?: string | null; invoiceDate?: string | null; startAt: string; endAt: string } | null;
 }
 
 export default function ClientsPage() {
@@ -270,6 +278,7 @@ export default function ClientsPage() {
               <option value="CURRENT">Current subscription</option>
               <option value="EXPIRED">Subscription expired</option>
               <option value="DEACTIVATED">Deactivated</option>
+              <option value="RENEWED">Renewed</option>
             </select>
           )}
           {!isClient && (
@@ -374,6 +383,14 @@ export default function ClientsPage() {
                   {c.validityEndAt && new Date(c.validityEndAt) < new Date() && (
                     <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-medium text-rose-700">Expired</span>
                   )}
+                  {(c.renewalCount ?? 0) > 0 && (
+                    <span
+                      className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700"
+                      title={c.lastRenewedAt ? `Last renewed ${shortDate(c.lastRenewedAt)}` : 'Renewed'}
+                    >
+                      Renewed{(c.renewalCount ?? 0) > 1 ? ` ×${c.renewalCount}` : ''}
+                    </span>
+                  )}
                   <StatusBadge status={(c.status ?? 'active').toLowerCase() === 'active' ? 'ACTIVE' : 'INACTIVE'} />
                 </div>
               </div>
@@ -387,6 +404,13 @@ export default function ClientsPage() {
                 {c.invoiceNo && <span> · Invoice {c.invoiceNo}</span>}
                 {c.invoiceDate && <span> · {new Date(c.invoiceDate).toLocaleDateString()}</span>}
               </div>
+              {c.previousSubscription && (
+                <div className="mt-0.5 truncate text-[11px] text-slate-400" title="Previous subscription">
+                  ↺ Previous: {c.previousSubscription.invoiceNo ? `Invoice ${c.previousSubscription.invoiceNo}` : 'no invoice'}
+                  {c.previousSubscription.invoiceDate && ` · ${shortDate(c.previousSubscription.invoiceDate)}`}
+                  {' · '}{shortDate(c.previousSubscription.startAt)} → {shortDate(c.previousSubscription.endAt)}
+                </div>
+              )}
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 <CategoryBadge category={c.productCategory} compact />
                 <span className="inline-flex items-center rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-medium text-brand-700">
@@ -539,6 +563,12 @@ function channelLabel(c: { emailEnabled?: boolean; linkedInEnabled?: boolean }):
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0]; // Mon … Sun
+/** "12 Jun 2026" — compact enough for the one-line history on a workspace card. */
+function shortDate(d?: string | null): string {
+  if (!d) return '—';
+  return new Date(d).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
 function formatDays(days?: number[] | null): string {
   if (!days || days.length === 0) return '—';
   return [...days].sort().map((x) => DAY_LABELS[x] ?? x).join(', ');
@@ -631,6 +661,14 @@ function ClientDetailView({ client }: { client: Client }) {
   return (
     <div className="space-y-5">
       <DetailSection title="Client details" rows={clientRows} />
+      {isClient ? (
+        <div>
+          <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Subscription history</div>
+          <SubscriptionHistory clientId={client.id} compact />
+        </div>
+      ) : (
+        <ClientHistory clientId={client.id} defaultOpen />
+      )}
       {emailRows.length > 0 && <DetailSection title="📧 Email business requirements" rows={emailRows} />}
       {linkedinRows.length > 0 && <DetailSection title="🔗 LinkedIn business requirements" rows={linkedinRows} />}
     </div>
@@ -849,19 +887,19 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
         </div>
         <div>
           <label className="label">Invoice no.</label>
-          <input
-            className="input"
+          <TagInput
             value={form.invoiceNo}
-            onChange={(e) => setForm({ ...form, invoiceNo: e.target.value })}
-            placeholder="e.g. INV-2026-014"
+            onChange={(v) => setForm({ ...form, invoiceNo: v })}
+            placeholder="e.g. INV-2026-014 — press comma or Enter to add"
           />
         </div>
         <div>
-          <label className="label">Invoice date</label>
+          <label className="label">Invoice date{isClient ? '' : ' *'}</label>
           <input
             type="date"
             className="input"
             value={form.invoiceDate}
+            required={!isClient}
             onChange={(e) => setForm({ ...form, invoiceDate: e.target.value })}
           />
         </div>
@@ -910,11 +948,10 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
         </div>
         <div>
           <label className="label">Product / Category</label>
-          <input
-            className="input"
+          <TagInput
             value={form.productCategory}
-            onChange={(e) => setForm({ ...form, productCategory: e.target.value })}
-            placeholder="e.g. Handicrafts, Spices"
+            onChange={(v) => setForm({ ...form, productCategory: v })}
+            placeholder="e.g. Handicrafts, Spices — press comma or Enter to add"
           />
         </div>
         <div>
@@ -1036,7 +1073,7 @@ function ExtendValidity({
   if (v.expired) {
     return (
       <p className="mt-1 text-[11px] text-amber-600">
-        Plan expired. Set a new validity above to renew it.
+        Plan expired. Use Renewal below to enter the new invoice and start a fresh window.
       </p>
     );
   }
@@ -1098,6 +1135,121 @@ function ExtendValidity({
       </p>
       {msg && <p className="mt-1 text-[11px] text-emerald-600">{msg}</p>}
       {err && <p className="mt-1 text-[11px] text-rose-600">{err}</p>}
+    </div>
+  );
+}
+
+/**
+ * Renew an expired subscription with a new invoice.
+ *
+ * Asks only for what a renewal changes: the new invoice number and date, plus plan and
+ * validity (prefilled with the current ones). The invoice being replaced moves into the
+ * history with who submitted it and when; every other client setting stays as it is.
+ */
+function RenewSubscription({
+  client,
+  planOptions,
+  onRenewed,
+}: {
+  client: Client;
+  planOptions: string[];
+  onRenewed: () => void;
+}) {
+  const { plans } = usePlans();
+  const [open, setOpen] = useState(false);
+  const [invoiceNo, setInvoiceNo] = useState('');
+  const [invoiceDate, setInvoiceDate] = useState('');
+  const [plan, setPlan] = useState(client.plan);
+  const [days, setDays] = useState<number>(client.validityDays ?? 0);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  if (!open) {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+        <p className="text-sm text-amber-800">
+          Subscription expired{client.invoiceNo ? ` (invoice ${client.invoiceNo})` : ''}. Renew it with a new invoice.
+        </p>
+        <button type="button" className="btn-primary text-sm" onClick={() => setOpen(true)}>
+          Renewal
+        </button>
+      </div>
+    );
+  }
+
+  const ready = !!invoiceNo.trim() && !!invoiceDate && days >= 1;
+
+  async function renew() {
+    if (!ready) return;
+    setBusy(true);
+    setErr('');
+    try {
+      await api.post(`/clients/${client.id}/renew`, { invoiceNo, invoiceDate, plan, validityDays: days });
+      onRenewed();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Renewal failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    // Enter in these fields must not submit the surrounding Edit form.
+    <div
+      className="space-y-3 rounded-lg border border-brand-200 bg-brand-50/40 p-3"
+      onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault(); }}
+    >
+      <div className="text-sm font-semibold text-slate-800">Renew subscription</div>
+      <p className="text-xs text-slate-500">
+        {client.invoiceNo
+          ? `Current invoice ${client.invoiceNo}${client.invoiceDate ? ` (${shortDate(client.invoiceDate)})` : ''} moves to history.`
+          : 'The current subscription moves to history.'}{' '}
+        All other client settings stay as they are.
+      </p>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div>
+          <label className="label">New invoice no. *</label>
+          <TagInput value={invoiceNo} onChange={setInvoiceNo} placeholder="Press comma or Enter to add" />
+        </div>
+        <div>
+          <label className="label">New invoice date *</label>
+          <input type="date" className="input" value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
+        </div>
+        <div>
+          <label className="label">Plan</label>
+          <select
+            className="input"
+            value={plan}
+            onChange={(e) => {
+              setPlan(e.target.value);
+              const p = plans.find((pl) => pl.name === e.target.value);
+              if (p?.validityDays) setDays(p.validityDays);
+            }}
+          >
+            {planOptions.map((p) => <option key={p} value={p}>{p}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="label">Validity (days) *</label>
+          <input
+            type="number"
+            min={1}
+            className="input"
+            value={days}
+            onChange={(e) => setDays(Math.max(0, Number(e.target.value) || 0))}
+          />
+          <p className="mt-0.5 text-[11px] text-slate-400">Starts today.</p>
+        </div>
+      </div>
+      {err && <p className="text-xs text-rose-600">{err}</p>}
+      <div className="flex gap-2">
+        <button type="button" className="btn-primary text-sm" disabled={!ready || busy} onClick={() => void renew()}>
+          {busy ? 'Renewing…' : 'Renew'}
+        </button>
+        <button type="button" className="btn-ghost text-sm" disabled={busy} onClick={() => setOpen(false)}>
+          Cancel
+        </button>
+      </div>
     </div>
   );
 }
@@ -1445,12 +1597,13 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
           </div>
           <div>
             <label className="label">Invoice no.</label>
-            <input className="input" value={form.invoiceNo}
-              onChange={(e) => setForm({ ...form, invoiceNo: e.target.value })} />
+            <TagInput value={form.invoiceNo} placeholder="Press comma or Enter to add"
+              onChange={(v) => setForm({ ...form, invoiceNo: v })} />
+            <p className="mt-0.5 text-[11px] text-slate-400">For corrections. A new invoice for a new period is a renewal — it keeps the old one in history.</p>
           </div>
           <div>
-            <label className="label">Invoice date</label>
-            <input type="date" className="input" value={form.invoiceDate}
+            <label className="label">Invoice date *</label>
+            <input type="date" className="input" value={form.invoiceDate} required
               onChange={(e) => setForm({ ...form, invoiceDate: e.target.value })} />
           </div>
           <div>
@@ -1481,8 +1634,8 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
           </div>
           <div>
             <label className="label">Product / Category</label>
-            <input className="input" value={form.productCategory}
-              onChange={(e) => setForm({ ...form, productCategory: e.target.value })} />
+            <TagInput value={form.productCategory} placeholder="Press comma or Enter to add"
+              onChange={(v) => setForm({ ...form, productCategory: v })} />
           </div>
           <div>
             <label className="label">Service type</label>
@@ -1522,6 +1675,14 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
                 setForm((f) => ({ ...f, validityDays: d }));
               }}
             />
+          </div>
+          {validityInfo(savedDays, client.validityStartAt).expired && (
+            <div className="sm:col-span-2">
+              <RenewSubscription client={client} planOptions={planOptions} onRenewed={onDone} />
+            </div>
+          )}
+          <div className="sm:col-span-2">
+            <ClientHistory clientId={client.id} />
           </div>
           <div className="sm:col-span-2">
             <label className="label">Outreach channels</label>

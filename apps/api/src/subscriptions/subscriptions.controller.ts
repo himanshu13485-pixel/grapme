@@ -14,4 +14,10 @@ export class SubscriptionsController {
   history(@CurrentUser() u: AuthUser, @Param('id') id: string) {
     return this.subs.historyForClient(u, id);
   }
+
+  /** Field-by-field change history (staff only): old → new value, who, when. */
+  @Get('clients/:id/change-history')
+  changes(@CurrentUser() u: AuthUser, @Param('id') id: string) {
+    return this.subs.changeHistoryForClient(u, id);
+  }
 }

@@ -1,4 +1,5 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
+import { normalizeCsvListInput } from '../../common/csv-list';
 import {
   IsArray,
   IsBoolean,
@@ -29,12 +30,12 @@ export class LiClientSendWindowDto {
 
 export class CreateClientDto {
   @IsString() name: string;
-  @IsOptional() @IsString() invoiceNo?: string;
+  @IsOptional() @Transform(normalizeCsvListInput) @IsString() invoiceNo?: string; // comma-separated
   @IsOptional() @IsString() invoiceDate?: string; // ISO date (yyyy-mm-dd) or empty
   @IsOptional() @IsString() contactPerson?: string;
   @IsOptional() @IsString() email?: string;
   @IsOptional() @IsString() mobile?: string;
-  @IsOptional() @IsString() productCategory?: string;
+  @IsOptional() @Transform(normalizeCsvListInput) @IsString() productCategory?: string; // comma-separated
   @IsOptional() @IsString() serviceType?: string;
   @IsOptional() @IsBoolean() emailEnabled?: boolean;
   @IsOptional() @IsBoolean() linkedInEnabled?: boolean;
@@ -64,12 +65,12 @@ export class CreateClientDto {
 export class UpdateClientDto {
   @IsOptional() @IsString() name?: string;
   @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => OperationContactDto) operationContacts?: OperationContactDto[];
-  @IsOptional() @IsString() invoiceNo?: string;
+  @IsOptional() @Transform(normalizeCsvListInput) @IsString() invoiceNo?: string; // comma-separated
   @IsOptional() @IsString() invoiceDate?: string; // ISO date (yyyy-mm-dd) or empty
   @IsOptional() @IsString() contactPerson?: string;
   @IsOptional() @IsString() email?: string;
   @IsOptional() @IsString() mobile?: string;
-  @IsOptional() @IsString() productCategory?: string;
+  @IsOptional() @Transform(normalizeCsvListInput) @IsString() productCategory?: string; // comma-separated
   @IsOptional() @IsString() serviceType?: string;
   @IsOptional() @IsBoolean() emailEnabled?: boolean;
   @IsOptional() @IsBoolean() linkedInEnabled?: boolean;
@@ -133,4 +134,15 @@ export class CreateCohortDto {
   @IsOptional() @IsArray() @IsString({ each: true }) contactIds?: string[];
   /** Optional future start — upload a cohort in advance; sending begins then. */
   @IsOptional() @IsDateString() startDate?: string;
+}
+
+/**
+ * Renew a client's subscription with a new invoice. The invoice being replaced moves to
+ * the subscription history; plan and validity default to the client's current values.
+ */
+export class RenewClientDto {
+  @Transform(normalizeCsvListInput) @IsString() invoiceNo: string; // comma-separated
+  @IsDateString() invoiceDate: string; // yyyy-mm-dd
+  @IsOptional() @IsString() plan?: string;
+  @IsOptional() @IsInt() @Min(1) @Max(3650) validityDays?: number;
 }

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ApprovalEntity, ApprovalStatus, LiCampaignStatus, LiCreditReason, LiLeadStatus, LiScheduledActionStatus, LiScheduledActionType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LiSchedulerService } from '../scheduler/li-scheduler.service';
@@ -11,8 +11,13 @@ import {
 
 const EDITABLE: LiCampaignStatus[] = [LiCampaignStatus.DRAFT, LiCampaignStatus.PAUSED];
 
+/** pausedReason written when a client's subscription lapses or is deactivated. */
+export const CLIENT_SUSPENDED_REASON = 'Client subscription inactive — resumes on renewal or reactivation';
+
 @Injectable()
 export class LiCampaignsService {
+  private readonly logger = new Logger(LiCampaignsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly scheduler: LiSchedulerService,
@@ -660,17 +665,41 @@ export class LiCampaignsService {
       select: { id: true },
     });
     for (const c of running) await this.setStatus(c.id, LiCampaignStatus.PAUSED);
+    // Label them, so a later renewal resumes exactly these and nothing else.
+    if (running.length) {
+      await this.prisma.liCampaign.updateMany({
+        where: { id: { in: running.map((c) => c.id) } },
+        data: { pausedReason: CLIENT_SUSPENDED_REASON },
+      });
+    }
     return running.length;
   }
 
-  /** Resume a client's PAUSED campaigns when the client is reactivated / renewed. */
+  /**
+   * Resume a client's campaigns when the client is reactivated / renewed.
+   *
+   * Only campaigns the suspension stopped (or unlabelled ones, which covers anything
+   * paused before labelling existed). Campaigns the engine paused for its own reasons —
+   * low acceptance, a LinkedIn checkpoint, a removed account — stay paused: a renewal
+   * says nothing about whether those problems are fixed.
+   */
   async resumeAllForClient(clientId: string): Promise<number> {
     const paused = await this.prisma.liCampaign.findMany({
-      where: { clientId, status: LiCampaignStatus.PAUSED },
+      where: {
+        clientId,
+        status: LiCampaignStatus.PAUSED,
+        linkedInAccountId: { not: null },
+        OR: [{ pausedReason: null }, { pausedReason: CLIENT_SUSPENDED_REASON }],
+      },
       select: { id: true },
     });
-    for (const c of paused) await this.setStatus(c.id, LiCampaignStatus.RUNNING);
-    return paused.length;
+    let resumed = 0;
+    for (const c of paused) {
+      // One campaign failing to start must not strand the rest.
+      try { await this.setStatus(c.id, LiCampaignStatus.RUNNING); resumed++; }
+      catch (e) { this.logger.warn(`Resume ${c.id} after client reactivation failed: ${(e as Error).message}`); }
+    }
+    return resumed;
   }
 
   /** Tenant-wide emergency control across every client's LinkedIn campaigns. */

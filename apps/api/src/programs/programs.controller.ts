@@ -14,6 +14,7 @@ import {
   AssignMailboxDto,
   CreateClientDto,
   CreateCohortDto,
+  RenewClientDto,
   SetSequenceDto,
   UpdateClientDto,
 } from './dto/programs.dto';
@@ -168,6 +169,16 @@ export class ProgramsController {
     @Body() dto: { days: number },
   ) {
     return this.programs.extendClientValidity(user, id, dto.days);
+  }
+
+  /** Admin: renew with a new invoice; the replaced invoice moves to the history. */
+  @Post('clients/:id/renew')
+  renewClient(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: RenewClientDto,
+  ) {
+    return this.programs.renewClient(user, id, dto);
   }
 
   /** Admin: reset a client login to the shared default password. */

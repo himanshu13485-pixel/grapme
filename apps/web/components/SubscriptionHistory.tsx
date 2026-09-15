@@ -58,7 +58,17 @@ function Row({ p, compact }: { p: SubPeriod; compact?: boolean }) {
       </td>
       <td className="px-3 py-2 text-slate-600">{fmtDate(p.startAt)} → {fmtDate(p.endAt)}</td>
       <td className="px-3 py-2 text-slate-500">{p.validityDays}d{live ? ` · ${p.daysLeft} left` : ''}</td>
-      {!compact && <td className="px-3 py-2 text-slate-500">{p.invoiceNo || '—'}</td>}
+      {!compact && (
+        <td className="px-3 py-2 text-slate-500">
+          <div>{p.invoiceNo || '—'}</div>
+          {p.invoiceDate && <div className="text-[11px] text-slate-400">dated {fmtDate(p.invoiceDate)}</div>}
+          {p.recordedByName && (
+            <div className="text-[11px] text-slate-400">
+              by {p.recordedByName}{p.createdAt ? ` · ${new Date(p.createdAt).toLocaleString()}` : ''}
+            </div>
+          )}
+        </td>
+      )}
       {!compact && <td className="px-3 py-2 text-slate-500">{fmtMoney(p.amount, p.currency)}</td>}
       <td className="px-3 py-2"><span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${m.cls}`}>{m.label}</span></td>
     </tr>

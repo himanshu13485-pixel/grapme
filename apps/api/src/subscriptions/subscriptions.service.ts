@@ -8,6 +8,39 @@ export type SubStatus = 'ACTIVE' | 'EXPIRING' | 'EXPIRED' | 'SUPERSEDED' | 'CANC
 const ADMIN_ROLES: Role[] = [Role.SUPER_ADMIN, Role.SUB_ADMIN, Role.USER];
 const EXPIRING_DAYS = 7;
 
+/** Audit actions that change a client's details or subscription. */
+const CHANGE_ACTIONS = [
+  'UPDATE_CLIENT', 'RENEW_CLIENT', 'SET_CLIENT_VALIDITY', 'EXTEND_CLIENT_VALIDITY',
+  'ACTIVATE_CLIENT', 'DEACTIVATE_CLIENT', 'FORCE_EXPIRE_SUBSCRIPTION',
+] as const;
+
+/** Human labels for the client fields most likely to appear in the change history. */
+const FIELD_LABELS: Record<string, string> = {
+  name: 'Company name', invoiceNo: 'Invoice no.', invoiceDate: 'Invoice date',
+  contactPerson: 'Contact person', email: 'Contact email', mobile: 'Mobile no.',
+  productCategory: 'Product / Category', serviceType: 'Service type', plan: 'Plan',
+  validityDays: 'Validity (days)', expiresAt: 'Expires', addedDays: 'Days added', status: 'Status',
+  emailEnabled: 'Email channel', linkedInEnabled: 'LinkedIn channel', linkedInCreditMetering: 'LinkedIn credit metering',
+  emailCredits: 'Email credits', emailCreditMetering: 'Email credit metering', mailboxLimit: 'Mailbox limit',
+  emailCampaignLimit: 'Email campaign limit', monthlyQuota: 'Contacts / month', dailyBatchSize: 'Sends / day',
+  batchWindowDays: 'Batch window (days)', stageIntervalDays: 'Gap between stages (days)',
+  followUpCount: 'Follow-ups', workDays: 'Send days', emailJitterSeconds: 'Send stagger (sec)',
+  sendWindowStart: 'Send window start', sendWindowEnd: 'Send window end',
+  stageIntervalJitterDays: 'Interval jitter (days)', operationContacts: 'Operation contacts',
+};
+
+/** Render an audited value for display; dates as yyyy-mm-dd so re-saves of the same day compare equal. */
+function displayValue(field: string, v: unknown): string {
+  if (v === null || v === undefined || v === '') return '—';
+  if (field.toLowerCase().includes('date') || field === 'expiresAt') {
+    const d = new Date(v as string);
+    if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  }
+  if (typeof v === 'boolean') return v ? 'On' : 'Off';
+  if (Array.isArray(v) || typeof v === 'object') return JSON.stringify(v);
+  return String(v);
+}
+
 /** Subscription renewal history: one SubscriptionPeriod per plan/validity window. */
 @Injectable()
 export class SubscriptionsService {
@@ -20,7 +53,12 @@ export class SubscriptionsService {
   async record(
     tenantId: string,
     clientId: string,
-    opts: { plan?: string | null; validityDays: number | null; amount?: number | null; currency?: string | null; source?: string; endAt?: Date | null },
+    opts: {
+      plan?: string | null; validityDays: number | null; amount?: number | null; currency?: string | null;
+      source?: string; endAt?: Date | null;
+      /** Who entered it (renewals are submitted by a staff user). */
+      recordedById?: string | null; recordedByName?: string | null;
+    },
   ) {
     if (!opts.validityDays || opts.validityDays <= 0) return null;
     const now = new Date();
@@ -38,7 +76,7 @@ export class SubscriptionsService {
     // stays accurate even if the plan definition or invoice changes later.
     const [entitlements, client] = await Promise.all([
       this.planEntitlements(tenantId, opts.plan),
-      this.prisma.client.findUnique({ where: { id: clientId }, select: { invoiceNo: true } }),
+      this.prisma.client.findUnique({ where: { id: clientId }, select: { invoiceNo: true, invoiceDate: true } }),
     ]);
     return this.prisma.subscriptionPeriod.create({
       data: {
@@ -49,6 +87,9 @@ export class SubscriptionsService {
         amount: opts.amount ?? null,
         currency: opts.currency ?? null,
         invoiceNo: client?.invoiceNo ?? null,
+        invoiceDate: client?.invoiceDate ?? null,
+        recordedById: opts.recordedById ?? null,
+        recordedByName: opts.recordedByName ?? null,
         source: opts.source ?? 'admin',
         ...(entitlements ? { entitlements } : {}),
       },
@@ -70,6 +111,92 @@ export class SubscriptionsService {
       where: { id: open.id },
       data: { endAt: newEndAt, validityDays: open.validityDays + addDays },
     });
+  }
+
+  /**
+   * Make sure the subscription a renewal is about to replace is on record, with its invoice.
+   *
+   * Clients set up before the history existed often have no period for their current
+   * window, and periods recorded before invoice dates were snapshotted lack one. Without
+   * this, renewing would record the new invoice and the previous one would simply vanish.
+   * Never overwrites a snapshot that is already there.
+   */
+  async snapshotCurrent(
+    tenantId: string,
+    client: {
+      id: string; plan: string; invoiceNo: string | null; invoiceDate: Date | null;
+      validityDays: number | null; validityStartAt: Date | null; createdAt: Date;
+    },
+  ) {
+    const now = new Date();
+    const start = client.validityStartAt;
+    const latest = await this.prisma.subscriptionPeriod.findFirst({
+      where: { clientId: client.id },
+      orderBy: { startAt: 'desc' },
+    });
+    // A period is "this window" if it began no earlier than the window did (record() runs
+    // moments after the client row is written, so allow a little slack).
+    const coversWindow = latest && (!start || latest.startAt.getTime() >= start.getTime() - 5 * 60_000);
+    if (latest && coversWindow) {
+      if (latest.invoiceNo && latest.invoiceDate) return latest;
+      return this.prisma.subscriptionPeriod.update({
+        where: { id: latest.id },
+        data: {
+          invoiceNo: latest.invoiceNo ?? client.invoiceNo,
+          invoiceDate: latest.invoiceDate ?? client.invoiceDate,
+        },
+      });
+    }
+    if (!client.invoiceNo && !client.invoiceDate && !start) return null; // nothing to keep
+    const startAt = start ?? client.invoiceDate ?? client.createdAt;
+    const endAt = start && client.validityDays
+      ? new Date(start.getTime() + client.validityDays * 86_400_000)
+      : now;
+    return this.prisma.subscriptionPeriod.create({
+      data: {
+        tenantId, clientId: client.id,
+        plan: client.plan || '—',
+        validityDays: client.validityDays ?? 0,
+        startAt,
+        endAt: endAt > now ? now : endAt,
+        invoiceNo: client.invoiceNo,
+        invoiceDate: client.invoiceDate,
+        source: 'backfill',
+        endedReason: endAt > now ? 'SUPERSEDED' : null,
+      },
+    });
+  }
+
+  /**
+   * What changed on a client, field by field, and who changed it — read from the audit
+   * log that every client edit, renewal and validity action already writes. Staff only.
+   */
+  async changeHistoryForClient(user: AuthUser, clientId: string) {
+    if (user.role === Role.CLIENT) throw new ForbiddenException('Staff only');
+    const ok = await this.prisma.client.count({ where: { id: clientId, tenantId: user.tenantId } });
+    if (!ok) throw new ForbiddenException('You do not have access to this client');
+
+    const logs = await this.prisma.activityLog.findMany({
+      where: { tenantId: user.tenantId, entityType: 'Client', entityId: clientId, action: { in: [...CHANGE_ACTIONS] } },
+      orderBy: { occurredAt: 'desc' },
+      take: 200,
+      include: { actor: { select: { name: true, email: true } } },
+    });
+
+    const items: { at: Date; by: string; action: string; field: string; label: string; from: string; to: string }[] = [];
+    for (const log of logs) {
+      const by = log.actor?.name || log.actor?.email || 'System';
+      const before = (log.before ?? {}) as Record<string, unknown>;
+      const after = (log.after ?? {}) as Record<string, unknown>;
+      for (const field of Object.keys(after)) {
+        if (field === 'client') continue; // a name echo on status/validity actions, not a change
+        const from = displayValue(field, before[field]);
+        const to = displayValue(field, after[field]);
+        if (from === to) continue;
+        items.push({ at: log.occurredAt, by, action: log.action, field, label: FIELD_LABELS[field] ?? field, from, to });
+      }
+    }
+    return { clientId, items };
   }
 
   private async planEntitlements(tenantId: string, planName?: string | null) {
@@ -99,7 +226,7 @@ export class SubscriptionsService {
 
     const rows = await this.prisma.subscriptionPeriod.findMany({ where: { clientId }, orderBy: { startAt: 'desc' } });
     // Current invoice for periods that predate the snapshot column.
-    const clientRow = await this.prisma.client.findUnique({ where: { id: clientId }, select: { invoiceNo: true } });
+    const clientRow = await this.prisma.client.findUnique({ where: { id: clientId }, select: { invoiceNo: true, invoiceDate: true } });
     // Fallback entitlements for older/backfilled periods with no snapshot: the plan's
     // current definition (looked up by name).
     const planNames = [...new Set(rows.filter((r) => !r.entitlements).map((r) => r.plan))];
@@ -120,7 +247,12 @@ export class SubscriptionsService {
       endAt: r.endAt,
       amount: r.amount,
       currency: r.currency,
-      invoiceNo: r.invoiceNo ?? clientRow?.invoiceNo ?? null,
+      // Fall back to the client's current invoice only for the current period. Applying it
+      // to older periods would stamp a renewal's new invoice onto the ones it replaced.
+      invoiceNo: r.invoiceNo ?? (i === 0 ? clientRow?.invoiceNo ?? null : null),
+      invoiceDate: r.invoiceDate ?? (i === 0 ? clientRow?.invoiceDate ?? null : null),
+      recordedByName: r.recordedByName,
+      createdAt: r.createdAt,
       source: r.source,
       endedReason: r.endedReason,
       entitlements: (r.entitlements as Record<string, number> | null) ?? planMap.get(r.plan) ?? null,

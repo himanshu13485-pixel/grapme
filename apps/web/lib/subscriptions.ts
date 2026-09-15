@@ -20,6 +20,10 @@ export interface SubPeriod {
   amount?: number | null;
   currency?: string | null;
   invoiceNo?: string | null;
+  invoiceDate?: string | null;
+  /** Staff user who entered it (renewals). */
+  recordedByName?: string | null;
+  createdAt?: string;
   source: string;
   endedReason?: string | null;
   entitlements?: PlanEntitlements | null;

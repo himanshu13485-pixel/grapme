@@ -302,7 +302,11 @@ model SubscriptionPeriod {
   endAt        DateTime
   amount       Int? // price paid (whole currency units), if known
   currency     String?
-  invoiceNo    String? // client's invoice number at activation (snapshot)
+  invoiceNo    String? // client's invoice number(s) at activation (snapshot, comma-separated)
+  invoiceDate  DateTime? // invoice date at activation (snapshot)
+  // Who entered this period (renewals are submitted by a staff user).
+  recordedById   String?
+  recordedByName String?
   source       String   @default("admin") // admin | billing | plan_request | registration | backfill
   endedReason  String? // null = ran to natural expiry; SUPERSEDED = replaced early; CANCELLED
   // Snapshot of what the plan included at activation: { emailCredits, linkedInCredits,
@@ -1073,6 +1077,10 @@ model Client {
   // the app) — Postgres keeps it in sync so subscription date/expiry filters can query it.
   validityEndAt           DateTime? // when the validity window ends (generated column)
   validityNotifyStage     Int       @default(0) // last expiry-reminder milestone emailed (0..4)
+  // Renewals: incremented each time a new invoice starts a fresh subscription window.
+  // > 0 drives the "Renewed" badge and the Renewed filter in the Clients Workspace.
+  renewalCount            Int       @default(0)
+  lastRenewedAt           DateTime?
   createdAt               DateTime  @default(now())
   updatedAt               DateTime  @updatedAt
 

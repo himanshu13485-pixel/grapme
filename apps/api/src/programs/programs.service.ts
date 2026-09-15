@@ -53,10 +53,12 @@ import { LinkedInSubscriptionService } from '../linkedin/subscription/linkedin-s
 import { BounceService } from '../bounce/bounce.service';
 import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { inStaffMailHour, istNow } from '../common/office-hours';
+import { joinCsvList, splitCsvList } from '../common/csv-list';
 import {
   AssignMailboxDto,
   CreateClientDto,
   CreateCohortDto,
+  RenewClientDto,
   SequenceStepDto,
   SetSequenceDto,
   UpdateClientDto,
@@ -154,6 +156,11 @@ export class ProgramsService {
     }
     // `linkedin` is the client's self-service send-window request — not a Client column.
     const { linkedin, validityDays, invoiceDate, ...clientData } = dto;
+    // Staff-created workspaces must carry their invoice date. A client setting up its own
+    // workspace has no invoice yet, so the rule is for staff only.
+    if (user.role !== Role.CLIENT && !invoiceDate) {
+      throw new BadRequestException('Invoice date is required.');
+    }
     const invoiceDateData = invoiceDate !== undefined ? { invoiceDate: invoiceDate ? new Date(invoiceDate) : null } : {};
     // Setting a validity window starts the clock now (mirrors the Validity menu).
     const validity: { validityDays?: number | null; validityStartAt?: Date | null } =
@@ -403,6 +410,8 @@ export class ProgramsService {
       and.push({ status: { equals: 'inactive', mode: 'insensitive' } });
     } else if (status === 'expired') {
       and.push({ validityEndAt: { not: null, lt: now } });
+    } else if (status === 'renewed') {
+      and.push({ renewalCount: { gt: 0 } });
     }
 
     // Date-wise range — filters either the subscription expiry date or the client
@@ -434,7 +443,16 @@ export class ProgramsService {
       case 'LINKEDIN': and.push({ linkedInEnabled: true, emailEnabled: false }); break;
       case 'BOTH': and.push({ linkedInEnabled: true, emailEnabled: { not: false } }); break;
     }
-    if (query.invoice) and.push({ invoiceNo: ci(query.invoice) });
+    if (query.invoice) {
+      // Match past invoices too, so a renewed client is still found by any invoice it
+      // has ever had, not only the current one.
+      const past = await this.prisma.subscriptionPeriod.findMany({
+        where: { tenantId: user.tenantId, invoiceNo: ci(query.invoice) },
+        select: { clientId: true },
+        distinct: ['clientId'],
+      });
+      and.push({ OR: [{ invoiceNo: ci(query.invoice) }, { id: { in: past.map((p) => p.clientId) } }] });
+    }
     if (query.email) {
       and.push({
         OR: [
@@ -494,10 +512,27 @@ export class ProgramsService {
       }),
     );
     const statsById = new Map(stats.map((s) => [s.id, s]));
+    // The subscription each visible card renewed from: the latest period that began before
+    // the current window. Shown as the card's one-line history.
+    const periods = items.length
+      ? await this.prisma.subscriptionPeriod.findMany({
+          where: { clientId: { in: items.map((c) => c.id) } },
+          orderBy: { startAt: 'desc' },
+          select: { clientId: true, plan: true, invoiceNo: true, invoiceDate: true, startAt: true, endAt: true },
+        })
+      : [];
+    const previousById = new Map<string, (typeof periods)[number]>();
+    for (const c of items) {
+      if (!c.validityStartAt) continue;
+      const cutoff = c.validityStartAt.getTime() - 5 * 60_000;
+      const prev = periods.find((p) => p.clientId === c.id && p.startAt.getTime() < cutoff);
+      if (prev) previousById.set(c.id, prev);
+    }
     const itemsWithStats = items.map((c) => {
       const s = statsById.get(c.id);
       return {
         ...c,
+        previousSubscription: previousById.get(c.id) ?? null,
         stats: {
           emailSent: s?.emailSent ?? 0,
           emailOpens: s?.emailOpens ?? 0,
@@ -661,6 +696,10 @@ export class ProgramsService {
     if (user.role === Role.CLIENT) return this.requestClientSettings(user, before, dto);
     // Validity is stored with a start date; changing the window (re)starts the clock.
     const { validityDays, operationContacts, invoiceDate, ...rest } = dto;
+    // Invoice date is mandatory: it can be corrected but not cleared. Only an explicit
+    // clear is refused — partial updates that don't touch it (ops contacts, approvals)
+    // still go through for older clients that predate the rule.
+    if (invoiceDate === '') throw new BadRequestException('Invoice date is required.');
     const data: Prisma.ClientUpdateInput = { ...rest };
     if (invoiceDate !== undefined) data.invoiceDate = invoiceDate ? new Date(invoiceDate) : null;
     if (operationContacts !== undefined) {
@@ -2567,11 +2606,7 @@ export class ProgramsService {
           ...(renew ? { validityStartAt: new Date(), validityNotifyStage: 0 } : {}),
         },
       });
-      await this.prisma.cohort.updateMany({
-        where: { clientId, status: 'PAUSED' },
-        data: { status: 'RUNNING' },
-      });
-      await this.resumeLinkedIn(clientId);
+      await this.resumeClientWork(clientId);
     } else {
       await this.prisma.client.update({
         where: { id: clientId },
@@ -2592,6 +2627,83 @@ export class ProgramsService {
       after: { client: client.name, status: active ? 'active' : 'inactive' },
     });
     return { ok: true, status: active ? 'active' : 'inactive' };
+  }
+
+  /** Resume what a suspension paused: the client's cohorts and its LinkedIn campaigns. */
+  private async resumeClientWork(clientId: string): Promise<void> {
+    await this.prisma.cohort.updateMany({
+      where: { clientId, status: 'PAUSED' },
+      data: { status: 'RUNNING' },
+    });
+    await this.resumeLinkedIn(clientId);
+  }
+
+  /**
+   * Renew a client's subscription with a new invoice.
+   *
+   * The invoice being replaced is kept on the subscription history (backfilled there if
+   * the client predates it), the new invoice starts a fresh validity window, and the
+   * client is marked Renewed. Everything else about the client — contacts, channels,
+   * email and LinkedIn settings, mailboxes, cohorts, campaigns — is left exactly as it is.
+   * Work is only resumed if the lapse had suspended it.
+   */
+  async renewClient(user: AuthUser, clientId: string, dto: RenewClientDto) {
+    this.assertAdmin(user);
+    const client = await this.assertClient(user, clientId);
+
+    const invoiceNo = joinCsvList(splitCsvList(dto.invoiceNo));
+    if (!invoiceNo) throw new BadRequestException('Enter the new invoice number.');
+    const invoiceDate = new Date(dto.invoiceDate);
+    if (isNaN(invoiceDate.getTime())) throw new BadRequestException('Enter a valid invoice date.');
+    // A renewal is a new invoice. Re-entering one already on the subscription would
+    // bump the renewal count and restart the window with nothing actually bought.
+    const current = new Set(splitCsvList(client.invoiceNo).map((n) => n.toLowerCase()));
+    if (splitCsvList(invoiceNo).every((n) => current.has(n.toLowerCase()))) {
+      throw new BadRequestException('That invoice number is already on this subscription. A renewal needs a new invoice.');
+    }
+    const plan = (dto.plan ?? '').trim() || client.plan;
+    const validityDays = Math.floor(Number(dto.validityDays ?? client.validityDays ?? 0));
+    if (!validityDays || validityDays < 1) {
+      throw new BadRequestException('Enter the validity (days) for the renewed subscription.');
+    }
+
+    const actor = await this.prisma.user.findUnique({ where: { id: user.userId }, select: { name: true, email: true } });
+    const actorName = actor?.name || actor?.email || 'Someone';
+
+    await this.subscriptions.snapshotCurrent(user.tenantId, client);
+
+    const wasSuspended = (client.status ?? 'active').toLowerCase() !== 'active';
+    const now = new Date();
+    const updated = await this.prisma.client.update({
+      where: { id: clientId },
+      data: {
+        invoiceNo,
+        invoiceDate,
+        plan,
+        validityDays,
+        validityStartAt: now,
+        validityNotifyStage: 0, // fresh window → expiry reminders start over
+        status: 'active',
+        renewalCount: { increment: 1 },
+        lastRenewedAt: now,
+      },
+    });
+    await this.subscriptions.record(user.tenantId, clientId, {
+      plan, validityDays, source: 'renewal', recordedById: user.userId, recordedByName: actorName,
+    });
+
+    if (wasSuspended) await this.resumeClientWork(clientId);
+
+    await this.activity.log({
+      tenantId: user.tenantId,
+      actorId: user.userId,
+      action: 'RENEW_CLIENT',
+      entityType: 'Client',
+      entityId: clientId,
+      before: { invoiceNo: client.invoiceNo, invoiceDate: client.invoiceDate, plan: client.plan, validityDays: client.validityDays, status: client.status },
+      after: { invoiceNo, invoiceDate, plan, validityDays, status: 'active' },
+    });
+    return updated;
   }
 
   /** Admin: set a client's plan validity window (days). Resets the start date. */
