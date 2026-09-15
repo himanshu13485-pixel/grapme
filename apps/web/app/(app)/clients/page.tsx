@@ -732,6 +732,48 @@ function liPlanPayload(p: LiPlanForm, planName: string, whatsappEnabled: boolean
   };
 }
 
+type OpsContact = { name: string; email: string };
+
+/** Trimmed contacts with an email — blank rows don't count towards the required one. */
+function cleanOps(list: OpsContact[]): OpsContact[] {
+  return list.map((o) => ({ name: o.name.trim(), email: o.email.trim() })).filter((o) => o.email);
+}
+
+/**
+ * Name + email rows for a client's operation contacts — the ops people cc'd on the
+ * monthly buyers/suppliers reminder. At least one is required for staff-managed clients.
+ */
+function OperationContactsFields({ value, onChange }: { value: OpsContact[]; onChange: (v: OpsContact[]) => void }) {
+  const missing = cleanOps(value).length === 0;
+  return (
+    <>
+      <div className="mb-1 flex items-center justify-between">
+        <label className="label mb-0">Operation contacts *</label>
+        <button type="button" className="text-xs font-medium text-brand-700 hover:underline"
+          onClick={() => onChange([...value, { name: '', email: '' }])}>
+          + Add
+        </button>
+      </div>
+      <p className="mb-2 text-xs text-slate-400">
+        Ops people who get the monthly reminder to add the next 80–100 buyers/suppliers (alongside the salesperson). At least one is required.
+      </p>
+      {missing && <p className="mb-2 text-xs text-rose-600">Add at least one operation contact with an email.</p>}
+      <div className="space-y-2">
+        {value.map((o, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <input className="input flex-1" placeholder="Name" value={o.name}
+              onChange={(e) => onChange(value.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />
+            <input type="email" className="input flex-[2]" placeholder="email@company.com" value={o.email}
+              onChange={(e) => onChange(value.map((x, j) => j === i ? { ...x, email: e.target.value } : x))} />
+            <button type="button" className="text-rose-500 hover:text-rose-700"
+              onClick={() => onChange(value.filter((_, j) => j !== i))} title="Remove">✕</button>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
 function NewClientForm({ onDone }: { onDone: () => void }) {
   const { user } = useAuth();
   // Self-registered clients get their company/contact details prefilled.
@@ -770,6 +812,7 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
   // Which outreach channels this client is subscribed to (admin decides at creation).
   const [channels, setChannels] = useState<'EMAIL' | 'LINKEDIN' | 'BOTH'>('EMAIL');
   const [creditMetering, setCreditMetering] = useState(true); // default: charge 1 credit / lead-sourcing run
+  const [opsContacts, setOpsContacts] = useState<OpsContact[]>([{ name: '', email: '' }]);
   const [liPlan, setLiPlan] = useState<LiPlanForm>(emptyLiPlan());
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -788,6 +831,11 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
     setBusy(true);
     try {
       // WhatsApp fields belong to the LinkedIn subscription, not the client record.
+      const ops = cleanOps(opsContacts);
+      if (!isClient && ops.length === 0) {
+        setError('Add at least one operation contact.');
+        return;
+      }
       const { whatsappEnabled, whatsappNumber, ...clientForm } = form;
       const created = await api.post<{ id: string }>('/clients', {
         ...clientForm,
@@ -801,6 +849,7 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
         emailEnabled: channels === 'EMAIL' || channels === 'BOTH',
         linkedInEnabled: channels === 'LINKEDIN' || channels === 'BOTH',
         linkedInCreditMetering: !isClient && channels !== 'EMAIL' ? creditMetering : false,
+        operationContacts: isClient ? undefined : ops,
         // Client self-service LinkedIn request carries only the basic send window;
         // the server routes it through admin approval (see createClient).
         ...(isClient && channels !== 'EMAIL'
@@ -954,6 +1003,11 @@ function NewClientForm({ onDone }: { onDone: () => void }) {
             placeholder="e.g. Handicrafts, Spices — press comma or Enter to add"
           />
         </div>
+        {!isClient && (
+          <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 sm:col-span-2">
+            <OperationContactsFields value={opsContacts} onChange={setOpsContacts} />
+          </div>
+        )}
         <div>
           <label className="label">Service type</label>
           <select
@@ -1346,7 +1400,8 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
   }
 
   async function persistOps() {
-    const clean = opsContacts.map((o) => ({ name: o.name.trim(), email: o.email.trim() })).filter((o) => o.email);
+    const clean = cleanOps(opsContacts);
+    if (clean.length === 0) throw new Error('Add at least one operation contact.');
     await api.patch(`/clients/${client.id}`, { operationContacts: clean });
     setOpsContacts(clean);
     return clean;
@@ -1357,8 +1412,8 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
     try {
       await persistOps();
       setOpsMsg('Saved');
-    } catch {
-      setOpsMsg('Failed');
+    } catch (e) {
+      setOpsMsg(e instanceof Error ? e.message : 'Failed');
     } finally { setOpsBusy(false); }
   }
 
@@ -1456,10 +1511,17 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
   async function submit(e: FormEvent) {
     e.preventDefault();
     setError('');
+    // Saved with the rest of the form too, so unsaved contact rows aren't lost on Save.
+    const ops = cleanOps(opsContacts);
+    if (ops.length === 0) {
+      setError('Add at least one operation contact.');
+      return;
+    }
     setBusy(true);
     try {
       await api.patch(`/clients/${client.id}`, {
         name: form.name,
+        operationContacts: ops,
         invoiceNo: form.invoiceNo || undefined,
         invoiceDate: form.invoiceDate, // '' clears it, yyyy-mm-dd sets it
         contactPerson: form.contactPerson || undefined,
@@ -1551,29 +1613,7 @@ function EditClientForm({ client, onDone }: { client: Client; onDone: () => void
 
       {/* Operation contacts — cc'd on the monthly campaign-data reminder */}
       <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
-        <div className="mb-1 flex items-center justify-between">
-          <label className="label mb-0">Operation contacts</label>
-          <button type="button" className="text-xs font-medium text-brand-700 hover:underline"
-            onClick={() => setOpsContacts([...opsContacts, { name: '', email: '' }])}>
-            + Add
-          </button>
-        </div>
-        <p className="mb-2 text-xs text-slate-400">
-          Ops people who get the monthly reminder to add the next 80–100 buyers/suppliers (alongside the salesperson).
-        </p>
-        {opsContacts.length === 0 && <p className="text-xs text-slate-400">No operation contacts yet.</p>}
-        <div className="space-y-2">
-          {opsContacts.map((o, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <input className="input flex-1" placeholder="Name" value={o.name}
-                onChange={(e) => setOpsContacts(opsContacts.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />
-              <input className="input flex-[2]" placeholder="email@company.com" value={o.email}
-                onChange={(e) => setOpsContacts(opsContacts.map((x, j) => j === i ? { ...x, email: e.target.value } : x))} />
-              <button type="button" className="text-rose-500 hover:text-rose-700"
-                onClick={() => setOpsContacts(opsContacts.filter((_, j) => j !== i))} title="Remove">✕</button>
-            </div>
-          ))}
-        </div>
+        <OperationContactsFields value={opsContacts} onChange={setOpsContacts} />
         <div className="mt-2 flex flex-wrap items-center gap-3">
           <button type="button" className="btn-ghost" disabled={opsBusy} onClick={saveOps}>
             {opsBusy ? '…' : 'Save contacts'}

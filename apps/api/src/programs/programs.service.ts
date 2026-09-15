@@ -155,12 +155,18 @@ export class ProgramsService {
       ownerData.ownerUserId = user.userId;
     }
     // `linkedin` is the client's self-service send-window request — not a Client column.
-    const { linkedin, validityDays, invoiceDate, ...clientData } = dto;
-    // Staff-created workspaces must carry their invoice date. A client setting up its own
-    // workspace has no invoice yet, so the rule is for staff only.
+    const { linkedin, validityDays, invoiceDate, operationContacts, ...clientData } = dto;
+    // Staff-created workspaces must carry their invoice date and at least one operation
+    // contact (the monthly buyers/suppliers reminder goes to them). A client setting up
+    // its own workspace has neither yet, so both rules are for staff only.
     if (user.role !== Role.CLIENT && !invoiceDate) {
       throw new BadRequestException('Invoice date is required.');
     }
+    const opsContacts = cleanOperationContacts(operationContacts);
+    if (user.role !== Role.CLIENT && opsContacts.length === 0) {
+      throw new BadRequestException('Add at least one operation contact.');
+    }
+    const opsData = opsContacts.length ? { operationContacts: opsContacts as Prisma.InputJsonValue } : {};
     const invoiceDateData = invoiceDate !== undefined ? { invoiceDate: invoiceDate ? new Date(invoiceDate) : null } : {};
     // Setting a validity window starts the clock now (mirrors the Validity menu).
     const validity: { validityDays?: number | null; validityStartAt?: Date | null } =
@@ -176,7 +182,7 @@ export class ProgramsService {
     }
     const client = await this.prisma.client.create({
       // setupStartedAt starts the onboarding stopwatch from workspace creation.
-      data: { tenantId: user.tenantId, setupStartedAt: new Date(), ...clientData, ...validity, ...invoiceDateData, ...ownerData },
+      data: { tenantId: user.tenantId, setupStartedAt: new Date(), ...clientData, ...validity, ...invoiceDateData, ...opsData, ...ownerData },
     });
 
     // Seed the subscription history if the client starts with a validity window.
@@ -703,8 +709,12 @@ export class ProgramsService {
     const data: Prisma.ClientUpdateInput = { ...rest };
     if (invoiceDate !== undefined) data.invoiceDate = invoiceDate ? new Date(invoiceDate) : null;
     if (operationContacts !== undefined) {
+      // Mandatory: contacts can be changed but not all removed. Updates that don't send
+      // the field still go through for older clients that have none yet.
+      const clean = cleanOperationContacts(operationContacts);
+      if (clean.length === 0) throw new BadRequestException('Add at least one operation contact.');
       // Persist as a plain JSON array of { name, email }.
-      data.operationContacts = operationContacts.map((o) => ({ name: o.name ?? '', email: o.email })) as Prisma.InputJsonValue;
+      data.operationContacts = clean as Prisma.InputJsonValue;
     }
     if (validityDays !== undefined && validityDays !== (before.validityDays ?? 0)) {
       if (validityDays > 0) {
@@ -2908,6 +2918,13 @@ function hashInt(str: string): number {
   let h = 0;
   for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) | 0;
   return Math.abs(h);
+}
+
+/** Trim submitted operation contacts and drop blank rows, so "mandatory" means a real address. */
+function cleanOperationContacts(list?: { name?: string; email: string }[]): { name: string; email: string }[] {
+  return (list ?? [])
+    .map((o) => ({ name: (o.name ?? '').trim(), email: (o.email ?? '').trim() }))
+    .filter((o) => o.email);
 }
 
 function extractOpsEmails(json: unknown): string[] {

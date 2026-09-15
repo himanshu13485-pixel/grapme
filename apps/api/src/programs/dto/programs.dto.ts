@@ -30,6 +30,8 @@ export class LiClientSendWindowDto {
 
 export class CreateClientDto {
   @IsString() name: string;
+  // Required for staff-created clients (checked in the service; self-setup is exempt).
+  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => OperationContactDto) operationContacts?: OperationContactDto[];
   @IsOptional() @Transform(normalizeCsvListInput) @IsString() invoiceNo?: string; // comma-separated
   @IsOptional() @IsString() invoiceDate?: string; // ISO date (yyyy-mm-dd) or empty
   @IsOptional() @IsString() contactPerson?: string;
