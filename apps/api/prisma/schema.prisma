@@ -1421,8 +1421,11 @@ model LiCampaign {
   id                   String              @id @default(uuid())
   tenantId             String
   clientId             String
-  linkedInAccountId    String
-  linkedInAccount      LinkedInAccount     @relation(fields: [linkedInAccountId], references: [id])
+  // Nullable on purpose: removing a LinkedIn account must not take its campaigns with
+  // it. The campaign is paused and detached (SetNull), keeping its sequence, audience,
+  // leads and history, and can be pointed at a newly connected account to resume.
+  linkedInAccountId    String?
+  linkedInAccount      LinkedInAccount?    @relation(fields: [linkedInAccountId], references: [id], onDelete: SetNull)
   name                 String
   type                 LiCampaignType      @default(AUTOMATIC)
   mode                 LiCampaignMode      @default(REGULAR)

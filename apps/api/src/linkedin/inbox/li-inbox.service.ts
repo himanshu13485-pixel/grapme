@@ -361,6 +361,9 @@ export class LiInboxService {
       include: { lead: { include: { campaign: { include: { linkedInAccount: true } } } } },
     });
     if (!c) throw new NotFoundException('Conversation not found');
+    if (!c.lead.campaign.linkedInAccount) {
+      throw new BadRequestException('This campaign has no LinkedIn account — attach one to reply');
+    }
     const accountId = c.lead.campaign.linkedInAccount.unipileAccountId;
     if (!accountId) throw new BadRequestException('Account not connected');
     if (!c.lead.unipileMemberId) throw new BadRequestException('Lead has no resolved member id');

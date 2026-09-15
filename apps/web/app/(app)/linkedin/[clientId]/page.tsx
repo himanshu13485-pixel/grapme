@@ -219,6 +219,9 @@ function CampaignsTab({ clientId }: { clientId: string }) {
                 {c.linkedInAccount?.fullName && (
                   <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500" title="LinkedIn seat">👤 {c.linkedInAccount.fullName}</span>
                 )}
+                {!c.linkedInAccount && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-xs text-rose-600" title="Its LinkedIn account was removed — open the campaign to attach one">⚠ No account</span>
+                )}
                 {view === 'deleted' && c.deletedAt && <span className="text-xs text-rose-400">deleted {timeAgo(c.deletedAt)} · expires in {purgeCountdown(c.deletedAt)} days</span>}
                 {(c.status === 'RUNNING' || c.status === 'PAUSED') && <LiScheduleStatus campaignId={c.id} />}
               </div>

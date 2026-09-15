@@ -350,8 +350,8 @@ export class LiSchedulerService implements OnModuleInit {
       this.logger.warn(`Campaign ${campaignId} has no sequence steps; nothing to run`);
       return;
     }
-    if (campaign.linkedInAccount.status !== 'CONNECTED') {
-      this.logger.warn(`Campaign ${campaignId} account not connected; cannot run`);
+    if (campaign.linkedInAccount?.status !== 'CONNECTED') {
+      this.logger.warn(`Campaign ${campaignId} has no connected account; cannot run`);
       return;
     }
 

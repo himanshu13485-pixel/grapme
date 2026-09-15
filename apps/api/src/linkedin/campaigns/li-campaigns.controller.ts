@@ -150,6 +150,12 @@ export class LiCampaignsController {
     return this.campaigns.setStatus(id, LiCampaignStatus.RUNNING);
   }
 
+  /** Attach a (new) LinkedIn account — e.g. after the campaign's old account was removed. */
+  @Post(':id/account')
+  attachAccount(@Param('id') id: string, @Body('linkedInAccountId') linkedInAccountId: string) {
+    return this.campaigns.attachAccount(id, linkedInAccountId);
+  }
+
   @Post(':id/archive')
   archive(@Param('id') id: string) {
     return this.campaigns.setStatus(id, LiCampaignStatus.ARCHIVED);

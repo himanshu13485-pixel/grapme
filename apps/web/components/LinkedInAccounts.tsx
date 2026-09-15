@@ -116,7 +116,7 @@ export function useLinkedInAccounts({
 
   const remove = useCallback(
     async (id: string) => {
-      if (!confirm('Remove this LinkedIn account? Any campaigns using it will also be removed.')) return;
+      if (!confirm('Remove this LinkedIn account? Its campaigns are kept but paused — attach a new account to a campaign to resume it.')) return;
       try {
         await api.del(`${base}/linkedin-accounts/${id}`);
         reload();

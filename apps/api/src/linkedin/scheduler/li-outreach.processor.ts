@@ -17,7 +17,9 @@ import {
   LiJob, LiJobData, renderTemplate, pickVariant, reconcileName,
 } from './li-queue.constants';
 
-type LeadWithContext = NonNullable<Awaited<ReturnType<LiOutreachProcessor['loadContext']>>>;
+type LoadedContext = NonNullable<Awaited<ReturnType<LiOutreachProcessor['loadContext']>>>;
+/** A context whose campaign still has an account — everything that talks to LinkedIn needs one. */
+type LeadWithContext = LoadedContext & { account: NonNullable<LoadedContext['account']> };
 
 @Processor(QUEUE_LINKEDIN)
 export class LiOutreachProcessor extends WorkerHost {
@@ -45,25 +47,29 @@ export class LiOutreachProcessor extends WorkerHost {
 
     await this.prisma.liScheduledAction.update({ where: { id: scheduledActionId }, data: { status: LiScheduledActionStatus.RUNNING } });
 
-    const ctx = await this.loadContext(action.leadId);
-    if (!ctx) return this.complete(scheduledActionId);
-    if (ctx.campaign.status !== LiCampaignStatus.RUNNING) return this.cancel(scheduledActionId);
+    const loaded = await this.loadContext(action.leadId);
+    if (!loaded) return this.complete(scheduledActionId);
+    if (loaded.campaign.status !== LiCampaignStatus.RUNNING) return this.cancel(scheduledActionId);
     // Halt outreach the moment a client is deactivated or its plan validity lapses,
     // even before the engine tick pauses the campaign. Defer, don't cancel — the
     // action is restored when the campaign resumes on reactivation.
-    if (!(await this.clientCanSend(ctx.campaign.clientId))) return this.scheduler.rearm(scheduledActionId, this.scheduler.nextDeferralSlot(ctx.campaign));
+    if (!(await this.clientCanSend(loaded.campaign.clientId))) return this.scheduler.rearm(scheduledActionId, this.scheduler.nextDeferralSlot(loaded.campaign));
     // NOT_ACCEPTED is terminal: the invite was given up on and withdrawn, so the lead
     // is out of the sequence — no further follow-ups (the "not yet accepted" branch
     // only applies while the invite is still pending).
     if (
-      ctx.lead.status === LiLeadStatus.REPLIED ||
-      ctx.lead.status === LiLeadStatus.EXCLUDED ||
-      ctx.lead.status === LiLeadStatus.CAMPAIGN_COMPLETED ||
-      ctx.lead.status === LiLeadStatus.NOT_ACCEPTED
+      loaded.lead.status === LiLeadStatus.REPLIED ||
+      loaded.lead.status === LiLeadStatus.EXCLUDED ||
+      loaded.lead.status === LiLeadStatus.CAMPAIGN_COMPLETED ||
+      loaded.lead.status === LiLeadStatus.NOT_ACCEPTED
     ) return this.complete(scheduledActionId);
     // Grace-window close needs no provider call — handle it before the account check so
-    // a disconnected seat can't block marking finished leads as completed.
-    if ((job.name as LiJob) === LiJob.CompleteLead) return this.doCompleteLead(scheduledActionId, ctx);
+    // a disconnected (or removed) seat can't block marking finished leads as completed.
+    if ((job.name as LiJob) === LiJob.CompleteLead) return this.doCompleteLead(scheduledActionId, loaded);
+    // The campaign's account was removed. Defer rather than fail: the lead keeps its
+    // place, and the action runs once a new account is attached and the campaign resumes.
+    if (!loaded.account) return this.scheduler.rearm(scheduledActionId, this.scheduler.nextDeferralSlot(loaded.campaign));
+    const ctx: LeadWithContext = { ...loaded, account: loaded.account };
     if (!ctx.account.unipileAccountId) return this.fail(scheduledActionId, 'Account not connected to provider');
 
     try {
@@ -374,7 +380,7 @@ export class LiOutreachProcessor extends WorkerHost {
   }
 
   /** Grace window elapsed: if the lead never replied, mark it CAMPAIGN_COMPLETED. */
-  private async doCompleteLead(actionId: string, ctx: LeadWithContext) {
+  private async doCompleteLead(actionId: string, ctx: LoadedContext) {
     if (ctx.lead.status === LiLeadStatus.CONNECTED || ctx.lead.status === LiLeadStatus.MESSAGED) {
       await this.prisma.liLead.update({ where: { id: ctx.lead.id }, data: { status: LiLeadStatus.CAMPAIGN_COMPLETED } });
     }

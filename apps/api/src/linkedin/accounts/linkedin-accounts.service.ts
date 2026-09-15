@@ -69,16 +69,12 @@ export class LinkedInAccountsService {
     // Account was deleted on Unipile's side → drop the stale local row so it stops
     // showing as connected. If a campaign still references it (FK), we can't hard-
     // delete, so fall back to marking it disconnected.
+    // Account was deleted on Unipile's side → drop the stale local row, keeping its
+    // campaigns: they're paused and detached, not deleted along with it.
     if (info.deleted) {
-      try {
-        await this.prisma.linkedInAccount.delete({ where: { id } });
-        return { id, removed: true };
-      } catch {
-        return this.prisma.linkedInAccount.update({
-          where: { id },
-          data: { status: LinkedInAccountStatus.DISCONNECTED, lastSyncedAt: new Date() },
-        });
-      }
+      await this.detachCampaigns(id, 'LinkedIn account was deleted — attach an account to resume');
+      await this.prisma.linkedInAccount.delete({ where: { id } });
+      return { id, removed: true };
     }
     const status = info.status as LinkedInAccountStatus;
     const healthy = status === LinkedInAccountStatus.CONNECTED;
@@ -269,13 +265,24 @@ export class LinkedInAccountsService {
 
   async remove(id: string) {
     await this.get(id);
-    // Campaigns require this account (FK), so a plain delete 500s once any campaign
-    // is attached. Remove the account's campaigns first — their leads + scheduled
-    // actions cascade from the campaign — then the account, atomically.
-    await this.prisma.$transaction([
-      this.prisma.liCampaign.deleteMany({ where: { linkedInAccountId: id } }),
-      this.prisma.linkedInAccount.delete({ where: { id } }),
-    ]);
-    return { ok: true };
+    const detached = await this.detachCampaigns(id, 'LinkedIn account removed — attach an account to resume');
+    await this.prisma.linkedInAccount.delete({ where: { id } });
+    return { ok: true, pausedCampaigns: detached };
+  }
+
+  /**
+   * Stop every campaign on a seat and leave a note on each, ahead of the seat going away.
+   *
+   * Removing an account used to delete its campaigns outright — sequence, audience,
+   * leads, history. Now the campaigns stay: they're paused here, and deleting the
+   * account detaches them (the FK is ON DELETE SET NULL), ready to be re-attached.
+   */
+  private async detachCampaigns(accountRowId: string, reason: string): Promise<number> {
+    await this.pauseSeatCampaigns(accountRowId, reason);
+    const res = await this.prisma.liCampaign.updateMany({
+      where: { linkedInAccountId: accountRowId },
+      data: { pausedReason: reason },
+    });
+    return res.count;
   }
 }

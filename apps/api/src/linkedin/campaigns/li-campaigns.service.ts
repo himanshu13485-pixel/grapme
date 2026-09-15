@@ -574,8 +574,12 @@ export class LiCampaignsService {
     if (status === LiCampaignStatus.DELETED) data.deletedAt = new Date();
     if (status === LiCampaignStatus.RUNNING) {
       // Anchor the warm-up ramp the first time the campaign starts sending.
-      const c = await this.prisma.liCampaign.findUnique({ where: { id }, select: { warmupStartedAt: true } });
-      if (!c?.warmupStartedAt) data.warmupStartedAt = new Date();
+      const c = await this.prisma.liCampaign.findUnique({ where: { id }, select: { warmupStartedAt: true, linkedInAccountId: true } });
+      // A campaign whose account was removed keeps everything else; it just can't send.
+      if (!c?.linkedInAccountId) {
+        throw new BadRequestException('This campaign has no LinkedIn account. Attach one before starting it.');
+      }
+      if (!c.warmupStartedAt) data.warmupStartedAt = new Date();
       // Restart the acceptance sample on every start/resume, and clear any auto-pause
       // note. Without this a campaign paused for low acceptance would be re-paused by
       // the same historic invites the moment it resumed, with no way back.
@@ -998,6 +1002,41 @@ export class LiCampaignsService {
     entries.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
 
     return { lead: { id: lead.id, fullName: lead.fullName, status: lead.status, currentStep: lead.currentStep }, entries };
+  }
+
+  /**
+   * Point a campaign at a (new) LinkedIn account — typically after its old account was
+   * removed, which pauses and detaches the campaign but keeps its sequence, audience,
+   * schedule and leads. Resuming afterwards carries on from where it stopped.
+   */
+  async attachAccount(id: string, linkedInAccountId: string) {
+    if (!linkedInAccountId || typeof linkedInAccountId !== 'string') {
+      throw new BadRequestException('linkedInAccountId is required');
+    }
+    const campaign = await this.prisma.liCampaign.findUnique({
+      where: { id },
+      select: { clientId: true, status: true, linkedInAccountId: true },
+    });
+    if (!campaign) throw new NotFoundException('Campaign not found');
+    if (campaign.status === LiCampaignStatus.RUNNING) {
+      throw new BadRequestException('Pause the campaign before changing its LinkedIn account');
+    }
+    const account = await this.prisma.linkedInAccount.findFirst({
+      where: { id: linkedInAccountId, clientId: campaign.clientId },
+      select: { id: true },
+    });
+    if (!account) throw new BadRequestException('That LinkedIn account does not belong to this client');
+    if (campaign.linkedInAccountId === account.id) return this.get(id);
+
+    await this.prisma.$transaction([
+      this.prisma.liCampaign.update({ where: { id }, data: { linkedInAccountId: account.id, pausedReason: null } }),
+      // Invitation and chat ids are scoped to the connection they were created on, so
+      // after a switch they point at nothing. Clearing them is lossless — messages stay
+      // stored locally — and the sweep re-discovers live ids by member on the new account.
+      this.prisma.liLead.updateMany({ where: { campaignId: id }, data: { unipileInvitationId: null } }),
+      this.prisma.liConversation.updateMany({ where: { lead: { campaignId: id } }, data: { unipileChatId: null } }),
+    ]);
+    return this.get(id);
   }
 
   private async assertExists(id: string) {
