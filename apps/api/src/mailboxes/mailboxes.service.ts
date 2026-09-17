@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { ImapFlow } from 'imapflow';
 import { ApprovalEntity, ApprovalStatus, MailboxStatus, Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -272,6 +272,72 @@ export class MailboxesService {
       }
     }
     return { ...account, pendingApproval: needsReview };
+  }
+
+  /**
+   * Turn a disabled mailbox back on (staff).
+   *
+   * Clears the reason and starts a fresh bounce window, so the bounces that disabled it
+   * cannot immediately disable it again. Clients ask through the mailbox Edit form
+   * instead, which routes the request to admin approval.
+   */
+  async enable(user: AuthUser, id: string) {
+    if (user.role === Role.CLIENT) {
+      throw new ForbiddenException('Ask your account manager to re-enable this mailbox.');
+    }
+    const before = await this.prisma.emailAccount.findFirst({ where: { id, tenantId: user.tenantId } });
+    if (!before) throw new NotFoundException('Mailbox not found');
+    if (before.status === MailboxStatus.ACTIVE) return this.prisma.emailAccount.findUnique({ where: { id }, select: SAFE });
+
+    const account = await this.prisma.emailAccount.update({
+      where: { id },
+      data: { status: MailboxStatus.ACTIVE, statusReason: null, bounceWindowFrom: new Date() },
+      select: SAFE,
+    });
+    await this.activity.log({
+      tenantId: user.tenantId,
+      actorId: user.userId,
+      action: 'ENABLE_MAILBOX',
+      entityType: 'EmailAccount',
+      entityId: id,
+      before: { label: before.label, status: before.status, statusReason: before.statusReason },
+      after: { label: before.label, status: MailboxStatus.ACTIVE },
+    });
+    return account;
+  }
+
+  /** Tenant-wide bounce ceiling the circuit breaker enforces. */
+  async getBouncePolicy(user: AuthUser) {
+    const t = await this.prisma.tenant.findUnique({
+      where: { id: user.tenantId },
+      select: { bounceMaxRatePct: true },
+    });
+    return { maxRatePct: t?.bounceMaxRatePct ?? 7 };
+  }
+
+  async setBouncePolicy(user: AuthUser, maxRatePct: number) {
+    if (user.role !== Role.SUPER_ADMIN && user.role !== Role.SUB_ADMIN) {
+      throw new ForbiddenException('Admins only');
+    }
+    const pct = Math.floor(Number(maxRatePct));
+    if (!Number.isFinite(pct) || pct < 1 || pct > 100) {
+      throw new BadRequestException('Enter a bounce limit between 1 and 100%.');
+    }
+    const before = await this.prisma.tenant.findUnique({
+      where: { id: user.tenantId },
+      select: { bounceMaxRatePct: true },
+    });
+    await this.prisma.tenant.update({ where: { id: user.tenantId }, data: { bounceMaxRatePct: pct } });
+    await this.activity.log({
+      tenantId: user.tenantId,
+      actorId: user.userId,
+      action: 'SET_BOUNCE_POLICY',
+      entityType: 'Tenant',
+      entityId: user.tenantId,
+      before: { bounceMaxRatePct: before?.bounceMaxRatePct ?? 7 },
+      after: { bounceMaxRatePct: pct },
+    });
+    return { maxRatePct: pct };
   }
 
   /** Delete a mailbox. Campaign/message references are set null (schema). */

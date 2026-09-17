@@ -173,6 +173,9 @@ model Tenant {
   aiApiKey         String? // encrypted OpenAI API key (null = not configured)
   aiModel          String? // OpenAI model id (null = code default, e.g. gpt-5.6-luna)
   paymentMode      String   @default("MANUAL") // AUTO (Cashfree self-serve) | MANUAL (offline via request)
+  // Bounce circuit breaker: auto-disable a mailbox whose recent bounce rate exceeds this
+  // percentage. Most providers start throttling a sender somewhere around 5–10%.
+  bounceMaxRatePct Int      @default(7)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 

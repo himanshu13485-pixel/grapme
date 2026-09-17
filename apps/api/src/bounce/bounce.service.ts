@@ -23,7 +23,8 @@ export class BounceService {
   // Circuit-breaker thresholds (recent window, per mailbox).
   private static readonly SAMPLE = 100; // look at the last N outbound sends
   private static readonly MIN_VOLUME = 20; // don't judge on tiny samples
-  private static readonly MAX_RATE = 0.07; // >7% bounce → auto-disable the mailbox
+  /** Fallback when a tenant has no threshold of its own (Tenant.bounceMaxRatePct). */
+  static readonly DEFAULT_MAX_RATE_PCT = 7;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -112,6 +113,8 @@ export class BounceService {
       select: { id: true, label: true, emailAddress: true, tenantId: true, clientId: true, bounceWindowFrom: true },
     });
     let disabled = 0;
+    // One threshold lookup per tenant, not per mailbox.
+    const maxRateByTenant = new Map<string, number>();
     for (const mb of mailboxes) {
       const recent = await this.prisma.emailMessage.findMany({
         where: {
@@ -131,7 +134,8 @@ export class BounceService {
       if (recent.length < BounceService.MIN_VOLUME) continue;
       const bounced = recent.filter((m) => m.status === MessageStatus.BOUNCED).length;
       const rate = bounced / recent.length;
-      if (rate > BounceService.MAX_RATE) {
+      const maxRate = await this.maxRateFor(mb.tenantId, maxRateByTenant);
+      if (rate > maxRate) {
         const reason = `Auto-disabled: bounce rate ${(rate * 100).toFixed(1)}% over last ${recent.length} sends`;
         await this.prisma.emailAccount.update({
           where: { id: mb.id },
@@ -147,7 +151,7 @@ export class BounceService {
           name: mb.label,
           identifier: mb.emailAddress,
           clientName: client?.name ?? null,
-          reason: `${bounced} of the last ${recent.length} sends bounced (${(rate * 100).toFixed(1)}%), over the ${(BounceService.MAX_RATE * 100).toFixed(0)}% limit.`,
+          reason: `${bounced} of the last ${recent.length} sends bounced (${(rate * 100).toFixed(1)}%), over the ${(maxRate * 100).toFixed(0)}% limit.`,
           whatNext: 'Clean the bounced addresses out of the contact list, then re-enable the mailbox from its Edit form.',
           link: '/mailboxes',
         });
@@ -155,5 +159,18 @@ export class BounceService {
     }
     if (disabled) this.logger.warn(`Bounce circuit breaker disabled ${disabled} mailbox(es)`);
     return { disabled };
+  }
+
+  /** The tenant's configured bounce ceiling as a fraction, clamped to a sane 1–100%. */
+  private async maxRateFor(tenantId: string, cache: Map<string, number>): Promise<number> {
+    const hit = cache.get(tenantId);
+    if (hit !== undefined) return hit;
+    const t = await this.prisma.tenant
+      .findUnique({ where: { id: tenantId }, select: { bounceMaxRatePct: true } })
+      .catch(() => null);
+    const pct = Math.min(100, Math.max(1, t?.bounceMaxRatePct ?? BounceService.DEFAULT_MAX_RATE_PCT));
+    const rate = pct / 100;
+    cache.set(tenantId, rate);
+    return rate;
   }
 }

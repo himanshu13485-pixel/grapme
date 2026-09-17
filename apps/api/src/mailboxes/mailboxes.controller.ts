@@ -32,6 +32,23 @@ export class MailboxesController {
     return this.mailboxes.list(user, clientId);
   }
 
+  /** Bounce-rate ceiling the auto-disable breaker uses (declared before the :id routes). */
+  @Get('bounce-policy')
+  bouncePolicy(@CurrentUser() user: AuthUser) {
+    return this.mailboxes.getBouncePolicy(user);
+  }
+
+  @Patch('bounce-policy')
+  setBouncePolicy(@CurrentUser() user: AuthUser, @Body() dto: { maxRatePct: number }) {
+    return this.mailboxes.setBouncePolicy(user, dto.maxRatePct);
+  }
+
+  /** Staff: switch a disabled mailbox back on with a fresh bounce window. */
+  @Post(':id/enable')
+  enable(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.mailboxes.enable(user, id);
+  }
+
   @Post()
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateMailboxDto) {
     return this.mailboxes.create(user, dto);

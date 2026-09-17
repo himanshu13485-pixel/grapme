@@ -2,7 +2,7 @@
 
 import { useEffect, useState, FormEvent } from 'react';
 import { api } from '@/lib/api';
-import { useCanDelete } from '@/lib/auth';
+import { useAuth, useCanDelete } from '@/lib/auth';
 import { PageHeader, StatusBadge, EmptyState, Modal, Pagination } from '@/components/ui';
 
 interface AuthResult {
@@ -45,6 +45,8 @@ interface Mailbox {
  */
 export function MailboxesManager({ clientId }: { clientId?: string }) {
   const canDelete = useCanDelete();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'SUB_ADMIN';
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
   const [show, setShow] = useState(false);
   const [test, setTest] = useState<Record<string, string>>({});
@@ -144,6 +146,18 @@ export function MailboxesManager({ clientId }: { clientId?: string }) {
       flash(`Client reports now send from ${m.emailAddress}.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to set report sender');
+    }
+  }
+
+  /** Switch a disabled mailbox back on. The server also starts it a fresh bounce window. */
+  async function enableMailbox(m: Mailbox) {
+    if (!confirm(`Re-enable "${m.label}"?\n\nIt starts sending again. Clean the bounced addresses out of its list first, or it will be disabled again.`)) return;
+    try {
+      await api.post(`/email-accounts/${m.id}/enable`, {});
+      flash(`"${m.label}" re-enabled — the bounce check starts fresh from now.`);
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not re-enable the mailbox');
     }
   }
 
@@ -251,6 +265,8 @@ export function MailboxesManager({ clientId }: { clientId?: string }) {
           }
         />
       )}
+
+      {!clientId && isAdmin && <BouncePolicyCard />}
 
       {notice && (
         <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
@@ -458,6 +474,15 @@ export function MailboxesManager({ clientId }: { clientId?: string }) {
                     ⚠ {m.statusReason}
                   </span>
                 )}
+                {m.status === 'DISABLED' && isAdmin && (
+                  <button
+                    className="btn-ghost px-3 py-1 text-xs text-emerald-700"
+                    onClick={() => enableMailbox(m)}
+                    title="Start sending again, with a fresh bounce window"
+                  >
+                    ↻ Re-enable
+                  </button>
+                )}
                 {!clientId &&
                   (reportSenderId === m.id ? (
                     <span className="px-3 py-1 text-xs font-medium text-violet-600">
@@ -557,6 +582,72 @@ export function MailboxesManager({ clientId }: { clientId?: string }) {
           />
         )}
       </Modal>
+    </div>
+  );
+}
+
+/**
+ * The bounce ceiling the auto-disable breaker enforces, tenant-wide. Above this share of
+ * recent sends bouncing, a mailbox is switched off before it burns more sender reputation.
+ */
+function BouncePolicyCard() {
+  const [pct, setPct] = useState<number | null>(null);
+  const [draft, setDraft] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  useEffect(() => {
+    api.get<{ maxRatePct: number }>('/email-accounts/bounce-policy')
+      .then((r) => { setPct(r.maxRatePct); setDraft(String(r.maxRatePct)); })
+      .catch(() => {});
+  }, []);
+
+  if (pct === null) return null;
+  const n = Math.floor(Number(draft));
+  const valid = Number.isFinite(n) && n >= 1 && n <= 100;
+
+  async function save() {
+    if (!valid) return;
+    setBusy(true); setMsg('');
+    try {
+      const r = await api.patch<{ maxRatePct: number }>('/email-accounts/bounce-policy', { maxRatePct: n });
+      setPct(r.maxRatePct);
+      setMsg('Saved');
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : 'Failed');
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="mb-4 rounded-lg border border-slate-200 bg-white px-4 py-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-medium text-slate-700">Auto-disable on bounces</div>
+          <p className="text-xs text-slate-500">
+            A mailbox is switched off when more than this share of its recent sends bounce (checked hourly, over its last 100 sends, once it has sent at least 20).
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            min={1}
+            max={100}
+            className="input w-20"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+          />
+          <span className="text-sm text-slate-500">%</span>
+          <button className="btn-ghost text-xs" disabled={busy || !valid || n === pct} onClick={() => void save()}>
+            {busy ? 'Saving…' : 'Save'}
+          </button>
+          {msg && <span className={`text-xs ${msg === 'Saved' ? 'text-emerald-600' : 'text-rose-600'}`}>{msg}</span>}
+        </div>
+      </div>
+      {valid && n > 10 && (
+        <p className="mt-1 text-[11px] text-amber-600">
+          Above ~10% most providers start throttling or blocking the sender.
+        </p>
+      )}
     </div>
   );
 }
