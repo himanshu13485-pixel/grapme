@@ -827,6 +827,9 @@ model EmailMessage {
   sentAt         DateTime?
   error          String?
   readAt         DateTime? // when an INBOUND reply was marked read (null = unread)
+  // INBOUND only: REPLY (a person answered), AUTO_REPLY (out-of-office and friends —
+  // recorded but never treated as a reply), BOUNCE. Null on rows stored before this.
+  inboundKind    String?
   createdAt      DateTime         @default(now())
 
   tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)

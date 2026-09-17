@@ -15,6 +15,10 @@ import { PrismaService } from '../prisma/prisma.service';
 import { MailerService } from '../sending/mailer.service';
 import { decryptCredential } from '../common/crypto/credential-crypto';
 import { BounceService } from '../bounce/bounce.service';
+import { HeaderMap, domainOf, isAutoReply, isFreeMailDomain, threadRefs } from './inbound-classify';
+
+/** How far back a same-domain reply may be matched to a contact we wrote to. */
+const DOMAIN_MATCH_DAYS = 90;
 
 /**
  * Pulls inbound mail (replies) from each IMAP-capable mailbox and records it.
@@ -126,26 +130,39 @@ export class InboundMailService {
               msg.envelope?.messageId ??
               `${from}|${subject ?? ''}|${msg.envelope?.date ?? ''}`;
             const raw = msg.source ? msg.source.toString('utf8') : '';
-            // Primary: the battle-tested MIME parser on the raw source. Falls back to the
-            // dependency-free extractor if it can't parse (so a body is rarely blank).
-            const body = (await this.parseBody(msg.source)) ?? (raw ? this.extractTextBody(raw) : undefined);
-            const isNew = await this.storeInbound(
-              mailbox,
-              from,
-              subject,
-              dedupeId,
-              body,
-              receivedAt,
-            );
+            // Parse once: readable body, the headers that mark auto-responders, and the
+            // thread ids this message answers.
+            const parsed = await this.parseMessage(msg.source);
+            const body = parsed.body ?? (raw ? this.extractTextBody(raw) : undefined);
+            const bounce = this.isBounce(from, subject);
+            const kind = bounce
+              ? 'BOUNCE'
+              : isAutoReply(parsed.headers, subject)
+                ? 'AUTO_REPLY'
+                : 'REPLY';
+            // Who it belongs to: the sender if we know them, else the thread it answers,
+            // else a colleague on the same company domain.
+            const contact = bounce
+              ? null
+              : await this.resolveContact(mailbox.tenantId, from, threadRefs(parsed.inReplyTo, parsed.references));
+            const isNew = await this.storeInbound(mailbox, from, subject, dedupeId, body, receivedAt, {
+              contactId: contact?.id ?? null,
+              inReplyTo: parsed.inReplyTo ?? null,
+              kind,
+            });
             if (isNew) {
               stored++;
-              // A delivery-failure (bounce) is not a reply: suppress the failed
-              // recipient instead of recording a REPLY against the sender.
-              if (this.isBounce(from, subject)) {
+              if (bounce) {
+                // A delivery failure is not a reply: suppress the failed recipient
+                // instead of recording a REPLY against the sender.
                 const rcpt = this.extractBounceRecipient(raw);
                 if (rcpt) await this.handleBounce(mailbox.tenantId, rcpt, raw);
+              } else if (kind === 'AUTO_REPLY') {
+                // Kept in the inbox so it can be read, but it is not a reply: nobody has
+                // seen the mail yet, so the follow-ups must keep going.
+                this.logger.log(`Auto-reply ignored from ${from}: ${subject ?? '(no subject)'}`);
               } else {
-                await this.recordReply(mailbox.tenantId, from);
+                if (contact) await this.recordReply(contact, from);
                 // Alert the client (CC admin) that a reply landed. Never let a
                 // notification failure interrupt the poll.
                 try {
@@ -175,6 +192,7 @@ export class InboundMailService {
     dedupeId: string,
     body?: string,
     receivedAt?: Date,
+    meta?: { contactId?: string | null; inReplyTo?: string | null; kind?: string },
   ): Promise<boolean> {
     const existing = await this.prisma.emailMessage.findFirst({
       where: {
@@ -199,21 +217,17 @@ export class InboundMailService {
       return false;
     }
 
-    const contact = await this.prisma.contact.findFirst({
-      where: {
-        tenantId: mailbox.tenantId,
-        email: { equals: from, mode: 'insensitive' },
-      },
-    });
-
     await this.prisma.emailMessage.create({
       data: {
         tenantId: mailbox.tenantId,
         emailAccountId: mailbox.id,
-        contactId: contact?.id ?? null,
+        // Resolved by the caller: sender, thread, or company domain.
+        contactId: meta?.contactId ?? null,
         direction: MessageDirection.INBOUND,
         status: MessageStatus.DELIVERED,
         messageId: dedupeId,
+        inReplyTo: meta?.inReplyTo ?? null,
+        inboundKind: meta?.kind ?? null,
         fromAddress: from,
         subject: this.sanitizeForDb(subject),
         body: this.sanitizeForDb(body?.slice(0, 20000)),
@@ -263,18 +277,84 @@ export class InboundMailService {
    *  base64, charsets). Prefers text/plain, falls back to stripped HTML. Returns
    *  undefined when it can't parse or there's no readable text (caller then falls
    *  back to the dependency-free extractor). Best-effort: never throws. */
-  private async parseBody(source?: Buffer): Promise<string | undefined> {
-    if (!source || source.length === 0) return undefined;
+  private async parseMessage(source?: Buffer): Promise<{
+    body?: string;
+    headers: HeaderMap;
+    inReplyTo?: string;
+    references?: string | string[];
+  }> {
+    if (!source || source.length === 0) return { headers: {} };
     try {
       const parsed = await simpleParser(source);
       const text = (parsed.text ?? '').trim();
-      if (text) return text;
       const html = typeof parsed.html === 'string' ? this.stripHtml(parsed.html).trim() : '';
-      return html || undefined;
+      // Only the plain string headers matter here (auto-submitted, precedence, …);
+      // structured ones (addresses, content-type) are parsed objects and are skipped.
+      const headers: HeaderMap = {};
+      for (const [name, value] of parsed.headers as Map<string, unknown>) {
+        if (typeof value === 'string') headers[name.toLowerCase()] = value;
+      }
+      return {
+        body: text || html || undefined,
+        headers,
+        inReplyTo: parsed.inReplyTo ?? undefined,
+        references: parsed.references ?? undefined,
+      };
     } catch (e) {
       this.logger.warn(`mailparser failed on an inbound message: ${(e as Error).message}`);
-      return undefined;
+      return { headers: {} };
     }
+  }
+
+  /**
+   * Which contact an inbound email belongs to.
+   *
+   * 1. The sender, when it is a contact we know.
+   * 2. The thread it answers — In-Reply-To / References against our own outbound
+   *    Message-IDs. This is what catches a colleague replying from another address.
+   * 3. Otherwise the most recent contact at the same company domain that we have
+   *    written to lately. Consumer mailbox domains are excluded, because a shared
+   *    domain says nothing about who someone works for.
+   */
+  private async resolveContact(tenantId: string, from: string, refs: string[]) {
+    const direct = await this.prisma.contact.findFirst({
+      where: { tenantId, email: { equals: from, mode: 'insensitive' } },
+    });
+    if (direct) return direct;
+
+    if (refs.length) {
+      const threaded = await this.prisma.emailMessage.findFirst({
+        where: {
+          tenantId,
+          direction: MessageDirection.OUTBOUND,
+          messageId: { in: refs },
+          contactId: { not: null },
+        },
+        orderBy: { createdAt: 'desc' },
+        select: { contact: true },
+      });
+      if (threaded?.contact) {
+        this.logger.log(`Reply from ${from} matched to ${threaded.contact.email} by thread`);
+        return threaded.contact;
+      }
+    }
+
+    const domain = domainOf(from);
+    if (!domain || isFreeMailDomain(domain)) return null;
+    const recent = await this.prisma.emailMessage.findFirst({
+      where: {
+        tenantId,
+        direction: MessageDirection.OUTBOUND,
+        createdAt: { gte: new Date(Date.now() - DOMAIN_MATCH_DAYS * 86_400_000) },
+        contact: { email: { endsWith: `@${domain}`, mode: 'insensitive' } },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { contact: true },
+    });
+    if (recent?.contact) {
+      this.logger.log(`Reply from ${from} matched to ${recent.contact.email} by company domain`);
+    }
+    return recent?.contact ?? null;
   }
 
   /** Best-effort, dependency-free extraction of a readable text body from raw
@@ -360,14 +440,9 @@ export class InboundMailService {
   }
 
   /** Logs a REPLY event against the contact's latest outbound (stops sequence). */
-  private async recordReply(tenantId: string, fromEmail: string) {
-    const contact = await this.prisma.contact.findFirst({
-      where: { tenantId, email: { equals: fromEmail, mode: 'insensitive' } },
-    });
-    if (!contact) return;
-
+  private async recordReply(contact: { id: string; tenantId: string; email: string }, fromEmail: string) {
     const lastOutbound = await this.prisma.emailMessage.findFirst({
-      where: { tenantId, contactId: contact.id, direction: 'OUTBOUND' },
+      where: { tenantId: contact.tenantId, contactId: contact.id, direction: 'OUTBOUND' },
       orderBy: { createdAt: 'desc' },
     });
     if (!lastOutbound) return;
@@ -391,7 +466,9 @@ export class InboundMailService {
         eventType: EventType.REPLY,
       },
     });
-    this.logger.log(`Reply detected from ${fromEmail}`);
+    this.logger.log(
+      `Reply detected from ${fromEmail}${fromEmail.toLowerCase() === contact.email.toLowerCase() ? '' : ` (for ${contact.email})`}`,
+    );
   }
 
   private webUrl(): string {
