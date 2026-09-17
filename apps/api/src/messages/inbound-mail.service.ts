@@ -142,9 +142,10 @@ export class InboundMailService {
                 : 'REPLY';
             // Who it belongs to: the sender if we know them, else the thread it answers,
             // else a colleague on the same company domain.
-            const contact = bounce
+            const match = bounce
               ? null
               : await this.resolveContact(mailbox.tenantId, from, threadRefs(parsed.inReplyTo, parsed.references));
+            const contact = match?.contact ?? null;
             const isNew = await this.storeInbound(mailbox, from, subject, dedupeId, body, receivedAt, {
               contactId: contact?.id ?? null,
               inReplyTo: parsed.inReplyTo ?? null,
@@ -162,6 +163,11 @@ export class InboundMailService {
                 // seen the mail yet, so the follow-ups must keep going.
                 this.logger.log(`Auto-reply ignored from ${from}: ${subject ?? '(no subject)'}`);
               } else {
+                // Logged here, not while matching: matching re-runs on every poll pass,
+                // so logging there made one email look like several replies.
+                if (match && match.via !== 'sender') {
+                  this.logger.log(`Reply from ${from} matched to ${match.contact.email} by ${match.via}`);
+                }
                 if (contact) await this.recordReply(contact, from);
                 // Alert the client (CC admin) that a reply landed. Never let a
                 // notification failure interrupt the poll.
@@ -320,7 +326,7 @@ export class InboundMailService {
     const direct = await this.prisma.contact.findFirst({
       where: { tenantId, email: { equals: from, mode: 'insensitive' } },
     });
-    if (direct) return direct;
+    if (direct) return { contact: direct, via: 'sender' as const };
 
     if (refs.length) {
       const threaded = await this.prisma.emailMessage.findFirst({
@@ -333,10 +339,7 @@ export class InboundMailService {
         orderBy: { createdAt: 'desc' },
         select: { contact: true },
       });
-      if (threaded?.contact) {
-        this.logger.log(`Reply from ${from} matched to ${threaded.contact.email} by thread`);
-        return threaded.contact;
-      }
+      if (threaded?.contact) return { contact: threaded.contact, via: 'thread' as const };
     }
 
     const domain = domainOf(from);
@@ -351,10 +354,7 @@ export class InboundMailService {
       orderBy: { createdAt: 'desc' },
       select: { contact: true },
     });
-    if (recent?.contact) {
-      this.logger.log(`Reply from ${from} matched to ${recent.contact.email} by company domain`);
-    }
-    return recent?.contact ?? null;
+    return recent?.contact ? { contact: recent.contact, via: 'company domain' as const } : null;
   }
 
   /** Best-effort, dependency-free extraction of a readable text body from raw
