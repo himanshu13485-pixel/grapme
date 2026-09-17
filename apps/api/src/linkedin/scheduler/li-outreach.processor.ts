@@ -134,6 +134,9 @@ export class LiOutreachProcessor extends WorkerHost {
     await this.accounts.pauseSeatCampaigns(account.id, reason).catch((e) =>
       this.logger.error(`Circuit breaker failed for seat ${account.id}: ${(e as Error).message}`),
     );
+    // Flagging happens once per outage (this returns early if already flagged), so the
+    // admins get one alert per incident rather than one per failed send.
+    await this.accounts.alertSeatStopped(account.id, `LinkedIn stopped the account: ${reason}`);
   }
 
   private async doSendConnection(actionId: string, ctx: LeadWithContext) {

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
 import { NotificationsController } from './notifications.controller';
 import { NotifyService } from './notify.service';
+import { AdminAlertsService } from './admin-alerts.service';
 import { OtpService } from './otp.service';
 import { PortalService } from './portal.service';
 import { VerifyController } from './verify.controller';
@@ -16,11 +17,12 @@ import { MailerService } from '../sending/mailer.service';
   providers: [
     NotificationsService,
     NotifyService,
+    AdminAlertsService,
     PortalService,
     OtpService,
     MailerService,
   ],
   controllers: [NotificationsController, VerifyController, WhatsappVerifyController],
-  exports: [NotificationsService, NotifyService, PortalService, OtpService],
+  exports: [NotificationsService, NotifyService, AdminAlertsService, PortalService, OtpService],
 })
 export class NotificationsModule {}

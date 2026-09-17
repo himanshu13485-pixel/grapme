@@ -9,6 +9,7 @@ import {
   SuppressionReason,
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { AdminAlertsService } from '../notifications/admin-alerts.service';
 
 /**
  * Central bounce handling shared by the send workers (SMTP-time hard failures)
@@ -24,7 +25,10 @@ export class BounceService {
   private static readonly MIN_VOLUME = 20; // don't judge on tiny samples
   private static readonly MAX_RATE = 0.07; // >7% bounce → auto-disable the mailbox
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly alerts: AdminAlertsService,
+  ) {}
 
   /** True when a nodemailer/SMTP error is a PERMANENT (hard) failure: a 5xx reply
    *  code, or a recipient-rejected message when no code is exposed. */
@@ -105,7 +109,7 @@ export class BounceService {
   async checkBounceRates(): Promise<{ disabled: number }> {
     const mailboxes = await this.prisma.emailAccount.findMany({
       where: { status: MailboxStatus.ACTIVE },
-      select: { id: true, label: true },
+      select: { id: true, label: true, emailAddress: true, tenantId: true, clientId: true, bounceWindowFrom: true },
     });
     let disabled = 0;
     for (const mb of mailboxes) {
@@ -114,6 +118,11 @@ export class BounceService {
           emailAccountId: mb.id,
           direction: MessageDirection.OUTBOUND,
           status: { in: [MessageStatus.SENT, MessageStatus.DELIVERED, MessageStatus.BOUNCED] },
+          // Only sends since the mailbox was last enabled. Re-enabling used to re-run the
+          // same history: the bounces that tripped the breaker were still in the window,
+          // so it disabled the mailbox again within the hour — and it could not send the
+          // clean mail that would have diluted them, because it was disabled.
+          ...(mb.bounceWindowFrom ? { createdAt: { gte: mb.bounceWindowFrom } } : {}),
         },
         orderBy: { createdAt: 'desc' },
         take: BounceService.SAMPLE,
@@ -130,6 +139,18 @@ export class BounceService {
         });
         disabled++;
         this.logger.warn(`Mailbox "${mb.label}" — ${reason}`);
+        const client = mb.clientId
+          ? await this.prisma.client.findUnique({ where: { id: mb.clientId }, select: { name: true } })
+          : null;
+        await this.alerts.channelDisabled(mb.tenantId, {
+          kind: 'Mailbox',
+          name: mb.label,
+          identifier: mb.emailAddress,
+          clientName: client?.name ?? null,
+          reason: `${bounced} of the last ${recent.length} sends bounced (${(rate * 100).toFixed(1)}%), over the ${(BounceService.MAX_RATE * 100).toFixed(0)}% limit.`,
+          whatNext: 'Clean the bounced addresses out of the contact list, then re-enable the mailbox from its Edit form.',
+          link: '/mailboxes',
+        });
       }
     }
     if (disabled) this.logger.warn(`Bounce circuit breaker disabled ${disabled} mailbox(es)`);

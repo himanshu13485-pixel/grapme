@@ -221,6 +221,9 @@ export class MailboxesService {
     } else if (autoDisabled) {
       data.status = MailboxStatus.ACTIVE;
       data.statusReason = null;
+      // Fresh bounce window: the breaker judges only what it sends from here, so the
+      // bounces that disabled it can't immediately disable it again.
+      data.bounceWindowFrom = new Date();
     }
 
     const account = await this.prisma.emailAccount.update({

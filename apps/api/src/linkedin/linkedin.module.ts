@@ -24,6 +24,7 @@ import { LiInboxService } from './inbox/li-inbox.service';
 import { LiInboxController } from './inbox/li-inbox.controller';
 import { LiInboxWebhooksController } from './inbox/li-inbox-webhooks.controller';
 import { AiModule } from '../ai/ai.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 // The worker needs Redis (QueueModule). With QUEUE_ENABLED=false the rest of the
 // LinkedIn channel still runs; only campaign execution is idle.
@@ -35,7 +36,7 @@ const queueEnabled = process.env.QUEUE_ENABLED !== 'false';
  * automation engine, campaigns, and (added in later steps) knowledge / inbox.
  */
 @Module({
-  imports: [AiModule], // unified AI: LinkedIn generation uses the tenant OpenAI key
+  imports: [AiModule, NotificationsModule], // unified AI + admin alerts when a seat stops
   providers: [
     LiRateGuard,
     UnipileProvider,

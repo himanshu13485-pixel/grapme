@@ -6,6 +6,7 @@ import { LinkedInSubscriptionService } from '../subscription/linkedin-subscripti
 import { mapProviderStatus } from '../provider/unipile.provider';
 import { LiSchedulerService } from '../scheduler/li-scheduler.service';
 import { encryptCredential, decryptCredential } from '../../common/crypto/credential-crypto';
+import { AdminAlertsService } from '../../notifications/admin-alerts.service';
 
 @Injectable()
 export class LinkedInAccountsService {
@@ -16,6 +17,7 @@ export class LinkedInAccountsService {
     private readonly subs: LinkedInSubscriptionService,
     @Inject(LINKEDIN_PROVIDER) private readonly provider: LinkedInProvider,
     private readonly scheduler: LiSchedulerService,
+    private readonly alerts: AdminAlertsService,
   ) {}
 
   /** Begin connecting a new LinkedIn account (seat) for a client. Returns a hosted-auth URL. */
@@ -72,6 +74,8 @@ export class LinkedInAccountsService {
     // Account was deleted on Unipile's side → drop the stale local row, keeping its
     // campaigns: they're paused and detached, not deleted along with it.
     if (info.deleted) {
+      // Alert before the row goes, while its client and name are still readable.
+      await this.alertSeatStopped(id, 'The account was deleted on the provider side, so the seat no longer exists.');
       await this.detachCampaigns(id, 'LinkedIn account was deleted — attach an account to resume');
       await this.prisma.linkedInAccount.delete({ where: { id } });
       return { id, removed: true };
@@ -95,6 +99,7 @@ export class LinkedInAccountsService {
     // the webhook is best-effort, so this is the second line of defence.
     if (!healthy && a.status === LinkedInAccountStatus.CONNECTED) {
       await this.pauseSeatCampaigns(id, `LinkedIn account status: ${status}`);
+      await this.alertSeatStopped(id, `LinkedIn reports the account as ${status}.`);
     }
     return updated;
   }
@@ -132,6 +137,11 @@ export class LinkedInAccountsService {
     if (!healthy) {
       this.logger.warn(`Seat ${rowId} reported ${payload.status} — pausing its campaigns`);
       await this.pauseSeatCampaigns(rowId, `LinkedIn account status: ${payload.status ?? 'unknown'}`);
+      // Only on the way down: the provider can repeat a status, and admins should not
+      // get the same alert every time it does.
+      if (row.status !== status) {
+        await this.alertSeatStopped(rowId, `LinkedIn reports the account as ${payload.status ?? status}.`);
+      }
       return { ok: true, status };
     }
 
@@ -251,6 +261,29 @@ export class LinkedInAccountsService {
       return { ...row, proxyPassword: row.proxyPassword ? '••••••••' : null } as T;
     }
     return row;
+  }
+
+  /**
+   * Tell the admins a seat stopped working — a checkpoint, a credentials failure, a
+   * disconnect, or the account being deleted at the provider. Outreach on that seat is
+   * paused until someone reconnects it, and nothing used to say so.
+   */
+  async alertSeatStopped(accountRowId: string, reason: string): Promise<void> {
+    const seat = await this.prisma.linkedInAccount
+      .findUnique({ where: { id: accountRowId }, select: { tenantId: true, clientId: true, fullName: true } })
+      .catch(() => null);
+    if (!seat) return;
+    const client = await this.prisma.client
+      .findUnique({ where: { id: seat.clientId }, select: { name: true } })
+      .catch(() => null);
+    await this.alerts.channelDisabled(seat.tenantId, {
+      kind: 'LinkedIn account',
+      name: seat.fullName || 'LinkedIn seat',
+      clientName: client?.name ?? null,
+      reason,
+      whatNext: "Reconnect it from the client's LinkedIn → Accounts tab, then resume its campaigns.",
+      link: `/linkedin/${seat.clientId}`,
+    });
   }
 
   /** Same breaker, addressed by the provider-side account id (what the engine holds). */

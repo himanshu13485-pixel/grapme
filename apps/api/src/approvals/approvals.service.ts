@@ -822,6 +822,10 @@ export class ApprovalsService {
           where: { id: entityId },
           data: {
             status: approved ? MailboxStatus.ACTIVE : MailboxStatus.DISABLED,
+            // Approving an enable request (including a client's re-enable after the
+            // bounce breaker) starts a fresh bounce window, so the old bounces can't
+            // disable it again on the next sweep.
+            ...(approved ? { statusReason: null, bounceWindowFrom: new Date() } : {}),
           },
         });
         break;
