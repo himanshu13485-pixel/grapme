@@ -25,6 +25,7 @@ import {
   ClientRegisterDto,
 } from './dto/auth.dto';
 import { JwtPayload } from './jwt.strategy';
+import { SsoTicketService } from './sso-ticket.service';
 
 /** Request context captured with a session (for the admin Live Clients view). */
 export type SessionCtx = { ip?: string; userAgent?: string };
@@ -43,6 +44,7 @@ export class AuthService {
     private mailer: MailerService,
     private approvals: ApprovalsService,
     private activity: ActivityService,
+    private sso: SsoTicketService,
   ) {}
 
   private sha256(value: string): string {
@@ -173,6 +175,53 @@ export class AuthService {
       data: { lastLoginAt: new Date() },
     });
 
+    return this.issueSession(user, ctx);
+  }
+
+  /**
+   * Where "Switch to GrapOut Trade" should send this person.
+   *
+   * With the handover configured, a one-minute pass that signs them straight
+   * in over there. Without it — or for an address nobody has confirmed — Trade's
+   * ordinary sign-in page, so the button always goes somewhere.
+   *
+   * An unconfirmed address never gets a pass: otherwise an account created here
+   * with somebody else's email would arrive in Trade as them.
+   */
+  async ssoUrlForGrapout(userId: string): Promise<{ url: string; signedIn: boolean }> {
+    const base = (this.config.get<string>('GRAPOUT_URL') || 'https://www.grapout.com/trade').replace(/\/+$/, '');
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, emailVerified: true, status: true },
+    });
+
+    if (!this.sso.configured() || !user || !user.emailVerified || user.status !== 'ACTIVE') {
+      return { url: `${base}/login`, signedIn: false };
+    }
+    return { url: `${base}/sso?ticket=${encodeURIComponent(this.sso.mint(user.email))}`, signedIn: true };
+  }
+
+  /**
+   * Arriving from GrapOut Trade with a pass: the same session a password
+   * sign-in would have produced, without asking for the password again.
+   */
+  async ssoLogin(ticket: string, ctx?: SessionCtx) {
+    const email = await this.sso.redeem(ticket);
+    if (!email) {
+      throw new UnauthorizedException('That link has expired or was already used. Please sign in.');
+    }
+
+    const user = await this.prisma.user.findFirst({
+      where: { email: { equals: email, mode: 'insensitive' } },
+    });
+    if (!user) throw new UnauthorizedException(`There is no GrapMe account for ${email}.`);
+    if (user.status === 'SUSPENDED') throw new UnauthorizedException('This account has been suspended.');
+    // The same gate a password sign-in has for self-registered clients.
+    if (user.role === Role.CLIENT && !user.emailVerified) {
+      throw new UnauthorizedException('Please confirm your email first — check your inbox for the confirmation link.');
+    }
+
+    await this.prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
     return this.issueSession(user, ctx);
   }
 

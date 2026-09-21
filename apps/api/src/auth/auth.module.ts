@@ -3,6 +3,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { APP_GUARD } from '@nestjs/core';
 import { AuthService } from './auth.service';
+import { SsoTicketService } from './sso-ticket.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './jwt.strategy';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -20,6 +21,7 @@ import { ApprovalsModule } from '../approvals/approvals.module';
   controllers: [AuthController],
   providers: [
     AuthService,
+    SsoTicketService,
     JwtStrategy,
     // Global auth: every route requires JWT unless @Public()
     { provide: APP_GUARD, useClass: JwtAuthGuard },

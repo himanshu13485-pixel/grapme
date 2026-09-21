@@ -23,6 +23,7 @@ import {
   ClientVerifyDto,
   ChangePasswordDto,
   UpdateAccountDto,
+  SsoDto,
 } from './dto/auth.dto';
 import { Public } from '../common/decorators/public.decorator';
 import {
@@ -67,6 +68,27 @@ export class AuthController {
   @Post('login')
   login(@Body() dto: LoginDto, @Req() req: Request) {
     return this.auth.login(dto, this.sessionCtx(req));
+  }
+
+  /**
+   * Arriving from GrapOut Trade with a one-minute pass: signed in without a
+   * second password. Its own throttle, so a burst of stale links cannot spend
+   * anybody's ordinary login budget.
+   */
+  @Public()
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @HttpCode(200)
+  @Post('sso')
+  sso(@Body() dto: SsoDto, @Req() req: Request) {
+    return this.auth.ssoLogin(dto.ticket, this.sessionCtx(req));
+  }
+
+  /** Where "Switch to GrapOut Trade" goes: a signed pass when the handover is set up. */
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @HttpCode(200)
+  @Post('sso/grapout')
+  ssoToGrapout(@CurrentUser() user: AuthUser) {
+    return this.auth.ssoUrlForGrapout(user.userId);
   }
 
   @Public()

@@ -62,6 +62,12 @@ services:
       UNIPILE_DSN: ${UNIPILE_DSN:-}
       UNIPILE_API_KEY: ${UNIPILE_API_KEY:-}
       UNIPILE_WEBHOOK_SECRET: ${UNIPILE_WEBHOOK_SECRET:-}
+      # ── Signing in once for both GrapMe and GrapOut Trade ──
+      # Must be the SAME value as SSO_SHARED_SECRET in Trade's backend .env, at
+      # least 32 characters (openssl rand -hex 32). Blank switches the handover
+      # off; the sidebar's switch then opens Trade's own sign-in page.
+      SSO_SHARED_SECRET: ${SSO_SHARED_SECRET:-}
+      GRAPOUT_URL: ${GRAPOUT_URL:-https://www.grapout.com/trade}
       # Optional white-label: your own hosted-auth wizard domain (CNAME → account.unipile.com,
       # validated by Unipile support). Blank = the client sees Unipile's default domain.
       UNIPILE_HOSTED_AUTH_DOMAIN: ${UNIPILE_HOSTED_AUTH_DOMAIN:-}

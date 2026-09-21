@@ -3,6 +3,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  MaxLength,
   MinLength,
 } from 'class-validator';
 
@@ -109,4 +110,12 @@ export class UpdateAccountDto {
   @IsOptional()
   @IsEmail()
   email?: string;
+}
+
+/** A one-minute pass from GrapOut Trade, carried across in the URL. */
+export class SsoDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(2048)
+  ticket: string;
 }

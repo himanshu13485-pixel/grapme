@@ -386,6 +386,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </div>
           </div>
 
+          <SwitchToTrade />
+
           <nav className="flex-1 space-y-1 overflow-y-auto px-3 pb-4">
             <ClientNavItem
               href="/client-home"
@@ -592,6 +594,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <div className="text-[10px] font-medium tracking-wide text-indigo-300">GVC Framework</div>
           </div>
         </div>
+
+        <SwitchToTrade />
 
         <nav className="flex-1 space-y-1 overflow-y-auto px-3 pb-4">
           {(() => {
@@ -826,5 +830,60 @@ function MobileTopBar({ onMenu }: { onMenu: () => void }) {
       </button>
       <span className="text-sm font-extrabold tracking-tight text-slate-800">GrapMe</span>
     </header>
+  );
+}
+
+/**
+ * Across to GrapOut Trade, already signed in.
+ *
+ * Trade lives on grapout.com, and a browser will not share a session between
+ * two domains, so this asks the API for a one-minute pass and carries it over in
+ * the URL. Trade checks it and signs the same person in — no second password.
+ *
+ * If the handover is not set up, or this address has never been confirmed, the
+ * API hands back Trade's ordinary sign-in page instead, so the button always
+ * goes somewhere. If even that request fails, the same page from here: a switch
+ * that does nothing is worse than one that asks you to sign in.
+ */
+function SwitchToTrade() {
+  const [going, setGoing] = useState(false);
+
+  async function go() {
+    if (going) return;
+    setGoing(true);
+    try {
+      const { url } = await api.post<{ url: string }>('/auth/sso/grapout');
+      window.location.href = url;
+    } catch {
+      window.location.href = 'https://www.grapout.com/trade/login';
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={go}
+      disabled={going}
+      className="mx-3 mb-2 flex w-[calc(100%-1.5rem)] items-center gap-3 rounded-xl bg-white/10 px-3 py-2.5 text-left ring-1 ring-white/10 transition hover:bg-white/15 disabled:opacity-70"
+    >
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/90 text-sm font-black text-indigo-700">
+        G
+      </span>
+      <span className="min-w-0 flex-1 leading-tight">
+        <span className="block truncate text-sm font-semibold text-white">GrapMe</span>
+        <span className="block truncate text-[11px] text-white/60">
+          {going ? 'Opening GrapOut Trade…' : 'Switch to GrapOut Trade'}
+        </span>
+      </span>
+      <svg
+        width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+        className="shrink-0 text-white/60"
+        aria-hidden="true"
+      >
+        <path d="M8 3 4 7l4 4" /><path d="M4 7h16" />
+        <path d="m16 21 4-4-4-4" /><path d="M20 17H4" />
+      </svg>
+    </button>
   );
 }
