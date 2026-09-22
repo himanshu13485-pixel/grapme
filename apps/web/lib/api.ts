@@ -26,6 +26,23 @@ export function setRefreshToken(token: string | null) {
   else localStorage.removeItem(REFRESH_KEY);
 }
 
+// ── Switching in from GrapOut Trade ─────────────────────────────────────
+// A password sign-in hands this browser a long-lived pass saying so. Arriving
+// from Trade needs it; without it, the person signs in here once first. Kept
+// across sign-outs on purpose — it is what makes the next switch instant, and
+// it opens nothing by itself.
+const DEVICE_PASS_KEY = 'aeo_sso_device_pass';
+
+export function getDevicePass(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem(DEVICE_PASS_KEY);
+}
+
+export function setDevicePass(pass: string | null | undefined) {
+  if (typeof window === 'undefined') return;
+  if (pass) localStorage.setItem(DEVICE_PASS_KEY, pass);
+}
+
 export function clearTokens() {
   setToken(null);
   setRefreshToken(null);

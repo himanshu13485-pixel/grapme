@@ -175,7 +175,57 @@ export class AuthService {
       data: { lastLoginAt: new Date() },
     });
 
-    return this.issueSession(user, ctx);
+    const session = await this.issueSession(user, ctx);
+    return { ...session, devicePass: await this.mintDevicePass(user) };
+  }
+
+  /**
+   * "This browser has signed in to GrapMe with a password."
+   *
+   * Handed out by a password sign-in and nothing else, kept by the browser
+   * across sign-outs, and asked for when somebody arrives from GrapOut Trade.
+   * A pass from Trade proves Trade signed somebody in with this address — and
+   * Trade's admins can create an account with any address that is not there
+   * yet. Without this, that would be a key to the GrapMe login with the same
+   * address. With it, the switch is instant on a browser that has already
+   * signed in here, and asks for the password once on any other.
+   *
+   * Signed with a key derived from the refresh secret, so it can never be
+   * mistaken for an access or refresh token; carries a fingerprint of the
+   * password hash, so changing the password retires every one of them.
+   */
+  private devicePassKey(): string {
+    return this.sha256(`${this.config.get<string>('JWT_REFRESH_SECRET')}:sso-device-pass`);
+  }
+
+  private passwordPrint(passwordHash: string): string {
+    return this.sha256(passwordHash).slice(0, 16);
+  }
+
+  private mintDevicePass(user: { id: string; passwordHash: string }): Promise<string> {
+    return this.jwt.signAsync(
+      { sub: user.id, typ: 'sso-device', pw: this.passwordPrint(user.passwordHash) },
+      { secret: this.devicePassKey(), expiresIn: '180d' },
+    );
+  }
+
+  private async devicePassFits(
+    pass: string | undefined,
+    user: { id: string; passwordHash: string },
+  ): Promise<boolean> {
+    if (!pass) return false;
+    try {
+      const claims = await this.jwt.verifyAsync<{ sub?: string; typ?: string; pw?: string }>(pass, {
+        secret: this.devicePassKey(),
+      });
+      return (
+        claims.typ === 'sso-device' &&
+        claims.sub === user.id &&
+        claims.pw === this.passwordPrint(user.passwordHash)
+      );
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -186,16 +236,18 @@ export class AuthService {
    * ordinary sign-in page, so the button always goes somewhere.
    *
    * An unconfirmed address never gets a pass: otherwise an account created here
-   * with somebody else's email would arrive in Trade as them.
+   * with somebody else's email would arrive in Trade as them. Nor does a
+   * "Log in as" session: that would hand an admin a real, unmarked Trade
+   * session for the person they are viewing as.
    */
-  async ssoUrlForGrapout(userId: string): Promise<{ url: string; signedIn: boolean }> {
+  async ssoUrlForGrapout(actor: AuthUser): Promise<{ url: string; signedIn: boolean }> {
     const base = (this.config.get<string>('GRAPOUT_URL') || 'https://www.grapout.com/trade').replace(/\/+$/, '');
     const user = await this.prisma.user.findUnique({
-      where: { id: userId },
+      where: { id: actor.userId },
       select: { email: true, emailVerified: true, status: true },
     });
 
-    if (!this.sso.configured() || !user || !user.emailVerified || user.status !== 'ACTIVE') {
+    if (!this.sso.configured() || actor.impersonatedBy || !user || !user.emailVerified || user.status !== 'ACTIVE') {
       return { url: `${base}/login`, signedIn: false };
     }
     return { url: `${base}/sso?ticket=${encodeURIComponent(this.sso.mint(user.email))}`, signedIn: true };
@@ -203,9 +255,11 @@ export class AuthService {
 
   /**
    * Arriving from GrapOut Trade with a pass: the same session a password
-   * sign-in would have produced, without asking for the password again.
+   * sign-in would have produced, without asking for the password again —
+   * on a browser that has signed in here before (see mintDevicePass). Any
+   * other browser is sent to sign in once.
    */
-  async ssoLogin(ticket: string, ctx?: SessionCtx) {
+  async ssoLogin(ticket: string, devicePass: string | undefined, ctx?: SessionCtx) {
     const email = await this.sso.redeem(ticket);
     if (!email) {
       throw new UnauthorizedException('That link has expired or was already used. Please sign in.');
@@ -219,6 +273,11 @@ export class AuthService {
     // The same gate a password sign-in has for self-registered clients.
     if (user.role === Role.CLIENT && !user.emailVerified) {
       throw new UnauthorizedException('Please confirm your email first — check your inbox for the confirmation link.');
+    }
+    if (!(await this.devicePassFits(devicePass, user))) {
+      throw new UnauthorizedException(
+        'First time switching on this browser: sign in to GrapMe once with your password. After that the switch is instant.',
+      );
     }
 
     await this.prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
@@ -238,12 +297,15 @@ export class AuthService {
     canEdit?: boolean;
     },
     ctx?: SessionCtx,
+    impersonatedBy?: string,
   ) {
     const payload: JwtPayload = {
       sub: user.id,
       tenantId: user.tenantId,
       role: user.role,
       email: user.email,
+      // Marks a "Log in as" session for as long as it lives, refreshes included.
+      ...(impersonatedBy ? { imp: impersonatedBy } : {}),
     };
     const tokens = await this.signTokens(payload);
     await this.persistRefreshToken(user.id, tokens.refreshToken, ctx);
@@ -307,6 +369,7 @@ export class AuthService {
       tenantId: payload.tenantId,
       role: payload.role,
       email: payload.email,
+      ...(payload.imp ? { imp: payload.imp } : {}),
     };
     const tokens = await this.signTokens(newPayload);
     await this.persistRefreshToken(payload.sub, tokens.refreshToken, {
@@ -638,7 +701,7 @@ export class AuthService {
     this.logger.warn(
       `${admin.email} logged in as ${target.role} ${target.email}`,
     );
-    return this.issueSession(target, ctx);
+    return this.issueSession(target, ctx, admin.userId);
   }
 
   async resendClientVerification(admin: AuthUser, userId: string) {

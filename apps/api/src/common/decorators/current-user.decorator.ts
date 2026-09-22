@@ -5,6 +5,8 @@ export interface AuthUser {
   tenantId: string;
   role: string;
   email: string;
+  /** Present when an admin is using this login through "Log in as". */
+  impersonatedBy?: string;
 }
 
 /** Extracts the authenticated user (set by JwtStrategy) from the request. */

@@ -7,7 +7,7 @@ import {
   useState,
   ReactNode,
 } from 'react';
-import { api, setToken, setRefreshToken, clearTokens } from './api';
+import { api, setToken, setRefreshToken, setDevicePass, clearTokens } from './api';
 
 // Where clients land after signing out (the public marketing site).
 const MARKETING_URL = process.env.NEXT_PUBLIC_MARKETING_URL ?? 'https://www.grapme.com';
@@ -31,6 +31,7 @@ interface LoginResponse {
   user: AuthUser;
   accessToken: string;
   refreshToken: string;
+  devicePass?: string;
 }
 
 interface AuthContextValue {
@@ -78,6 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     setToken(res.accessToken);
     setRefreshToken(res.refreshToken);
+    setDevicePass(res.devicePass);
     await hydrateUser(res.user);
   }
 

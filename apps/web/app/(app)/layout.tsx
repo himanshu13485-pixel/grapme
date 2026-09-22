@@ -847,6 +847,10 @@ function MobileTopBar({ onMenu }: { onMenu: () => void }) {
  */
 function SwitchToTrade() {
   const [going, setGoing] = useState(false);
+  // Not while viewing as somebody else: the server would refuse the pass
+  // anyway, and the button would only lead to Trade's sign-in page.
+  const [borrowed, setBorrowed] = useState(false);
+  useEffect(() => setBorrowed(hasStashedAdmin()), []);
 
   async function go() {
     if (going) return;
@@ -858,6 +862,8 @@ function SwitchToTrade() {
       window.location.href = 'https://www.grapout.com/trade/login';
     }
   }
+
+  if (borrowed) return null;
 
   return (
     <button

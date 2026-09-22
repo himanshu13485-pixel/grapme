@@ -80,7 +80,7 @@ export class AuthController {
   @HttpCode(200)
   @Post('sso')
   sso(@Body() dto: SsoDto, @Req() req: Request) {
-    return this.auth.ssoLogin(dto.ticket, this.sessionCtx(req));
+    return this.auth.ssoLogin(dto.ticket, dto.devicePass, this.sessionCtx(req));
   }
 
   /** Where "Switch to GrapOut Trade" goes: a signed pass when the handover is set up. */
@@ -88,7 +88,7 @@ export class AuthController {
   @HttpCode(200)
   @Post('sso/grapout')
   ssoToGrapout(@CurrentUser() user: AuthUser) {
-    return this.auth.ssoUrlForGrapout(user.userId);
+    return this.auth.ssoUrlForGrapout(user);
   }
 
   @Public()

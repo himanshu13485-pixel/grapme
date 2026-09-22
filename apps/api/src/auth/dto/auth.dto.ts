@@ -118,4 +118,10 @@ export class SsoDto {
   @IsNotEmpty()
   @MaxLength(2048)
   ticket: string;
+
+  /** This browser's proof that it has signed in here with a password before. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(4096)
+  devicePass?: string;
 }

@@ -10,6 +10,8 @@ export interface JwtPayload {
   tenantId: string;
   role: string;
   email: string;
+  /** Set only on a "Log in as" session: the id of the admin behind it. */
+  imp?: string;
   iat?: number; // issued-at (seconds) — set by the signer, used for force-logout
 }
 
@@ -48,6 +50,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       tenantId: payload.tenantId,
       role: payload.role,
       email: payload.email,
+      impersonatedBy: payload.imp,
     };
   }
 }

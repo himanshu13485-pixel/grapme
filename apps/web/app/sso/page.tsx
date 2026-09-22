@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { api, setToken, setRefreshToken } from '@/lib/api';
+import { api, getDevicePass, setToken, setRefreshToken } from '@/lib/api';
 import { landingFor } from '@/lib/impersonate';
 
 interface SsoResponse {
@@ -16,7 +16,8 @@ interface SsoResponse {
  * Landing here from GrapOut Trade, already signed in over there.
  *
  * The URL carries a one-minute, one-use pass; this trades it for a session and
- * gets out of the way. A pass that fails — expired, reused, or for an address
+ * gets out of the way — on a browser that has signed in to GrapMe with a
+ * password before. On any other, the server says to sign in once first. A pass that fails — expired, reused, or for an address
  * with no account here — ends on the ordinary sign-in page with a sentence
  * saying why, because the person still wants to get in.
  */
@@ -42,7 +43,7 @@ function SsoInner() {
     window.history.replaceState(null, '', window.location.pathname);
 
     api
-      .post<SsoResponse>('/auth/sso', { ticket })
+      .post<SsoResponse>('/auth/sso', { ticket, devicePass: getDevicePass() ?? undefined })
       .then((res) => {
         setToken(res.accessToken);
         setRefreshToken(res.refreshToken);
