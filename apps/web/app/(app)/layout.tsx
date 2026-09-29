@@ -50,7 +50,9 @@ const NAV: NavItem[] = [
   { href: '/mailboxes', label: 'Mailboxes', icon: '✉', module: 'mailboxes', group: 'email' },
   { href: '/deliverability', label: 'Deliverability', icon: '◎', module: 'deliverability', group: 'email' },
   { href: '/email-log', label: 'Email Log', icon: '🧾', admin: true, module: 'email-log', group: 'email' },
-  { href: '/response-types', label: 'Response Type', icon: '💬', sales: true, module: 'response-types' },
+  // No `sales` flag: that marks an item as salesperson-ONLY. The salesperson
+  // panel reaches this through SALES_ALLOWED, so admins and sub-admins keep it too.
+  { href: '/response-types', label: 'Response Type', icon: '💬', module: 'response-types' },
   // ── LinkedIn Outreach ──
   { href: '/linkedin', label: 'LinkedIn Outreach', icon: '🔗', admin: true, module: 'linkedin' },
   { href: '/linkedin-schedule', label: 'LinkedIn Campaigns Schedule', icon: '🗓', admin: true, module: 'linkedin-schedule' },
