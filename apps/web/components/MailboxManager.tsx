@@ -29,7 +29,7 @@ interface MailboxOption {
 const TABS = [
   { key: 'inbox', label: 'Inbox' },
   { key: 'sent', label: 'Sent' },
-  { key: 'not-delivered', label: 'Not Delivered' },
+  { key: 'other-mails', label: 'Other Mails' },
   { key: 'scheduled', label: 'Scheduled' },
   { key: 'failed', label: 'Failed' },
   { key: 'drafts', label: 'Drafts' },
@@ -58,10 +58,13 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
 
   const isInbox = tab === 'inbox';
   const isFailed = tab === 'failed';
-  const isNotDelivered = tab === 'not-delivered';
+  const isOther = tab === 'other-mails';
   // Both folders show received mail, so they share the From / mailbox columns.
-  const inboundView = isInbox || isNotDelivered;
-  const canSaveResponseType = user?.role === 'SUPER_ADMIN' || user?.role === 'SUB_ADMIN';
+  const inboundView = isInbox || isOther;
+  const isStaffAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'SUB_ADMIN';
+  const canSaveResponseType = isStaffAdmin;
+  // Moving mail between the Inbox and Other Mails needs the tick boxes.
+  const showSelect = isSuperAdmin || (isStaffAdmin && inboundView);
   const PAGE_SIZE = 25;
   const visible =
     isInbox && kindFilter !== 'ALL'
@@ -122,6 +125,20 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
       alert('Saved to Response Type.');
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Could not save');
+    }
+  }
+
+  /** Move the ticked mail between the Inbox and Other Mails. */
+  async function moveSelected() {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    try {
+      const r = await api.post<{ moved: number }>('/mailbox/move', { ids, toInbox: !isInbox });
+      setSelected(new Set());
+      await load();
+      alert(`Moved ${r.moved} message${r.moved === 1 ? '' : 's'}.`);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Could not move the mail');
     }
   }
 
@@ -304,6 +321,13 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
             ↻ Resend all
           </button>
         )}
+        {inboundView && isStaffAdmin && selected.size > 0 && (
+          <button className="btn-ghost text-xs text-brand-600" onClick={moveSelected}>
+            {isInbox
+              ? `→ Move ${selected.size} to Other Mails`
+              : `← Move ${selected.size} back to Inbox`}
+          </button>
+        )}
         <button
           className="btn-ghost text-xs"
           onClick={load}
@@ -326,8 +350,8 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
       {visible.length === 0 ? (
         <EmptyState
           message={
-            isNotDelivered
-              ? 'Nothing here — no bounces or delivery failures.'
+            isOther
+              ? 'Nothing here yet. Tick mail in the Inbox and move it across.'
               : isInbox
                 ? 'No replies yet. Incoming mail from receivers appears here once your mailboxes poll it.'
                 : `No ${tab} messages.`
@@ -338,7 +362,7 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase text-slate-400">
               <tr>
-                {isSuperAdmin && (
+                {showSelect && (
                   <th className="px-4 py-3">
                     <input
                       type="checkbox"
@@ -364,7 +388,7 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
                     className={`border-t border-slate-100 ${inboundView ? 'cursor-pointer hover:bg-slate-50' : ''}`}
                     onClick={() => inboundView && setOpen(open === m.id ? null : m.id)}
                   >
-                    {isSuperAdmin && (
+                    {showSelect && (
                       <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                         <input
                           type="checkbox"
@@ -427,7 +451,7 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
                   </tr>
                   {inboundView && open === m.id && (
                     <tr className="bg-slate-50">
-                      <td colSpan={(canDelete || isFailed ? 6 : 5) + (isSuperAdmin ? 1 : 0)} className="px-6 py-4">
+                      <td colSpan={(canDelete || isFailed ? 6 : 5) + (showSelect ? 1 : 0)} className="px-6 py-4">
                         <div className="mb-2 text-xs text-slate-400">
                           From {m.fromAddress ?? '—'} · received{' '}
                           {new Date(m.createdAt).toLocaleString()}

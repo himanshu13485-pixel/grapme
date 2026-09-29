@@ -835,6 +835,9 @@ model EmailMessage {
   // INBOUND only: REPLY (a person answered), AUTO_REPLY (out-of-office and friends —
   // recorded but never treated as a reply), BOUNCE. Null on rows stored before this.
   inboundKind    String?
+  /// Moved by hand out of the Inbox into "Other Mails". Nothing sets this
+  /// automatically — received mail always lands in the Inbox first.
+  otherFolder    Boolean          @default(false)
   createdAt      DateTime         @default(now())
 
   tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)

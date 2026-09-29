@@ -66,10 +66,18 @@ export class MessagesController {
     return this.messages.drafts(user, clientId, mailbox);
   }
 
-  /** Bounces and delivery failures, kept out of the Inbox. */
-  @Get('not-delivered')
-  notDelivered(@CurrentUser() user: AuthUser, @Query('clientId') clientId?: string, @Query('mailbox') mailbox?: string) {
-    return this.messages.notDelivered(user, clientId, mailbox);
+  /** "Other Mails" — received mail moved out of the Inbox by hand. */
+  @Get('other-mails')
+  otherMails(@CurrentUser() user: AuthUser, @Query('clientId') clientId?: string, @Query('mailbox') mailbox?: string) {
+    return this.messages.otherMails(user, clientId, mailbox);
+  }
+
+  /** Move selected mail to "Other Mails", or back with `toInbox`. Staff only. */
+  @SalesGateRoles(SalesGateRole.SUPER_ADMIN, SalesGateRole.SUB_ADMIN, SalesGateRole.USER)
+  @HttpCode(200)
+  @Post('move')
+  move(@CurrentUser() user: AuthUser, @Body() body: { ids?: string[]; toInbox?: boolean }) {
+    return this.messages.setFolder(user, body.ids ?? [], !body.toInbox);
   }
 
   @Get('inbox')

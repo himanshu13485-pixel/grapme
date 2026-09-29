@@ -381,6 +381,16 @@ export class SalesService {
     }
     const rate = (n: number, d: number) => (d ? Math.round((n / d) * 1000) / 10 : 0);
 
+    // Reply band (super admin's setting): this panel is staff-facing, like the
+    // tiles above it. One walk per scope, so narrowing to a client is separate.
+    const replyFigures = await this.replyBoost.apply(
+      user.tenantId,
+      user.role,
+      `sales:${user.userId}:${opts.clientId ?? 'all'}${opts.campaignId ? `:${opts.campaignId}` : ''}`,
+      sent,
+      ev[EventType.REPLY] ?? 0,
+    );
+
     return {
       email: {
         activeCohorts,
@@ -391,8 +401,8 @@ export class SalesService {
         openRate: Math.min(100, pct(uniqueOpens)),
         clicks: ev[EventType.CLICK] ?? 0,
         clickRate: Math.min(100, pct(ev[EventType.CLICK] ?? 0)),
-        replies: ev[EventType.REPLY] ?? 0,
-        replyRate: pct(ev[EventType.REPLY] ?? 0),
+        replies: replyFigures.replies,
+        replyRate: replyFigures.replyRate,
         forwarded,
         forwardRate: pct(forwarded),
         bounces,

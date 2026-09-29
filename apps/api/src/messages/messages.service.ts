@@ -15,27 +15,6 @@ import { QUEUE_SEND, JOB_RESEND_MESSAGE } from '../queue/queue.constants';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { ownedClientIds } from '../common/client-scope';
 
-/**
- * Delivery failures that arrive as mail: tagged BOUNCE when stored, or — for
- * rows kept before that tag existed — recognisable by sender and subject. These
- * belong in "Not Delivered", never in the Inbox or the unread badge.
- */
-const NOT_DELIVERED_INBOUND = {
-  OR: [
-    { inboundKind: 'BOUNCE' },
-    {
-      inboundKind: null,
-      OR: [
-        { fromAddress: { contains: 'mailer-daemon', mode: 'insensitive' as const } },
-        { fromAddress: { contains: 'postmaster', mode: 'insensitive' as const } },
-        { subject: { contains: 'Undelivered', mode: 'insensitive' as const } },
-        { subject: { contains: 'Delivery Status Notification', mode: 'insensitive' as const } },
-        { subject: { contains: 'Returned to Sender', mode: 'insensitive' as const } },
-      ],
-    },
-  ],
-};
-
 @Injectable()
 export class MessagesService {
   constructor(
@@ -80,7 +59,7 @@ export class MessagesService {
       user,
       {
         direction: MessageDirection.OUTBOUND,
-        status: MessageStatus.FAILED,
+        status: { in: [MessageStatus.FAILED, MessageStatus.BOUNCED] },
       },
       clientId,
       mailboxId,
@@ -96,20 +75,30 @@ export class MessagesService {
     );
   }
 
-  /** Everything that never reached the recipient: bounce/DSN mail that came
-   *  back, plus outbound the provider reported as bounced. */
-  notDelivered(user: AuthUser, clientId?: string, mailboxId?: string) {
+  /** "Other Mails" — received mail someone moved out of the Inbox by hand. */
+  otherMails(user: AuthUser, clientId?: string, mailboxId?: string) {
     return this.base(
       user,
-      {
-        OR: [
-          { direction: MessageDirection.INBOUND, ...NOT_DELIVERED_INBOUND },
-          { direction: MessageDirection.OUTBOUND, status: MessageStatus.BOUNCED },
-        ],
-      },
+      { direction: MessageDirection.INBOUND, otherFolder: true },
       clientId,
       mailboxId,
     );
+  }
+
+  /** Move received mail into "Other Mails", or back to the Inbox. */
+  async setFolder(user: AuthUser, ids: string[], otherFolder: boolean) {
+    const clean = [...new Set((ids ?? []).filter(Boolean))];
+    if (clean.length === 0) return { moved: 0 };
+    const res = await this.prisma.emailMessage.updateMany({
+      where: {
+        id: { in: clean },
+        tenantId: user.tenantId,
+        direction: MessageDirection.INBOUND,
+        ...(await this.scopeFor(user)),
+      },
+      data: { otherFolder },
+    });
+    return { moved: res.count };
   }
 
   drafts(user: AuthUser, clientId?: string, mailboxId?: string) {
@@ -147,7 +136,7 @@ export class MessagesService {
       where: {
         tenantId: user.tenantId,
         direction: MessageDirection.INBOUND,
-        NOT: NOT_DELIVERED_INBOUND,
+        otherFolder: false,
         readAt: null,
         ...(await this.scopeFor(user, clientId)),
       },
@@ -161,7 +150,7 @@ export class MessagesService {
       where: {
         tenantId: user.tenantId,
         direction: MessageDirection.INBOUND,
-        NOT: NOT_DELIVERED_INBOUND,
+        otherFolder: false,
         readAt: null,
         ...(await this.scopeFor(user, clientId)),
       },
@@ -286,8 +275,8 @@ export class MessagesService {
   async inbox(user: AuthUser, clientId?: string, mailboxId?: string) {
     const rows = await this.base(
       user,
-      // Replies and automatic mail; failures live in "Not Delivered".
-      { direction: MessageDirection.INBOUND, NOT: NOT_DELIVERED_INBOUND },
+      // Everything received, except what was moved to "Other Mails".
+      { direction: MessageDirection.INBOUND, otherFolder: false },
       clientId,
       mailboxId,
     );
