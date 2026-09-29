@@ -15,11 +15,31 @@ interface ResponseType {
   createdAt: string;
 }
 
-/** Plain-text preview of a stored reply (inbound mail can carry HTML). */
-function preview(body?: string | null): string {
+/**
+ * Inbound mail is stored as text, sometimes with a little HTML. Keep the line
+ * breaks so an example reads like the email it came from rather than one long
+ * paragraph — the same way the Inbox shows it.
+ */
+function emailBody(body?: string | null): string {
   if (!body) return '';
-  const text = body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-  return text.length > 600 ? `${text.slice(0, 600)}…` : text;
+  const hasTags = /<\/?[a-z][^>]*>/i.test(body);
+  const text = hasTags
+    ? body
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/(p|div|tr|li|h[1-6])>/gi, '\n')
+        .replace(/<[^>]+>/g, '')
+        .replace(/&nbsp;/gi, ' ')
+        .replace(/&amp;/gi, '&')
+        .replace(/&lt;/gi, '<')
+        .replace(/&gt;/gi, '>')
+        .replace(/&quot;/gi, '"')
+        .replace(/&#39;/gi, "'")
+    : body;
+  // Tidy trailing spaces and runs of blank lines, keeping the paragraphs.
+  return text
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 /**
@@ -133,9 +153,15 @@ export default function ResponseTypesPage() {
                 </div>
               </div>
               {open === r.id && (
-                <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
-                  {preview(r.body) || 'This reply had no readable text.'}
-                </pre>
+                <div className="mt-3 rounded-lg bg-slate-50 p-3">
+                  <div className="mb-2 text-xs text-slate-400">
+                    From {r.fromAddress ?? '—'} · saved{' '}
+                    {new Date(r.createdAt).toLocaleString()}
+                  </div>
+                  <div className="max-h-96 overflow-auto whitespace-pre-wrap rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-700">
+                    {emailBody(r.body) || 'This reply had no readable text.'}
+                  </div>
+                </div>
               )}
             </div>
           ))}
