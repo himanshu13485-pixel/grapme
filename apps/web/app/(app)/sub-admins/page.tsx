@@ -42,6 +42,7 @@ const MODULES: { key: string; label: string }[] = [
   { key: 'compliance', label: 'Compliance' },
   { key: 'duplicate-emails', label: 'Duplicate Email' },
   { key: 'activity-logs', label: 'Activity Logs' },
+  { key: 'response-types', label: 'Response Type' },
 ];
 
 export default function SubAdminsPage() {

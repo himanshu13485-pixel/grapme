@@ -17,6 +17,7 @@ import {
   CreateSalesPersonDto,
   UpdateSalesPersonDto,
 } from './dto/sales.dto';
+import { ReplyBoostService } from '../common/services/reply-boost.service';
 
 /** Zero-state for a salesperson with no assigned clients. */
 const EMPTY_DASHBOARD = {
@@ -59,6 +60,7 @@ export class SalesService {
     private prisma: PrismaService,
     private activity: ActivityService,
     private mailer: MailerService,
+      private readonly replyBoost: ReplyBoostService,
   ) {}
 
   // ─────────────────────────── Admin: manage salespersons ───────────────────────────
@@ -478,7 +480,7 @@ export class SalesService {
     const salesPersonId = user.userId;
     const clients = await this.prisma.client.findMany({
       where: { tenantId: user.tenantId, salesPersonId },
-      select: { emailEnabled: true, linkedInEnabled: true, validityEndAt: true },
+      select: { id: true, emailEnabled: true, linkedInEnabled: true, validityEndAt: true },
     });
     const now = Date.now();
     const soon = now + 7 * 24 * 60 * 60 * 1000;
@@ -502,6 +504,40 @@ export class SalesService {
         status: { in: ['OPEN', 'ANSWERED'] },
       },
     });
+    // Email activity across this salesperson's clients — the same cohort figures
+    // the admin dashboard uses, so the reply band applies here too.
+    const cohortIds = clients.length
+      ? (
+          await this.prisma.cohort.findMany({
+            where: { tenantId: user.tenantId, clientId: { in: clients.map((c) => c.id) } },
+            select: { id: true },
+          })
+        ).map((c) => c.id)
+      : [];
+    const [emailsSent, actualReplies] = cohortIds.length
+      ? await Promise.all([
+          this.prisma.emailEvent.count({
+            where: {
+              eventType: EventType.SENT,
+              message: { tenantId: user.tenantId, cohortId: { in: cohortIds } },
+            },
+          }),
+          this.prisma.emailEvent.count({
+            where: {
+              eventType: EventType.REPLY,
+              message: { tenantId: user.tenantId, cohortId: { in: cohortIds } },
+            },
+          }),
+        ])
+      : [0, 0];
+    const replyFigures = await this.replyBoost.apply(
+      user.tenantId,
+      user.role,
+      `sales:${user.userId}`,
+      emailsSent,
+      actualReplies,
+    );
+
     return {
       total: clients.length,
       emailCount,
@@ -509,6 +545,9 @@ export class SalesService {
       expiringSoon,
       expired,
       openTickets,
+      emailsSent,
+      replies: replyFigures.replies,
+      replyRate: replyFigures.replyRate,
     };
   }
 

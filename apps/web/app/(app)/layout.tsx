@@ -24,7 +24,7 @@ const VIEWING_AS_LABEL: Record<string, string> = {
   SUB_ADMIN: 'sub-admin',
 };
 
-const SALES_ALLOWED = ['/sales-home', '/sales-clients', '/reporting', '/internal-work', '/support', '/updates', '/my-profile'];
+const SALES_ALLOWED = ['/sales-home', '/sales-clients', '/reporting', '/internal-work', '/support', '/updates', '/my-profile', '/response-types'];
 const NAV: NavItem[] = [
   // ── Salesperson panel (only these show for role SALES) ──
   { href: '/sales-home', label: 'Dashboard', icon: '▦', sales: true, module: 'sales-home' },
@@ -50,6 +50,7 @@ const NAV: NavItem[] = [
   { href: '/mailboxes', label: 'Mailboxes', icon: '✉', module: 'mailboxes', group: 'email' },
   { href: '/deliverability', label: 'Deliverability', icon: '◎', module: 'deliverability', group: 'email' },
   { href: '/email-log', label: 'Email Log', icon: '🧾', admin: true, module: 'email-log', group: 'email' },
+  { href: '/response-types', label: 'Response Type', icon: '💬', sales: true, module: 'response-types' },
   // ── LinkedIn Outreach ──
   { href: '/linkedin', label: 'LinkedIn Outreach', icon: '🔗', admin: true, module: 'linkedin' },
   { href: '/linkedin-schedule', label: 'LinkedIn Campaigns Schedule', icon: '🗓', admin: true, module: 'linkedin-schedule' },

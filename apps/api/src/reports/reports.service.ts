@@ -11,11 +11,15 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthUser } from '../common/decorators/current-user.decorator';
+import { ReplyBoostService } from '../common/services/reply-boost.service';
 import { cohortRef } from '../common/cohort-ref.util';
 
 @Injectable()
 export class ReportsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private replyBoost: ReplyBoostService,
+  ) {}
 
   // ── Email activity log (admin, cross-client) ────────────────────────
   /**
@@ -318,6 +322,15 @@ export class ReportsService {
 
     const sent = ev[EventType.SENT] ?? 0;
     const bounces = ev[EventType.BOUNCE] ?? 0;
+    // Reply band (super admin's setting): staff dashboards only. Clients and
+    // every report keep the real figures. One walk per audience.
+    const replyFigures = await this.replyBoost.apply(
+      user.tenantId,
+      user.role,
+      ccids === null ? 'tenant' : `scoped:${user.userId}`,
+      sent,
+      ev[EventType.REPLY] ?? 0,
+    );
     const rate = (n: number) =>
       sent ? Math.round((n / sent) * 1000) / 10 : 0;
     const attempts = sent + bounces;
@@ -338,13 +351,13 @@ export class ReportsService {
       deliveryRate,
       opens: openedMsgIds.size,
       clicks: ev[EventType.CLICK] ?? 0,
-      replies: ev[EventType.REPLY] ?? 0,
+      replies: replyFigures.replies,
       bounces: ev[EventType.BOUNCE] ?? 0,
       failed: ev[EventType.BOUNCE] ?? 0,
       forwarded,
       openRate: Math.min(100, rate(openedMsgIds.size)),
       clickRate: Math.min(100, rate(ev[EventType.CLICK] ?? 0)),
-      replyRate: rate(ev[EventType.REPLY] ?? 0),
+      replyRate: replyFigures.replyRate,
       bounceRate: rate(ev[EventType.BOUNCE] ?? 0),
       forwardRate: rate(forwarded),
       linkedin: {

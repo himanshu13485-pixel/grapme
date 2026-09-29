@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/auth';
 import { api } from '@/lib/api';
 import { PageHeader } from '@/components/ui';
 import ChannelVerify from '@/components/ChannelVerify';
+import { ReplyBoostCard } from '@/components/ReplyBoostCard';
 
 export default function MyProfilePage() {
   const { user, refreshUser } = useAuth();
@@ -307,6 +308,9 @@ export default function MyProfilePage() {
 
       {/* AI template assistant (super admin only) */}
       {user?.role === 'SUPER_ADMIN' && <AiSettingsCard />}
+
+      {/* Reply band shown on staff dashboards (super admin only) */}
+      {user?.role === 'SUPER_ADMIN' && <ReplyBoostCard />}
 
       {/* Password change */}
       <div className="card p-5">

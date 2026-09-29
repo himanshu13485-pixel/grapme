@@ -66,6 +66,12 @@ export class MessagesController {
     return this.messages.drafts(user, clientId, mailbox);
   }
 
+  /** Bounces and delivery failures, kept out of the Inbox. */
+  @Get('not-delivered')
+  notDelivered(@CurrentUser() user: AuthUser, @Query('clientId') clientId?: string, @Query('mailbox') mailbox?: string) {
+    return this.messages.notDelivered(user, clientId, mailbox);
+  }
+
   @Get('inbox')
   inbox(@CurrentUser() user: AuthUser, @Query('clientId') clientId?: string, @Query('mailbox') mailbox?: string) {
     return this.messages.inbox(user, clientId, mailbox);

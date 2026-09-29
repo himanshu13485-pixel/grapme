@@ -14,6 +14,9 @@ interface Overview {
   expiringSoon: number;
   expired: number;
   openTickets: number;
+  emailsSent: number;
+  replies: number;
+  replyRate: number;
 }
 interface Client {
   id: string;
@@ -56,6 +59,9 @@ export default function SalesHomePage() {
         <Stat label="Expiring soon" value={ov?.expiringSoon} tone="amber" />
         <Stat label="Expired" value={ov?.expired} tone="rose" />
         <Stat label="Open tickets" value={ov?.openTickets} tone="brand" />
+        <Stat label="Emails sent" value={ov?.emailsSent} />
+        <Stat label="Replies" value={ov?.replies} tone="brand" />
+        <Stat label="Reply rate" value={ov ? `${ov.replyRate}%` : undefined} tone="brand" />
       </div>
 
       {/* Admin-style activity dashboard — overall, or narrowed to one client */}
@@ -117,7 +123,7 @@ export default function SalesHomePage() {
   );
 }
 
-function Stat({ label, value, tone }: { label: string; value?: number; tone?: 'brand' | 'amber' | 'rose' }) {
+function Stat({ label, value, tone }: { label: string; value?: number | string; tone?: 'brand' | 'amber' | 'rose' }) {
   const toneCls =
     tone === 'amber' ? 'text-amber-600' : tone === 'rose' ? 'text-rose-600' : tone === 'brand' ? 'text-brand-700' : 'text-slate-800';
   return (

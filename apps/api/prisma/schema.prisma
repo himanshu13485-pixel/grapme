@@ -176,6 +176,11 @@ model Tenant {
   // Bounce circuit breaker: auto-disable a mailbox whose recent bounce rate exceeds this
   // percentage. Most providers start throttling a sender somewhere around 5–10%.
   bounceMaxRatePct Int      @default(7)
+  /// Display-only reply band for staff dashboards (super admin sets it in My
+  /// Account). The client portal and every report always show the real figures.
+  replyBoostEnabled Boolean @default(false)
+  replyBoostMinPct  Float   @default(5.5)
+  replyBoostMaxPct  Float   @default(7.5)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -1982,4 +1987,38 @@ model ClientChangeRequest {
 
   @@index([tenantId])
   @@index([clientId, kind, targetId])
+}
+
+/// Walk state for the dashboard reply band, one row per audience (tenant-wide,
+/// a scoped sub-admin, a salesperson) since each sees a different slice of the
+/// sending. Keeping it here is what stops the figure jumping on every refresh.
+model ReplyBoostState {
+  id           String   @id @default(uuid())
+  tenantId     String
+  scopeKey     String
+  shownReplies Int      @default(0)
+  lastSent     Int      @default(0)
+  targetPct    Float    @default(0)
+  updatedAt    DateTime @updatedAt
+
+  @@unique([tenantId, scopeKey])
+  @@index([tenantId])
+}
+
+/// An example of the kind of reply buyers send, saved from the Inbox to show
+/// clients what campaigns bring in. The mail is copied in, so the example
+/// survives the original being deleted.
+model ResponseType {
+  id          String   @id @default(uuid())
+  tenantId    String
+  messageId   String? // the inbox message it was taken from
+  category    String // "Interested", "Asked for pricing", …
+  fromAddress String?
+  subject     String?
+  body        String?
+  note        String?
+  createdById String?
+  createdAt   DateTime @default(now())
+
+  @@index([tenantId])
 }

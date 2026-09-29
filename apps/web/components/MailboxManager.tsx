@@ -16,6 +16,8 @@ interface Message {
   contact?: { email: string };
   campaign?: { name: string };
   emailAccount?: { id?: string; emailAddress: string; label?: string };
+  /** INBOUND only: REPLY (a person answered) or AUTO_REPLY (out-of-office and friends). */
+  inboundKind?: string | null;
 }
 
 interface MailboxOption {
@@ -27,6 +29,7 @@ interface MailboxOption {
 const TABS = [
   { key: 'inbox', label: 'Inbox' },
   { key: 'sent', label: 'Sent' },
+  { key: 'not-delivered', label: 'Not Delivered' },
   { key: 'scheduled', label: 'Scheduled' },
   { key: 'failed', label: 'Failed' },
   { key: 'drafts', label: 'Drafts' },
@@ -51,13 +54,22 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
   const [page, setPage] = useState(1);
   const [mailboxes, setMailboxes] = useState<MailboxOption[]>([]);
   const [mailboxFilter, setMailboxFilter] = useState(''); // '' = all registered mailboxes
+  const [kindFilter, setKindFilter] = useState('ALL'); // Inbox: all / replies / automatic
 
   const isInbox = tab === 'inbox';
   const isFailed = tab === 'failed';
+  const isNotDelivered = tab === 'not-delivered';
+  // Both folders show received mail, so they share the From / mailbox columns.
+  const inboundView = isInbox || isNotDelivered;
+  const canSaveResponseType = user?.role === 'SUPER_ADMIN' || user?.role === 'SUB_ADMIN';
   const PAGE_SIZE = 25;
-  const pageCount = Math.max(1, Math.ceil(messages.length / PAGE_SIZE));
+  const visible =
+    isInbox && kindFilter !== 'ALL'
+      ? messages.filter((m) => (m.inboundKind ?? 'REPLY') === kindFilter)
+      : messages;
+  const pageCount = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
   const pageSafe = Math.min(page, pageCount);
-  const paged = messages.slice((pageSafe - 1) * PAGE_SIZE, pageSafe * PAGE_SIZE);
+  const paged = visible.slice((pageSafe - 1) * PAGE_SIZE, pageSafe * PAGE_SIZE);
 
   // clientId scope (used by sync / mark-read); the list also adds the mailbox filter.
   const scopeQ = clientId ? `?clientId=${clientId}` : '';
@@ -100,6 +112,18 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, clientId, mailboxFilter]);
+
+  /** Keep this reply as an example of the responses campaigns bring in. */
+  async function saveResponseType(messageId: string) {
+    const category = prompt('Response type (e.g. Interested, Asked for pricing, Not now)')?.trim();
+    if (!category) return;
+    try {
+      await api.post('/response-types', { messageId, category });
+      alert('Saved to Response Type.');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Could not save');
+    }
+  }
 
   function toggleSelect(id: string) {
     setSelected((prev) => {
@@ -246,6 +270,18 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
             ))}
           </select>
         )}
+        {isInbox && (
+          <select
+            className="input w-44"
+            value={kindFilter}
+            onChange={(e) => { setKindFilter(e.target.value); setPage(1); }}
+            title="Replies from people, or automatic mail such as out-of-office"
+          >
+            <option value="ALL">All incoming</option>
+            <option value="REPLY">Replies</option>
+            <option value="AUTO_REPLY">Automatic</option>
+          </select>
+        )}
         {syncNote && <span className="text-xs text-slate-400">{syncNote}</span>}
         {updatedAt && (
           <span className="text-xs text-slate-400">
@@ -287,12 +323,14 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
       )}
       {header}
 
-      {messages.length === 0 ? (
+      {visible.length === 0 ? (
         <EmptyState
           message={
-            isInbox
-              ? 'No replies yet. Incoming mail from receivers appears here once your mailboxes poll it.'
-              : `No ${tab} messages.`
+            isNotDelivered
+              ? 'Nothing here — no bounces or delivery failures.'
+              : isInbox
+                ? 'No replies yet. Incoming mail from receivers appears here once your mailboxes poll it.'
+                : `No ${tab} messages.`
           }
         />
       ) : (
@@ -311,9 +349,9 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
                     />
                   </th>
                 )}
-                <th className="px-5 py-3">{isInbox ? 'From' : 'Contact'}</th>
+                <th className="px-5 py-3">{inboundView ? 'From' : 'Contact'}</th>
                 <th className="px-5 py-3">Subject</th>
-                <th className="px-5 py-3">{isInbox ? 'To mailbox' : 'Campaign'}</th>
+                <th className="px-5 py-3">{inboundView ? 'To mailbox' : 'Campaign'}</th>
                 <th className="px-5 py-3">Status</th>
                 <th className="px-5 py-3">When</th>
                 {(canDelete || isFailed) && <th className="px-5 py-3"></th>}
@@ -323,8 +361,8 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
               {paged.map((m) => (
                 <Fragment key={m.id}>
                   <tr
-                    className={`border-t border-slate-100 ${isInbox ? 'cursor-pointer hover:bg-slate-50' : ''}`}
-                    onClick={() => isInbox && setOpen(open === m.id ? null : m.id)}
+                    className={`border-t border-slate-100 ${inboundView ? 'cursor-pointer hover:bg-slate-50' : ''}`}
+                    onClick={() => inboundView && setOpen(open === m.id ? null : m.id)}
                   >
                     {isSuperAdmin && (
                       <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
@@ -337,16 +375,26 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
                       </td>
                     )}
                     <td className="px-5 py-3 font-medium">
-                      {isInbox
+                      {inboundView
                         ? (m.fromAddress ?? m.contact?.email ?? '—')
                         : (m.contact?.email ?? '—')}
+                      {isInbox && m.inboundKind === 'AUTO_REPLY' && (
+                        <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
+                          Auto
+                        </span>
+                      )}
+                      {isInbox && m.inboundKind === 'REPLY' && (
+                        <span className="ml-2 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                          Reply
+                        </span>
+                      )}
                     </td>
                     <td className="px-5 py-3 text-slate-600">
-                      {isInbox && <span className="mr-1 text-slate-400">{open === m.id ? '▾' : '▸'}</span>}
+                      {inboundView && <span className="mr-1 text-slate-400">{open === m.id ? '▾' : '▸'}</span>}
                       {m.subject ?? '—'}
                     </td>
                     <td className="px-5 py-3 text-slate-500">
-                      {isInbox
+                      {inboundView
                         ? (m.emailAccount?.emailAddress ?? '—')
                         : (m.campaign?.name ?? '—')}
                     </td>
@@ -377,7 +425,7 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
                       </td>
                     )}
                   </tr>
-                  {isInbox && open === m.id && (
+                  {inboundView && open === m.id && (
                     <tr className="bg-slate-50">
                       <td colSpan={(canDelete || isFailed ? 6 : 5) + (isSuperAdmin ? 1 : 0)} className="px-6 py-4">
                         <div className="mb-2 text-xs text-slate-400">
@@ -387,6 +435,14 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
                         <div className="whitespace-pre-wrap rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-700">
                           {m.body?.trim() ? m.body : '(no message body captured)'}
                         </div>
+                        {isInbox && canSaveResponseType && (
+                          <button
+                            className="btn-ghost mt-2 text-xs text-brand-600"
+                            onClick={(e) => { e.stopPropagation(); saveResponseType(m.id); }}
+                          >
+                            ＋ Save as response type
+                          </button>
+                        )}
                       </td>
                     </tr>
                   )}
@@ -394,7 +450,7 @@ export function MailboxManager({ clientId }: { clientId?: string }) {
               ))}
             </tbody>
           </table>
-          {messages.length > PAGE_SIZE && (
+          {visible.length > PAGE_SIZE && (
             <div className="flex items-center justify-between border-t border-slate-100 px-5 py-3 text-xs text-slate-500">
               <span>
                 Showing {(pageSafe - 1) * PAGE_SIZE + 1}–

@@ -15,6 +15,27 @@ import { QUEUE_SEND, JOB_RESEND_MESSAGE } from '../queue/queue.constants';
 import { AuthUser } from '../common/decorators/current-user.decorator';
 import { ownedClientIds } from '../common/client-scope';
 
+/**
+ * Delivery failures that arrive as mail: tagged BOUNCE when stored, or — for
+ * rows kept before that tag existed — recognisable by sender and subject. These
+ * belong in "Not Delivered", never in the Inbox or the unread badge.
+ */
+const NOT_DELIVERED_INBOUND = {
+  OR: [
+    { inboundKind: 'BOUNCE' },
+    {
+      inboundKind: null,
+      OR: [
+        { fromAddress: { contains: 'mailer-daemon', mode: 'insensitive' as const } },
+        { fromAddress: { contains: 'postmaster', mode: 'insensitive' as const } },
+        { subject: { contains: 'Undelivered', mode: 'insensitive' as const } },
+        { subject: { contains: 'Delivery Status Notification', mode: 'insensitive' as const } },
+        { subject: { contains: 'Returned to Sender', mode: 'insensitive' as const } },
+      ],
+    },
+  ],
+};
+
 @Injectable()
 export class MessagesService {
   constructor(
@@ -59,7 +80,7 @@ export class MessagesService {
       user,
       {
         direction: MessageDirection.OUTBOUND,
-        status: { in: [MessageStatus.FAILED, MessageStatus.BOUNCED] },
+        status: MessageStatus.FAILED,
       },
       clientId,
       mailboxId,
@@ -70,6 +91,22 @@ export class MessagesService {
     return this.base(
       user,
       { direction: MessageDirection.OUTBOUND, status: MessageStatus.QUEUED },
+      clientId,
+      mailboxId,
+    );
+  }
+
+  /** Everything that never reached the recipient: bounce/DSN mail that came
+   *  back, plus outbound the provider reported as bounced. */
+  notDelivered(user: AuthUser, clientId?: string, mailboxId?: string) {
+    return this.base(
+      user,
+      {
+        OR: [
+          { direction: MessageDirection.INBOUND, ...NOT_DELIVERED_INBOUND },
+          { direction: MessageDirection.OUTBOUND, status: MessageStatus.BOUNCED },
+        ],
+      },
       clientId,
       mailboxId,
     );
@@ -110,6 +147,7 @@ export class MessagesService {
       where: {
         tenantId: user.tenantId,
         direction: MessageDirection.INBOUND,
+        NOT: NOT_DELIVERED_INBOUND,
         readAt: null,
         ...(await this.scopeFor(user, clientId)),
       },
@@ -123,6 +161,7 @@ export class MessagesService {
       where: {
         tenantId: user.tenantId,
         direction: MessageDirection.INBOUND,
+        NOT: NOT_DELIVERED_INBOUND,
         readAt: null,
         ...(await this.scopeFor(user, clientId)),
       },
@@ -247,7 +286,8 @@ export class MessagesService {
   async inbox(user: AuthUser, clientId?: string, mailboxId?: string) {
     const rows = await this.base(
       user,
-      { direction: MessageDirection.INBOUND },
+      // Replies and automatic mail; failures live in "Not Delivered".
+      { direction: MessageDirection.INBOUND, NOT: NOT_DELIVERED_INBOUND },
       clientId,
       mailboxId,
     );
