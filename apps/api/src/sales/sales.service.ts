@@ -309,7 +309,7 @@ export class SalesService {
    */
   async dashboard(
     user: AuthUser,
-    opts: { clientId?: string; campaignId?: string; liCampaignId?: string },
+    opts: { clientId?: string; campaignId?: string; liCampaignId?: string; actual?: boolean },
   ) {
     let clientIds: string[];
     if (opts.clientId) {
@@ -381,15 +381,18 @@ export class SalesService {
     }
     const rate = (n: number, d: number) => (d ? Math.round((n / d) * 1000) / 10 : 0);
 
-    // Reply band (super admin's setting): this panel is staff-facing, like the
-    // tiles above it. One walk per scope, so narrowing to a client is separate.
-    const replyFigures = await this.replyBoost.apply(
-      user.tenantId,
-      user.role,
-      `sales:${user.userId}:${opts.clientId ?? 'all'}${opts.campaignId ? `:${opts.campaignId}` : ''}`,
-      sent,
-      ev[EventType.REPLY] ?? 0,
-    );
+    // Reply band (super admin's setting) for the salesperson's own dashboard.
+    // The client workspace drill-down asks for `actual`, so what a salesperson
+    // reads about one client is always the real figure.
+    const replyFigures = opts.actual
+      ? { replies: ev[EventType.REPLY] ?? 0, replyRate: pct(ev[EventType.REPLY] ?? 0) }
+      : await this.replyBoost.apply(
+          user.tenantId,
+          user.role,
+          `sales:${user.userId}:${opts.clientId ?? 'all'}${opts.campaignId ? `:${opts.campaignId}` : ''}`,
+          sent,
+          ev[EventType.REPLY] ?? 0,
+        );
 
     return {
       email: {

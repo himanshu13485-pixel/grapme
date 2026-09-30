@@ -159,7 +159,7 @@ function EmailSide({ id, stats }: { id: string; stats: Stats | null }) {
         </select>
       </div>
       <div className="mb-6">
-        <SalesActivityDashboard clientId={id} campaignId={scopeCampaign || undefined} show="email" />
+        <SalesActivityDashboard clientId={id} campaignId={scopeCampaign || undefined} show="email" actual />
       </div>
 
       <SubTabs tabs={tabs} active={tab} onChange={(k) => setTab(k as EmailTab)} />
@@ -251,7 +251,7 @@ function LinkedInSide({ id, stats }: { id: string; stats: Stats | null }) {
         </select>
       </div>
       <div className="mb-6">
-        <SalesActivityDashboard clientId={id} liCampaignId={scopeCampaign || undefined} show="linkedin" />
+        <SalesActivityDashboard clientId={id} liCampaignId={scopeCampaign || undefined} show="linkedin" actual />
       </div>
 
       <SubTabs tabs={tabs} active={tab} onChange={(k) => setTab(k as LiTab)} />

@@ -25,11 +25,14 @@ export function SalesActivityDashboard({
   campaignId,
   liCampaignId,
   show = 'both',
+  actual = false,
 }: {
   clientId?: string;
   campaignId?: string;
   liCampaignId?: string;
   show?: 'both' | 'email' | 'linkedin';
+  /** Real reply figures, ignoring the dashboard reply band (client workspace). */
+  actual?: boolean;
 }) {
   const [d, setD] = useState<SalesDashboard | null>(null);
 
@@ -38,9 +41,10 @@ export function SalesActivityDashboard({
     if (clientId) qs.set('clientId', clientId);
     if (campaignId) qs.set('campaignId', campaignId);
     if (liCampaignId) qs.set('liCampaignId', liCampaignId);
+    if (actual) qs.set('actual', '1');
     setD(null);
     api.get<SalesDashboard>(`/sales/my/dashboard${qs.toString() ? `?${qs}` : ''}`).then(setD).catch(() => setD(null));
-  }, [clientId, campaignId, liCampaignId]);
+  }, [clientId, campaignId, liCampaignId, actual]);
 
   return (
     <div className="space-y-6">

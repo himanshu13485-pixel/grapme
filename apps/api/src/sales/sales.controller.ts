@@ -86,7 +86,9 @@ export class SalesController {
   }
 
   /** Admin-style activity dashboard, scoped to this salesperson's clients.
-   *  Optional narrowing: ?clientId=… ?campaignId=… ?liCampaignId=… */
+   *  Optional narrowing: ?clientId=… ?campaignId=… ?liCampaignId=…
+   *  ?actual=1 returns the real reply figures (the client workspace drill-down),
+   *  rather than the presentation band the panel dashboards use. */
   @Roles(Role.SALES)
   @Get('my/dashboard')
   myDashboard(
@@ -94,8 +96,14 @@ export class SalesController {
     @Query('clientId') clientId?: string,
     @Query('campaignId') campaignId?: string,
     @Query('liCampaignId') liCampaignId?: string,
+    @Query('actual') actual?: string,
   ) {
-    return this.sales.dashboard(user, { clientId, campaignId, liCampaignId });
+    return this.sales.dashboard(user, {
+      clientId,
+      campaignId,
+      liCampaignId,
+      actual: actual === '1' || actual === 'true',
+    });
   }
 
   @Roles(Role.SALES)
