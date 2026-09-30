@@ -499,6 +499,10 @@ export function LiRegularWizard({
                 <div className="font-medium text-slate-800">Connection Request</div>
                 <div className="mb-2 text-sm text-slate-500">Sent to your targets first.</div>
                 <textarea className="input" rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional note (leave blank for no note)" />
+                <div className={`mt-1 text-xs ${note.trim().length > 300 ? 'text-rose-600' : 'text-slate-400'}`}>
+                  {note.trim().length}/300 characters
+                  {note.trim().length > 300 ? ' — LinkedIn refuses an invitation with a longer note' : ''}
+                </div>
                 <VariantsEditor variants={noteVariants} onChange={setNoteVariants} rows={2} />
               </div>
             )}

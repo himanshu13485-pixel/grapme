@@ -11,6 +11,7 @@ import {
   ProviderProxyConfig,
 } from './linkedin-provider.interface';
 import { LiRateGuard } from './li-rate-guard.service';
+import { clampInviteNote } from '../campaigns/invite-note.util';
 
 /**
  * Unipile account status → our seat status. Exported because the account webhook must
@@ -201,11 +202,19 @@ export class UnipileProvider implements LinkedInProvider {
 
   async sendConnection(params: { accountId: string; memberId: string; note?: string }): Promise<{ invitationId: string }> {
     const client = this.getClient();
+    // A note over LinkedIn's 300-character limit fails the whole invitation, so
+    // trim rather than lose the lead (sequences saved before the limit existed).
+    const note = clampInviteNote(params.note);
+    if (params.note && note && note.length < params.note.trim().length) {
+      this.logger.warn(
+        `Connection note trimmed to ${note.length} characters (LinkedIn's limit) — shorten it on the campaign.`,
+      );
+    }
     try {
       const res = await client.users.sendInvitation({
         account_id: params.accountId,
         provider_id: params.memberId,
-        message: params.note,
+        message: note,
       });
       return { invitationId: res?.invitation_id ?? res?.id ?? '' };
     } catch (err) {

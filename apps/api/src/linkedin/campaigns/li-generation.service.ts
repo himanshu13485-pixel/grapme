@@ -8,6 +8,7 @@ import { LinkedInSubscriptionService } from '../subscription/linkedin-subscripti
 import { LINKEDIN_PROVIDER, LinkedInProvider } from '../provider/linkedin-provider.interface';
 import { normalizeProfileUrl } from '../scheduler/li-queue.constants';
 import { UpsertLiAudienceDto, LiSequenceStepDto } from './dto/campaign.dto';
+import { clampInviteNote } from './invite-note.util';
 
 type Content = Record<string, any>;
 const COMPANY_SIZES = ['Startup (1-10)', 'Small (11-50)', 'Medium (51-200)', 'Large (201-1000)', 'Enterprise (1000+)'];
@@ -287,6 +288,15 @@ export class LiGenerationService {
 
     if (opts.outreachType) {
       await this.prisma.liCampaign.update({ where: { id: campaignId }, data: { outreachType } });
+    }
+    // The prompt asks for a short note; the model does not always oblige, and an
+    // over-long one would be refused on save (and by LinkedIn).
+    for (const st of steps) {
+      if (st.type !== LiStepType.CONNECTION_REQUEST) continue;
+      st.note = clampInviteNote(st.note);
+      st.variants = (st.variants ?? [])
+        .map((v) => clampInviteNote(v))
+        .filter((v): v is string => !!v);
     }
     return this.campaigns.updateSequence(campaignId, { steps });
   }
