@@ -11,7 +11,10 @@ import {
   ProviderProxyConfig,
 } from './linkedin-provider.interface';
 import { LiRateGuard } from './li-rate-guard.service';
-import { clampInviteNote } from '../campaigns/invite-note.util';
+import {
+  clampInviteNote,
+  INVITE_NOTE_SAFE_MAX,
+} from '../campaigns/invite-note.util';
 
 /**
  * Unipile account status → our seat status. Exported because the account webhook must
@@ -202,22 +205,50 @@ export class UnipileProvider implements LinkedInProvider {
 
   async sendConnection(params: { accountId: string; memberId: string; note?: string }): Promise<{ invitationId: string }> {
     const client = this.getClient();
-    // A note over LinkedIn's 300-character limit fails the whole invitation, so
-    // trim rather than lose the lead (sequences saved before the limit existed).
-    const note = clampInviteNote(params.note);
-    if (params.note && note && note.length < params.note.trim().length) {
-      this.logger.warn(
-        `Connection note trimmed to ${note.length} characters (LinkedIn's limit) — shorten it on the campaign.`,
-      );
-    }
-    try {
+    const send = async (message?: string) => {
       const res = await client.users.sendInvitation({
         account_id: params.accountId,
         provider_id: params.memberId,
-        message: note,
+        message,
       });
       return { invitationId: res?.invitation_id ?? res?.id ?? '' };
+    };
+
+    // A note past the limit fails the whole invitation, so trim rather than lose
+    // the lead (campaigns written before the limit was enforced).
+    const note = clampInviteNote(params.note);
+    if (params.note && note && note.length < params.note.trim().length) {
+      this.logger.warn(
+        `Connection note trimmed to ${note.length} characters — shorten it on the campaign.`,
+      );
+    }
+
+    try {
+      return await send(note);
     } catch (err) {
+      // LinkedIn applies its own limit, below the 300 Unipile accepts, and it
+      // differs by account type. Rather than guess it, back off: retry at the
+      // length any seat takes, then with no note at all. An invitation without
+      // a note still reaches the person; a failed one never does.
+      if (note && isNoteTooLong(err)) {
+        const shorter = clampInviteNote(note, INVITE_NOTE_SAFE_MAX);
+        if (shorter && shorter.length < note.length) {
+          this.logger.warn(
+            `LinkedIn refused a ${note.length}-character note — retrying at ${shorter.length}.`,
+          );
+          try {
+            return await send(shorter);
+          } catch (retryErr) {
+            if (!isNoteTooLong(retryErr)) throw new Error(describeError(retryErr));
+          }
+        }
+        this.logger.warn('LinkedIn still refused the note — sending the invitation without one.');
+        try {
+          return await send(undefined);
+        } catch (bareErr) {
+          throw new Error(describeError(bareErr));
+        }
+      }
       // The Unipile SDK throws a bare "Error"; the useful cause (invitation limit, already
       // invited, checkpoint, etc.) is in its response body. Re-throw with that detail so it
       // lands in the action's failure reason instead of an opaque "Error".
@@ -450,4 +481,9 @@ function isNotFound(err: unknown): boolean {
   const code = e?.status ?? e?.statusCode ?? e?.body?.status;
   if (code === 404) return true;
   return /\b404\b|not[\s_-]*found|no such account|unknown account|does not exist/i.test(String(e?.message ?? err));
+}
+
+/** LinkedIn rejecting the note itself — as opposed to the invitation. */
+function isNoteTooLong(err: unknown): boolean {
+  return /too_many_characters|exceeds the character limit|maxLength/i.test(describeError(err));
 }

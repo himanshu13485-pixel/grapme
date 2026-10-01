@@ -8,7 +8,7 @@ import {
   CreateLiCampaignDto, UpdateLiCampaignDto, UpdateLiSequenceDto,
   UpsertLiAudienceDto, UpdateLiScheduleDto, ImportLiLeadsDto,
 } from './dto/campaign.dto';
-import { clampInviteNote, INVITE_NOTE_MAX } from './invite-note.util';
+import { clampInviteNote, inviteNoteMax } from './invite-note.util';
 
 const EDITABLE: LiCampaignStatus[] = [LiCampaignStatus.DRAFT, LiCampaignStatus.PAUSED];
 
@@ -173,12 +173,13 @@ export class LiCampaignsService {
     // LinkedIn rejects the whole invitation when its note runs past the limit —
     // the lead never gets invited — so catch it here rather than at send time.
     const invite = dto.steps.find((st) => st.type === 'CONNECTION_REQUEST');
+    const maxNote = inviteNoteMax();
     const overLong = [invite?.note, ...(invite?.variants ?? [])]
       .map((t) => (t ?? '').trim())
-      .find((t) => t.length > INVITE_NOTE_MAX);
+      .find((t) => t.length > maxNote);
     if (overLong) {
       throw new BadRequestException(
-        `A connection note must be ${INVITE_NOTE_MAX} characters or fewer — this one is ${overLong.length}. LinkedIn rejects the invitation otherwise.`,
+        `A connection note must be ${maxNote} characters or fewer — this one is ${overLong.length}. LinkedIn rejects the whole invitation otherwise.`,
       );
     }
     await this.prisma.$transaction([
