@@ -499,11 +499,21 @@ export function LiRegularWizard({
                 <div className="font-medium text-slate-800">Connection Request</div>
                 <div className="mb-2 text-sm text-slate-500">Sent to your targets first.</div>
                 <textarea className="input" rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional note (leave blank for no note)" />
-                <div className={`mt-1 text-xs ${note.trim().length > 200 ? 'text-rose-600' : 'text-slate-400'}`}>
+                <div
+                  className={`mt-1 text-xs ${
+                    note.trim().length > 300
+                      ? 'text-rose-600'
+                      : note.trim().length > 200
+                        ? 'text-amber-600'
+                        : 'text-slate-400'
+                  }`}
+                >
                   {note.trim().length}/200 characters
-                  {note.trim().length > 200
-                    ? ' — LinkedIn refuses the whole invitation when the note is longer'
-                    : ''}
+                  {note.trim().length > 300
+                    ? ' — too long for any LinkedIn account'
+                    : note.trim().length > 200
+                      ? ' — over 200 only works on Premium seats; others send the invitation without the note'
+                      : ''}
                 </div>
                 <VariantsEditor variants={noteVariants} onChange={setNoteVariants} rows={2} />
               </div>

@@ -71,6 +71,10 @@ services:
       # Optional white-label: your own hosted-auth wizard domain (CNAME → account.unipile.com,
       # validated by Unipile support). Blank = the client sees Unipile's default domain.
       UNIPILE_HOSTED_AUTH_DOMAIN: ${UNIPILE_HOSTED_AUTH_DOMAIN:-}
+      # Longest connection-invitation note to attempt, 1-300. Default 200: the
+      # length any LinkedIn seat accepts. Raise to 300 only if every seat on this
+      # tenant has Premium — a seat that refuses still falls back automatically.
+      LINKEDIN_INVITE_NOTE_MAX: ${LINKEDIN_INVITE_NOTE_MAX:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       AI_MODEL: ${AI_MODEL:-}
       # ── Messaging (self-hosted portal) ── powers number verification (OTP)
